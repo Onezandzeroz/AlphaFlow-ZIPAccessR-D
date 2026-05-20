@@ -40,6 +40,7 @@ import {
   AlertTriangle,
   Eye,
   CheckCircle,
+  Info,
   XCircle,
   Clock,
   Building2,
@@ -677,7 +678,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
                       {t('generateSAFT')}
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                  <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
                     <DialogHeader className="shrink-0">
                       <DialogTitle className="flex items-center gap-2 text-xl dark:text-white">
                         <Shield className="h-5 w-5 text-[#0d9488]" />
@@ -761,13 +762,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
                             saftValidation.hasErrors 
                               ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' 
                               : saftValidation.hasWarnings
-                                ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+                                ? 'bg-[#0d9488]/5 dark:bg-[#0d9488]/10 border border-[#0d9488]/20'
                                 : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                           }`}>
                             {saftValidation.hasErrors ? (
                               <XCircle className="h-5 w-5 text-red-500 shrink-0" />
                             ) : saftValidation.hasWarnings ? (
-                              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+                              <Info className="h-5 w-5 text-[#0d9488] shrink-0" />
                             ) : (
                               <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
                             )}
@@ -776,13 +777,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
                                 saftValidation.hasErrors 
                                   ? 'text-red-700 dark:text-red-400' 
                                   : saftValidation.hasWarnings
-                                    ? 'text-amber-700 dark:text-amber-400'
+                                    ? 'text-[#0d9488] dark:text-[#2dd4bf]'
                                     : 'text-green-700 dark:text-green-400'
                               }`}>
                                 {saftValidation.hasErrors 
                                   ? `${saftValidation.errors} ${t('validationErrorsFound')}` 
                                   : saftValidation.hasWarnings
-                                    ? `${saftValidation.warnings} ${t('warningsFileExportable')}`
+                                    ? `${saftValidation.warnings} ${t('infoNoteExportable')}`
                                     : t('allValidationsPassed')}
                               </p>
                             </div>

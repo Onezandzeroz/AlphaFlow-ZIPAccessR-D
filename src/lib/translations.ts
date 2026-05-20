@@ -512,6 +512,10 @@ export const translations = {
     da: 'advarsler - Fil kan stadig eksporteres',
     en: 'warning(s) - File can still be exported',
   },
+  infoNoteExportable: {
+    da: 'bemærkning(er) – Filen er klar til eksport',
+    en: 'info note(s) – File is ready for export',
+  },
   allValidationsPassed: {
     da: 'Alle valideringer bestået - Fil er klar til eksport',
     en: 'All validations passed - File is ready for export',
