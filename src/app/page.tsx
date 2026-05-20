@@ -337,7 +337,11 @@ export default function Home() {
               <div className="bg-white/80 backdrop-blur-xl shadow-xl rounded-2xl p-6 border border-white/60 login-card-animated-bg login-card-glow overflow-hidden">
                 <ResetPasswordForm
                   token={resetPasswordToken || ''}
-                  onBackToLogin={() => { setResetPasswordToken(null); }}
+                  onBackToLogin={() => {
+                    setResetPasswordToken(null);
+                    window.history.replaceState({}, '', '/');
+                    setAuthMode('login');
+                  }}
                 />
               </div>
             </div>
