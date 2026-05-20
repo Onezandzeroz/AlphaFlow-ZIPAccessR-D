@@ -677,8 +677,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
                       {t('generateSAFT')}
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-4xl max-h-[90vh] overflow-hidden">
-                    <DialogHeader>
+                  <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+                    <DialogHeader className="shrink-0">
                       <DialogTitle className="flex items-center gap-2 text-xl dark:text-white">
                         <Shield className="h-5 w-5 text-[#0d9488]" />
                         {t('saftFileGeneration')}
@@ -690,6 +690,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
                       </DialogDescription>
                     </DialogHeader>
 
+                    {/* Scrollable body area */}
+                    <div className="flex-1 min-h-0 overflow-y-auto">
                     {/* Step: Select */}
                     {saftStep === 'select' && (
                       <div className="space-y-6 py-4">
@@ -788,24 +790,36 @@ export function ExportsPage({ user }: ExportsPageProps) {
                         )}
 
                         {/* XML Preview */}
-                        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                          <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden flex flex-col">
+                          <div className="bg-gray-100 dark:bg-gray-800 px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2">
                               <FileCode className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                                 {t('xmlPreview')}
                               </span>
                             </div>
-                            <Badge variant="outline" className="text-xs">
-                              {(saftPreview?.length || 0).toLocaleString()} {t('bytes')}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-xs">
+                                {(saftPreview?.length || 0).toLocaleString()} {t('bytes')}
+                              </Badge>
+                              {!saftValidation?.hasErrors && (
+                                <Button
+                                  size="sm"
+                                  onClick={downloadSAFT}
+                                  className="h-7 gap-1.5 text-xs bg-[#0d9488] hover:bg-[#0d9488]/90 text-white"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  {language === 'da' ? 'Download .xml' : 'Download .xml'}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                           <pre 
                             ref={previewRef}
-                            className="p-4 text-xs font-mono overflow-auto max-h-64 bg-gray-50/50 text-gray-800 dark:text-gray-300"
+                            className="p-4 text-xs font-mono overflow-auto flex-1 min-h-[120px] max-h-[40vh] bg-gray-50/50 text-gray-800 dark:text-gray-300"
                           >
-                            {saftPreview?.substring(0, 3000)}
-                            {(saftPreview?.length || 0) > 3000 && '\n\n... (truncated for preview)'}
+                            {saftPreview?.substring(0, 5000)}
+                            {(saftPreview?.length || 0) > 5000 && '\n\n... (truncated for preview)'}
                           </pre>
                         </div>
                       </div>
@@ -825,8 +839,9 @@ export function ExportsPage({ user }: ExportsPageProps) {
                         </p>
                       </div>
                     )}
+                    </div>
 
-                    <DialogFooter className="gap-2 sm:gap-0">
+                    <DialogFooter className="gap-2 sm:gap-0 shrink-0 pt-2 border-t border-gray-100 dark:border-gray-800">
                       {saftStep === 'select' && (
                         <Button onClick={generateSAFT} className="btn-gradient text-white gap-2">
                           <Sparkles className="h-4 w-4" />
