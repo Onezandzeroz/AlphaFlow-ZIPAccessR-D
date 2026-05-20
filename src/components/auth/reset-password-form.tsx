@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,17 +9,18 @@ import { useTranslation } from '@/lib/use-translation';
 
 interface ResetPasswordFormProps {
   onBackToLogin: () => void;
+  token: string;
 }
 
-export function ResetPasswordForm({ onBackToLogin }: ResetPasswordFormProps) {
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token') || '';
+export function ResetPasswordForm({ onBackToLogin, token: tokenProp }: ResetPasswordFormProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const { isDanish } = useTranslation();
+
+  const token = tokenProp || '';
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {

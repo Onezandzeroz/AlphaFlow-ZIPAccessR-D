@@ -7,6 +7,7 @@ import { useTranslation } from '@/lib/use-translation';
 import { LoginForm } from '@/components/auth/login-form';
 import { RegisterForm } from '@/components/auth/register-form';
 import { VerifyEmailScreen } from '@/components/auth/verify-email-screen';
+import { ResetPasswordForm } from '@/components/auth/reset-password-form';
 import { useHydrated } from '@/lib/use-hydrated';
 import { AppLayout } from '@/components/layout/app-layout';
 import { PwaInstallBanner, PostInstallCameraPrompt } from '@/components/pwa/pwa-register';
@@ -87,6 +88,33 @@ export default function Home() {
     return t;
   });
 
+  // Detect ?token=TOKEN, ?reset=TOKEN or /reset-password?token=TOKEN from URL (one-time, client-only)
+  const [resetPasswordToken, setResetPasswordToken] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('token') || params.get('reset');
+    if (t) {
+      window.history.replaceState({}, '', window.location.pathname);
+      return t;
+    }
+    return null;
+  });
+  const resetPathDetectedRef = useRef(false);
+  useEffect(() => {
+    if (!hydrated || resetPathDetectedRef.current || resetPasswordToken) return;
+    resetPathDetectedRef.current = true;
+    const path = window.location.pathname.replace(/^\/+/, '');
+    if (path === 'reset-password') {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('token');
+      if (t) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- legitimate one-time hydration sync from URL pathname
+        setResetPasswordToken(t);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  }, [hydrated, resetPasswordToken]);
+
   // Detect /terms path for public Terms of Service page (no auth required)
   const [showTerms, setShowTerms] = useState(false);
   const termsDetectedRef = useRef(false);
@@ -102,13 +130,13 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated || hasCheckedAuth.current) return;
     hasCheckedAuth.current = true;
-    // Skip auth check when showing verify screen — but clear loading flag
-    if (verifyToken) {
+    // Skip auth check when showing verify or reset screen — but clear loading flag
+    if (verifyToken || resetPasswordToken) {
       useAuthStore.getState().setLoading(false);
       return;
     }
     checkAuth();
-  }, [hydrated, checkAuth, verifyToken]);
+  }, [hydrated, checkAuth, verifyToken, resetPasswordToken]);
 
   // Handle ?invite=TOKEN for already-logged-in users:
   // The login route auto-accepts, but if the user is already logged in
@@ -277,6 +305,71 @@ export default function Home() {
     setShowTerms(false);
     window.history.pushState({ view: 'dashboard' }, '', '/');
   }, []);
+
+  // ─── Password reset screen (/reset-password?token=TOKEN) ───
+  // IMPORTANT: Check resetPasswordToken BEFORE isLoading to avoid the auth spinner
+  // blocking the reset password UI. The reset form has its own loading state.
+  if (hydrated && resetPasswordToken && !user) {
+    return (
+      <div className="min-h-[100dvh] flex flex-col bg-[#f8faf9] light-forced login-mesh">
+        <div className="login-shape-3 absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-gradient-to-br from-[#0d9488]/[0.04] to-[#7c9a82]/[0.03] rounded-full blur-3xl pointer-events-none" />
+
+        <main className="flex-1 flex items-center justify-center p-4">
+          <div className="w-full max-w-md flex flex-col items-center mt-[57px] relative z-10">
+            {/* Logo */}
+            <div className="mb-[46px] -mt-[19px]">
+              <Image
+                src="/logo-clean.png"
+                alt="AlphaFlow"
+                width={170}
+                height={114}
+                className="object-contain login-logo-hover"
+                priority
+              />
+            </div>
+
+            {/* Abstract decorative shapes */}
+            <div className="login-shape-1 absolute -top-4 -right-12 w-20 h-20 rounded-xl bg-gradient-to-br from-[#0d9488]/10 to-[#2dd4bf]/5 border border-[#0d9488]/10 rotate-12 pointer-events-none" />
+            <div className="login-shape-2 absolute top-16 -left-10 w-16 h-16 rounded-full bg-gradient-to-br from-[#7c9a82]/10 to-[#9bb5a0]/5 border border-[#7c9a82]/10 pointer-events-none" />
+
+            <div className="w-full relative">
+              <div className="login-accent-bar" />
+              <div className="bg-white/80 backdrop-blur-xl shadow-xl rounded-2xl p-6 border border-white/60 login-card-animated-bg login-card-glow overflow-hidden">
+                <ResetPasswordForm
+                  token={resetPasswordToken || ''}
+                  onBackToLogin={() => { setResetPasswordToken(null); }}
+                />
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <footer className="relative z-10 py-6 text-center">
+          <div className="sidebar-brand-badge mx-auto mb-2">
+            <span>Powered by AlphaAi Consult ApS</span>
+          </div>
+          <p className="text-[11px] text-gray-400">
+            © {new Date().getFullYear()} AlphaFlow {t('accountingApp')}
+          </p>
+          <div className="mt-2 space-y-0.5">
+            <p className="text-[10px] text-gray-400">CVR-nr. 46312058</p>
+            <p className="text-[10px] text-gray-400">
+              <a href="mailto:alphaaiconsult@gmail.com" className="hover:text-[#0d9488] transition-colors">alphaaiconsult@gmail.com</a>
+            </p>
+          </div>
+          <p className="mt-2">
+            <button
+              type="button"
+              onClick={handleShowTerms}
+              className="text-[11px] text-[#0d9488] hover:text-[#0f766e] underline underline-offset-2 decoration-[#0d9488]/30 hover:decoration-[#0d9488]/60 transition-colors cursor-pointer"
+            >
+              {language === 'da' ? 'Forretningsbetingelser' : 'Terms of Service'}
+            </button>
+          </p>
+        </footer>
+      </div>
+    );
+  }
 
   // ─── Email verification screen (?verify=TOKEN) ───
   // IMPORTANT: Check verifyToken BEFORE isLoading to avoid the auth spinner
