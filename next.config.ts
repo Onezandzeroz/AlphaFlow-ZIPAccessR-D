@@ -10,6 +10,27 @@ const nextConfig: NextConfig = {
   ],
   serverExternalPackages: ["@prisma/client", "prisma", "node-cron", "archiver", "nodemailer"],
 
+  // ─── SPA rewrites: catch all non-API, non-static paths and serve the root page ───
+  // The app is a single-page app (SPA) with client-side routing.
+  // Next.js only has one filesystem route (/). All other paths like
+  // /reset-password, /terms, /transactions, /invoices etc. are handled
+  // client-side via window.history + React state. Without these rewrites,
+  // Next.js would return a 404 for any path that doesn't match a file
+  // in src/app/, preventing the client JS from ever loading.
+  async rewrites() {
+    return [
+      {
+        // Exclude API routes, static assets, and special files from the catch-all
+        source: "/((?!api|_next|favicon\\.ico|manifest\\.json|robots\\.txt|sitemap\\.xml|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|ttf|eot)).*)",
+        destination: "/",
+      },
+    ];
+  },
+
+  // ─── SEO: Generate sitemap and robots automatically ───────────
+  // next-sitemap style configuration for Danish market
+  // Sitemap and robots are generated via src/app/sitemap.ts and robots.ts
+
   // Security headers & feature policies — applied to all responses.
   // These headers protect the app regardless of whether it is served
   // directly by Next.js or behind Caddy / another reverse proxy.
@@ -81,6 +102,48 @@ const nextConfig: NextConfig = {
         ],
       },
 
+      // ─── SEO: Sitemap & robots — cache for performance ──────────
+      {
+        source: "/sitemap.xml",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+          },
+          {
+            key: "Content-Type",
+            value: "application/xml; charset=utf-8",
+          },
+        ],
+      },
+      {
+        source: "/robots.txt",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400",
+          },
+          {
+            key: "Content-Type",
+            value: "text/plain; charset=utf-8",
+          },
+        ],
+      },
+      // ─── SEO: Structured data (JSON-LD) headers ───────────────────
+      // JSON-LD is embedded in HTML, but if served as static files:
+      {
+        source: "/(.*)\.json$",
+        headers: [
+          {
+            key: "Access-Control-Allow-Origin",
+            value: "*",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400",
+          },
+        ],
+      },
       // ─── Service worker — allow caching ──────────────────────────
       {
         source: "/sw.js",
