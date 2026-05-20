@@ -423,7 +423,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
   // ─── RENDER ───
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-4">
       {error && (
         <div className="p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-lg flex items-center gap-2">
           <Info className="h-4 w-4 shrink-0" />
@@ -432,22 +432,17 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       )}
 
       {/* Double-entry bookkeeping info banner */}
-      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/20">
-        <ArrowRightLeft className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
-        <div className="text-xs">
-          <p className="font-medium text-teal-700 dark:text-teal-300">
-            {isDa ? 'Dobbelt-posteringsregnskab' : 'Double-Entry Bookkeeping'}
-          </p>
-          <p className="text-teal-600 dark:text-teal-400 mt-0.5">
-            {isDa
-              ? 'Alle indkøb bogføres automatisk med modposteringer i Finansjournalen.'
-              : 'All purchases are automatically recorded with offsetting entries in the General Journal.'}
-          </p>
-        </div>
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/20">
+        <ArrowRightLeft className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+        <p className="text-xs text-teal-600 dark:text-teal-400">
+          {isDa
+            ? 'Bogføres automatisk med modposteringer i Finansjournalen'
+            : 'Automatically recorded with offsetting entries in the General Journal'}
+        </p>
       </div>
 
       {/* ─── REQUIRED: Expense Account (Omkostninger 6xxx-9xxx) ─── */}
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
           <Label className="dark:text-gray-300 text-sm font-medium">
@@ -459,7 +454,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           <span className="text-[10px] text-red-500 dark:text-red-400 ml-1">*</span>
         </div>
         <Select value={selectedAccountId} onValueChange={(val) => { setSelectedAccountId(val); setAccountError(''); }} disabled={isLoading || accountsLoading}>
-          <SelectTrigger className={`dark:bg-white/5 ${accountError ? 'border-red-400 dark:border-red-500' : ''}`}>
+          <SelectTrigger className={`bg-gray-50 dark:bg-white/5 ${accountError ? 'border-red-400 dark:border-red-500' : ''}`}>
             <SelectValue placeholder={accountsLoading
               ? (isDa ? 'Indlæser konti...' : 'Loading accounts...')
               : (isDa ? 'Vælg omkostningskonto...' : 'Select expense account...')
@@ -495,15 +490,92 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         )}
       </div>
 
-      {/* Receipt Upload */}
-      <div className="space-y-2">
-        <Label className="dark:text-gray-300 text-sm font-medium">{t('receipt')} ({isDa ? 'Valgfrit' : 'Optional'})</Label>
+      {/* ─── Date & Amount row ─── */}
+      <div className="grid grid-cols-[1fr_1.4fr] gap-3">
+        {/* Date */}
+        <div className="space-y-1.5">
+          <Label htmlFor="date" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => { setDate(defaultToday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultToday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
+              <Calendar className="h-3 w-3" /> {t('today')}
+            </button>
+            <button type="button" onClick={() => { setDate(defaultYesterday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultYesterday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
+              <Clock className="h-3 w-3" /> {t('yesterday')}
+            </button>
+          </div>
+          <Input id="date" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
+        </div>
+
+        {/* Amount */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label className="dark:text-gray-300 text-sm font-medium">{t('amount')}</Label>
+            <div className="flex items-center gap-1.5">
+              <Label className="text-[11px] text-gray-500 dark:text-gray-400 cursor-pointer">{t('amountIncludesVAT')}</Label>
+              <ResponsiveSwitch checked={includesVAT} onCheckedChange={setIncludesVAT} disabled={isLoading} />
+            </div>
+          </div>
+          <div className="relative">
+            <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={isLoading} className="h-12 text-xl font-bold text-right pr-14 bg-gray-50 dark:bg-white/5 tabular-nums" />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2"><span className="text-xs font-semibold text-gray-400 dark:text-gray-500">DKK</span></div>
+          </div>
+          {includesVAT && (
+            <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Net / VAT / Gross calculation cards */}
+      {amount && parsedAmount > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">{t('netAmountShort')}</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{formatDanishNumber(netAmount)}</p>
+          </div>
+          <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">{t('vatShort')}</p>
+            <p className="text-sm font-bold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums">{formatDanishNumber(vatAmount)}</p>
+          </div>
+          <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2 text-center">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">{t('grossShort')}</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{formatDanishNumber(totalAmount)}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── VAT% & Currency side by side ─── */}
+      <div className="grid grid-cols-2 gap-3">
+        {/* VAT */}
+        <div className="space-y-1.5">
+          <Label className="dark:text-gray-300 text-sm font-medium">{isDa ? 'Moms %' : 'VAT %'}</Label>
+          <Input type="number" step="0.1" min="0" max="100" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} disabled={isLoading} className="bg-gray-50 dark:bg-white/5" />
+        </div>
+        {/* Currency */}
+        <div className="space-y-1.5">
+          <Label className="dark:text-gray-300 text-sm font-medium">{t('currency')}</Label>
+          <Select value={currency} onValueChange={(val) => { setCurrency(val); if (val === 'DKK') setExchangeRate(''); }}>
+            <SelectTrigger className="bg-gray-50 dark:bg-white/5"><SelectValue /></SelectTrigger>
+            <SelectContent className="bg-white dark:bg-[#1a1f1e]">{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Exchange rate (conditional) */}
+      {currency !== 'DKK' && (
+        <div className="space-y-1.5">
+          <Label className="dark:text-gray-300 text-sm font-medium">{t('exchangeRate')} ({currency} → DKK)</Label>
+          <Input type="number" step="0.0001" min="0" placeholder="0.0000" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} disabled={isLoading} className="bg-gray-50 dark:bg-white/5" />
+        </div>
+      )}
+
+      {/* ─── Receipt Upload ─── */}
+      <div className="space-y-1.5">
+        <Label className="dark:text-gray-300 text-sm font-medium">{t('receipt')} <span className="text-gray-400 text-xs font-normal">({isDa ? 'valgfrit' : 'optional'})</span></Label>
         <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isLoading} />
         {receiptPreview ? (
           <div className="relative">
             <div className="w-full rounded-lg border overflow-hidden bg-gray-50 dark:bg-gray-900/50">
-              <img src={receiptPreview} alt="Receipt preview" className="w-full h-auto max-h-64 object-contain" />
-              {/* OCR progress overlay */}
+              <img src={receiptPreview} alt="Receipt preview" className="w-full h-auto max-h-52 object-contain" />
               {ocrLoading && (
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2">
                   <Loader2 className="h-6 w-6 text-white animate-spin" />
@@ -549,24 +621,24 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             <Button
               type="button"
               variant="outline"
-              className="h-20 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
+              className="h-16 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
               onClick={() => setScannerOpen(true)}
               disabled={isLoading}
             >
-              <div className="flex flex-col items-center gap-1.5">
-                <Camera className="h-5 w-5 text-[#0d9488] dark:text-[#2dd4bf]" />
+              <div className="flex flex-col items-center gap-1">
+                <Camera className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                 <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Scan kvittering' : 'Scan receipt'}</span>
               </div>
             </Button>
             <Button
               type="button"
               variant="outline"
-              className="h-20 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
+              className="h-16 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading}
             >
-              <div className="flex flex-col items-center gap-1.5">
-                <Upload className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+              <div className="flex flex-col items-center gap-1">
+                <Upload className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                 <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Vælg fil' : 'Choose file'}</span>
               </div>
             </Button>
@@ -580,77 +652,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         )}
       </div>
 
-      {/* Date */}
-      <div className="space-y-2">
-        <Label htmlFor="date" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => { setDate(defaultToday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${date === defaultToday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-600'}`}>
-            <Calendar className="h-3 w-3" /> {t('today')}
-          </button>
-          <button type="button" onClick={() => { setDate(defaultYesterday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer ${date === defaultYesterday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-600'}`}>
-            <Clock className="h-3 w-3" /> {t('yesterday')}
-          </button>
-        </div>
-        <Input id="date" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="dark:bg-white/5" />
-      </div>
-
-      {/* Amount */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="dark:text-gray-300 text-sm font-medium">{t('amount')}</Label>
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer">{t('amountIncludesVAT')}</Label>
-            <ResponsiveSwitch checked={includesVAT} onCheckedChange={setIncludesVAT} disabled={isLoading} />
-          </div>
-        </div>
-        <div className="relative">
-          <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={isLoading} className="h-14 text-2xl font-bold text-right pr-16 dark:bg-white/5 tabular-nums" />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2"><span className="text-sm font-semibold text-gray-500 dark:text-gray-400">DKK</span></div>
-        </div>
-        {includesVAT && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
-        )}
-        {amount && parsedAmount > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">{t('netAmountShort')}</p>
-              <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{formatDanishNumber(netAmount)}</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">{t('vatShort')}</p>
-              <p className="text-sm font-bold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums">{formatDanishNumber(vatAmount)}</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 p-2.5 text-center">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">{t('grossShort')}</p>
-              <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">{formatDanishNumber(totalAmount)}</p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Currency */}
-      <div className="space-y-2">
-        <Label className="dark:text-gray-300 text-sm font-medium">{t('currency')}</Label>
-        <Select value={currency} onValueChange={(val) => { setCurrency(val); if (val === 'DKK') setExchangeRate(''); }}>
-          <SelectTrigger className="dark:bg-white/5"><SelectValue /></SelectTrigger>
-          <SelectContent className="bg-white dark:bg-[#1a1f1e]">{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      {currency !== 'DKK' && (
-        <div className="space-y-2">
-          <Label className="dark:text-gray-300 text-sm font-medium">{t('exchangeRate')} ({currency} → DKK)</Label>
-          <Input type="number" step="0.0001" min="0" placeholder="0.0000" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} disabled={isLoading} className="dark:bg-white/5" />
-        </div>
-      )}
-
-      {/* VAT */}
-      <div className="space-y-2">
-        <Label className="dark:text-gray-300 text-sm font-medium">{isDa ? 'Moms procent' : 'VAT Percentage'}</Label>
-        <Input type="number" step="0.1" min="0" max="100" value={vatPercent} onChange={(e) => setVatPercent(e.target.value)} disabled={isLoading} className="dark:bg-white/5" />
-      </div>
-
-      {/* Description */}
-      <div className="space-y-2">
+      {/* ─── Description ─── */}
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label className="dark:text-gray-300 text-sm font-medium">{t('description')}</Label>
           {recentDescriptions.length > 0 && (
@@ -680,11 +683,11 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
           disabled={isLoading}
-          className="dark:bg-white/5 text-sm"
+          className="bg-gray-50 dark:bg-white/5 text-sm"
         />
       </div>
 
-      {/* Submit */}
+      {/* ─── Submit ─── */}
       <Button
         type="submit"
         disabled={isLoading}
