@@ -228,7 +228,7 @@ function WidgetPlanCard({
         className={`mt-auto w-full flex items-center justify-center gap-2
           rounded-xl font-semibold
           transition-all duration-200 hover:shadow-md active:scale-[0.97]
-          ${isMobile ? 'h-12 text-sm mt-3' : 'pt-3 h-9 sm:h-10 px-3 sm:px-4 text-xs sm:text-sm'}
+          ${isMobile ? 'h-12 text-sm mt-3' : 'h-10 sm:h-11 px-3 sm:px-4 text-xs sm:text-sm'}
           ${isPopular
             ? 'bg-[#f59e0b] hover:bg-[#d97706] text-white shadow-[#f59e0b]/20'
             : 'bg-[#0d9488]/80 hover:bg-[#0d9488] text-white/90 hover:text-white border border-[#0d9488]/40'
@@ -397,7 +397,7 @@ export function SubscriptionPlansWidget() {
     <div
       className="relative overflow-hidden rounded-2xl lg:rounded-[1.25rem]
         bg-[#0c1a33] dark:bg-[#091325] border border-[#1a2d4d]/60 dark:border-[#152240]/80
-        animate-fade-in"
+        animate-fade-in flex flex-col min-h-[calc(100dvh-4rem)]"
     >
       {/* Background dot grid */}
       <div
@@ -431,7 +431,7 @@ export function SubscriptionPlansWidget() {
       </div>
 
       {/* Plan cards */}
-      <div className="relative px-2 sm:px-5 pb-4 sm:pb-8">
+      <div className="relative px-2 sm:px-5 pb-4 sm:pb-8 flex-1 flex flex-col justify-center">
         {/* Mobile: Carousel */}
         <div className="sm:hidden">
           <WidgetCarousel plans={PLANS} isDa={isDa} onSelect={handleSelectPlan} />
@@ -439,7 +439,7 @@ export function SubscriptionPlansWidget() {
 
         {/* Tablet & Desktop: Grid */}
         <div className="hidden sm:block">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 lg:gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5 auto-rows-fr">
             {PLANS.map((plan) => (
               <WidgetPlanCard
                 key={plan.id}
