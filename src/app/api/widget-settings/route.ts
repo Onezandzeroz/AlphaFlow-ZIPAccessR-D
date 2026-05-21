@@ -2,17 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
 import { getAuthContext } from '@/lib/session';
 import { db } from '@/lib/db';
-import { DASHBOARD_WIDGETS, getDefaultVisibilityMap } from '@/lib/dashboard-widget-definitions';
+import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap } from '@/lib/dashboard-widget-definitions';
 import { auditUpdate, requestMetadata } from '@/lib/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
 const VALID_WIDGET_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
+const DEFAULT_SIZES = getDefaultSizesMap();
 
 // ── Storage format ─────────────────────────────────────────────────
 // v1 (legacy): { widgetId: boolean }                — pure visibility map
-// v2 (current): { v: 2, visibility: {...}, order: [...] }
+// v2 (current): { v: 2, visibility: {...}, order: [...], sizes: {...} }
 
 interface WidgetSettingsV1 {
   [key: string]: boolean;
@@ -22,16 +23,17 @@ interface WidgetSettingsV2 {
   v: 2;
   visibility: Record<string, boolean>;
   order: string[];
+  sizes?: Record<string, 'full' | 'half'>;
 }
 
-function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[] } {
+function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, 'full' | 'half'> } {
   const parsed = raw;
 
   // v1 format — plain { widgetId: boolean }
   if (parsed !== null && typeof parsed === 'object' && !('v' in parsed)) {
     const legacy = parsed as WidgetSettingsV1;
     const defaults = getDefaultVisibilityMap();
-    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER] };
+    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES } };
   }
 
   // v2 format
@@ -44,11 +46,13 @@ function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>;
       ...v2.order.filter((id) => VALID_WIDGET_IDS.has(id)),
       ...DEFAULT_ORDER.filter((id) => !v2.order.includes(id)),
     ];
-    return { visibility, order };
+    // Merge sizes with defaults
+    const sizes = { ...DEFAULT_SIZES, ...(v2.sizes || {}) };
+    return { visibility, order, sizes };
   }
 
   // Fallback
-  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER] };
+  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES } };
 }
 
 // ── GET ────────────────────────────────────────────────────────────
@@ -66,11 +70,13 @@ export async function GET(request: NextRequest) {
 
   let visibility: Record<string, boolean>;
   let order: string[];
+  let sizes: Record<string, 'full' | 'half'>;
 
   if (company?.dashboardWidgets) {
     const normalized = normalizeSettings(company.dashboardWidgets);
     visibility = normalized.visibility;
     order = normalized.order;
+    sizes = normalized.sizes;
   } else {
     // No saved preferences — fall back to AppOwner's company (AlphaAi) or hardcoded defaults
     const appOwnerCompany = await db.company.findUnique({
@@ -82,15 +88,17 @@ export async function GET(request: NextRequest) {
       const normalized = normalizeSettings(appOwnerCompany.dashboardWidgets);
       visibility = normalized.visibility;
       order = normalized.order;
+      sizes = normalized.sizes;
     } else {
       visibility = getDefaultVisibilityMap();
       order = [...DEFAULT_ORDER];
+      sizes = { ...DEFAULT_SIZES };
     }
   }
 
   const isAppOwner = ctx.isSuperDev && ctx.activeCompanyName === 'AlphaAi';
 
-  return NextResponse.json({ widgets: visibility, order, isAppOwner });
+  return NextResponse.json({ widgets: visibility, order, sizes, isAppOwner });
 }
 
 // ── PUT ────────────────────────────────────────────────────────────
@@ -110,7 +118,11 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { widgets, order } = body as { widgets: Record<string, boolean>; order: string[] };
+  const { widgets, order, sizes } = body as {
+    widgets: Record<string, boolean>;
+    order: string[];
+    sizes?: Record<string, 'full' | 'half'>;
+  };
 
   if (!widgets || typeof widgets !== 'object') {
     return NextResponse.json({ error: 'Invalid payload: "widgets" object required' }, { status: 400 });
@@ -142,12 +154,32 @@ export async function PUT(request: NextRequest) {
     }
   }
 
+  // Validate sizes if provided
+  if (sizes && typeof sizes === 'object') {
+    for (const [id, size] of Object.entries(sizes)) {
+      if (!VALID_WIDGET_IDS.has(id)) {
+        return NextResponse.json(
+          { error: `Invalid widget ID in sizes: "${id}"` },
+          { status: 400 },
+        );
+      }
+      if (size !== 'full' && size !== 'half') {
+        return NextResponse.json(
+          { error: `Invalid size for "${id}": must be "full" or "half"` },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   // Build v2 format payload
   const finalOrder = order && order.length > 0 ? order : DEFAULT_ORDER;
+  const mergedSizes = { ...DEFAULT_SIZES, ...(sizes || {}) };
   const payload: WidgetSettingsV2 = {
     v: 2,
     visibility: widgets,
     order: finalOrder,
+    sizes: mergedSizes,
   };
 
   // Capture old widgets for audit
