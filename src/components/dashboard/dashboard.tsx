@@ -739,6 +739,72 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     }));
   }, [hasDoubleEntryData, allPostedJournalEntries, dateRange]);
 
+  // Daily/Monthly hybrid chart — daily granularity for recent 2 months, monthly for older
+  const dailyRevenueChart = useMemo(() => {
+    if (!hasDoubleEntryData) return [];
+    const now = dateRange ? dateRange.to : new Date();
+    const dataPoints: Array<{ month: string; revenue: number; expenses: number; net: number; label: string }> = [];
+
+    // Initialize months from range start to end
+    const rangeStart = dateRange ? dateRange.from : subMonths(new Date(), 5);
+    let d = startOfMonth(rangeStart);
+    const endMonth = startOfMonth(now);
+    while (d <= endMonth) {
+      const key = format(d, 'yyyy-MM');
+      dataPoints.push({ month: key, revenue: 0, expenses: 0, net: 0, label: format(d, 'MMM') });
+      d = addMonths(d, 1);
+    }
+
+    // Determine which months get daily breakdown
+    const currentMonthKey = format(now, 'yyyy-MM');
+    const prevMonthKey = format(subMonths(now, 1), 'yyyy-MM');
+
+    // Aggregate from all journal entries
+    allPostedJournalEntries.forEach((entry) => {
+      const entryDate = new Date(entry.date);
+      const month = entry.date.substring(0, 7);
+
+      if (month === currentMonthKey || month === prevMonthKey) {
+        // Daily aggregation for recent months
+        const dayKey = entry.date; // "2025-05-21"
+        const dayLabel = format(entryDate, 'MMM d');
+        let dayEntry = dataPoints.find(dp => dp.month === dayKey);
+        if (!dayEntry) {
+          // Insert after the month summary entry
+          const monthIdx = dataPoints.findIndex(dp => dp.month === month);
+          if (monthIdx >= 0) {
+            dataPoints.splice(monthIdx + 1, 0, { month: dayKey, revenue: 0, expenses: 0, net: 0, label: dayLabel });
+            dayEntry = dataPoints[dataPoints.length - 1];
+          }
+        }
+        if (dayEntry) {
+          entry.lines.forEach((line) => {
+            if (line.account.type === 'REVENUE') dayEntry.revenue += line.credit - line.debit;
+            else if (line.account.type === 'EXPENSE') dayEntry.expenses += line.debit - line.credit;
+          });
+          dayEntry.net = dayEntry.revenue - dayEntry.expenses;
+        }
+      } else {
+        // Monthly aggregation for older months
+        const monthEntry = dataPoints.find(dp => dp.month === month);
+        if (monthEntry) {
+          entry.lines.forEach((line) => {
+            if (line.account.type === 'REVENUE') monthEntry.revenue += line.credit - line.debit;
+            else if (line.account.type === 'EXPENSE') monthEntry.expenses += line.debit - line.credit;
+          });
+          monthEntry.net = monthEntry.revenue - monthEntry.expenses;
+        }
+      }
+    });
+
+    return dataPoints.map((m) => ({
+      ...m,
+      revenue: Math.round(m.revenue * 100) / 100,
+      expenses: Math.round(m.expenses * 100) / 100,
+      net: Math.round(m.net * 100) / 100,
+    }));
+  }, [hasDoubleEntryData, allPostedJournalEntries, dateRange]);
+
   // Top 5 accounts by activity
   const topAccounts = useMemo(() => {
     if (!ledgerAccounts || ledgerAccounts.length === 0) return [];
@@ -1314,7 +1380,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="flex flex-col gap-4 lg:gap-6">
+        <div className="flex flex-col gap-3 lg:gap-4">
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
@@ -1378,8 +1444,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           MODE: Double-Entry Dashboard
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Stat Cards ──────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }}>
           {isWidgetVisible('kpi-cards') && (
+          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger-children">
             <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
               <StatsCard
@@ -1419,12 +1485,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               />
             </div>
           </div>
-          )}
           </div>
+          )}
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }}>
           {isWidgetVisible('pnl-result') && incomeStatement && (
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }}>
               <Card className={`hover-lift overflow-hidden rounded-2xl sm:rounded-xl border-0 ${
                 incomeStatement.netResult >= 0
                   ? 'bg-gradient-to-br from-[#edf5ef] to-[#f0fdf9] dark:from-[#142e24] dark:to-[#1a2e2b]'
@@ -1514,12 +1580,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </div>
                 </CardContent>
               </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Cash Position ────────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }}>
           {isWidgetVisible('cash-position') && balanceSheet && (
+          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }}>
               <Card className="hover-lift rounded-2xl sm:rounded-xl bg-gradient-to-br from-[#f0fdf9] to-[#edf4f7] dark:from-[#1a2e2b] dark:to-[#1e2e32] border border-[#d1e7dd]/50 dark:border-[#2a3e38]/50">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1647,13 +1713,13 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Financial Health Score ────────────────────── */}
-          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }}>
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]">
+          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className="w-full">
+            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
@@ -1734,12 +1800,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </div>
                 </CardContent>
               </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Monthly Comparison ────────────────────── */}
-          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }}>
           {isWidgetVisible('monthly-comparison') && monthlyComparison && (
+          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Revenue Change */}
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#edf5ef] dark:from-gray-900 dark:to-[#242e26]">
@@ -1868,12 +1934,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </CardContent>
             </Card>
           </div>
-          )}
           </div>
+          )}
 
           {/* ─── Cash Flow Trend Mini Chart ────────────────────────── */}
+          {isWidgetVisible('cash-flow-trend') && dailyRevenueChart.length > 0 && (
           <div style={{ order: widgetOrderMap['cash-flow-trend'] ?? 999 }}>
-          {isWidgetVisible('cash-flow-trend') && monthlyRevenueChart.length > 0 && (
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -1903,9 +1969,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
                 <div className="h-28 sm:h-32">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyRevenueChart.slice(-6)} barGap={3} barCategoryGap="25%">
+                    <BarChart data={dailyRevenueChart} barGap={3} barCategoryGap="25%">
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.08)" vertical={false} />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={11} tickLine={false} axisLine={false} />
+                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} angle={-45} textAnchor="end" height={50} />
                       <YAxis stroke="#b0a89e" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Bar dataKey="revenue" fill="#7c9a82" radius={[3, 3, 0, 0]} name="revenue" />
@@ -1915,12 +1981,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Quick Actions Widget ──────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }}>
           {isWidgetVisible('quick-actions') && (
+          <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }}>
           <Card className="stat-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1967,12 +2033,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
             </CardContent>
           </Card>
-          )}
           </div>
+          )}
 
           {/* ─── SAF-T Export Widget ────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }}>
           {isWidgetVisible('saft-export') && (
+          <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }}>
           <Card className="stat-card cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center gap-4">
@@ -1998,12 +2064,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
             </CardContent>
           </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
-          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }}>
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
+          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -2093,13 +2159,13 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── VAT Breakdown Pie Chart ─────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }}>
           {isWidgetVisible('vat-breakdown') && (
-            <Card className="stat-card">
+          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className="w-full">
+            <Card className="stat-card lg:max-w-lg lg:mx-auto">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -2150,12 +2216,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
-          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }}>
           {isWidgetVisible('revenue-expenses-chart') && (
+          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2164,17 +2230,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     {language === 'da' ? 'Omsætning vs Omkostninger' : 'Revenue vs Expenses'}
                   </CardTitle>
                   <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                    {monthlyRevenueChart.length > 0 ? `${monthlyRevenueChart[0]?.label}–${monthlyRevenueChart[monthlyRevenueChart.length - 1]?.label}` : ''}
+                    {dailyRevenueChart.length > 0 ? `${dailyRevenueChart[0]?.label}–${dailyRevenueChart[dailyRevenueChart.length - 1]?.label}` : ''}
                   </span>
                 </div>
               </CardHeader>
               <CardContent>
-                {monthlyRevenueChart.length > 0 ? (
+                {dailyRevenueChart.length > 0 ? (
                   <div className="h-64 min-h-[200px] sm:min-h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={monthlyRevenueChart} barGap={2} barCategoryGap="20%">
+                      <BarChart data={dailyRevenueChart} barGap={2} barCategoryGap="20%">
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                        <XAxis dataKey="label" stroke="#b0a89e" fontSize={12} />
+                        <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
                         <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} />
                         <RechartsTooltip content={<CustomTooltip />} />
                         <Legend
@@ -2207,12 +2273,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Net Revenue Area Chart ─────────────────────────── */}
+          {isWidgetVisible('net-result-chart') && dailyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
           <div style={{ order: widgetOrderMap['net-result-chart'] ?? 999 }}>
-          {isWidgetVisible('net-result-chart') && monthlyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2228,9 +2294,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               <CardContent>
                 <div className="h-56 min-h-[200px] sm:min-h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={monthlyRevenueChart}>
+                    <AreaChart data={dailyRevenueChart}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={12} />
+                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
                       <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <defs>
@@ -2252,39 +2318,47 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Expense Category Analysis ──────────────────────── */}
+          {isWidgetVisible('expense-analysis') && (
           <div style={{ order: widgetOrderMap['expense-analysis'] ?? 999 }}>
-          {isWidgetVisible('expense-analysis') && <ExpenseAnalysis dateRange={dateRange} />}
+            <ExpenseAnalysis dateRange={dateRange} />
           </div>
+          )}
 
           {/* ─── Profit & Loss Waterfall ────────────────────────── */}
+          {isWidgetVisible('profit-loss-waterfall') && (
           <div style={{ order: widgetOrderMap['profit-loss-waterfall'] ?? 999 }}>
-          {isWidgetVisible('profit-loss-waterfall') && <ProfitLossWaterfall dateRange={dateRange} />}
+            <ProfitLossWaterfall dateRange={dateRange} />
           </div>
+          )}
 
           {/* ─── Financial Health Detail ────────────────────── */}
-          <div style={{ order: widgetOrderMap['financial-health-detail'] ?? 999 }}>
           {isWidgetVisible('financial-health-detail') && (
+          <div style={{ order: widgetOrderMap['financial-health-detail'] ?? 999 }}>
             <FinancialHealthWidget dateRange={dateRange} />
-          )}
           </div>
+          )}
 
           {/* ─── Cash Flow Forecast ──────────────────────────────── */}
+          {isWidgetVisible('cash-flow-forecast') && (
           <div style={{ order: widgetOrderMap['cash-flow-forecast'] ?? 999 }}>
-          {isWidgetVisible('cash-flow-forecast') && <CashFlowForecast dateRange={dateRange} />}
+            <CashFlowForecast dateRange={dateRange} />
           </div>
+          )}
 
           {/* ─── Budget vs Actual ──────────────────────────────── */}
+          {isWidgetVisible('budget-vs-actual') && (
           <div style={{ order: widgetOrderMap['budget-vs-actual'] ?? 999 }}>
-          {isWidgetVisible('budget-vs-actual') && <BudgetVsActualWidget user={user} />}
+            <BudgetVsActualWidget user={user} />
           </div>
+          )}
 
           {/* ─── AI Categorization Suggestions ──────────────────── */}
-          <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }}>
           {isWidgetVisible('ai-categorization') && transactions.length > 0 && (
+          <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }}>
             <Card className="stat-card">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -2317,12 +2391,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 />
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
 
           {/* ─── Recent Journal Entries + Activity Feed ──────────── */}
-          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }}>
           {isWidgetVisible('recent-activity') && (
+          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Recent Journal Entries */}
             <Card className="stat-card">
@@ -2544,12 +2618,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </CardContent>
             </Card>
           </div>
-          )}
           </div>
+          )}
 
           {/* ─── Account Balance Overview ───────────────────────── */}
-          <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }}>
           {isWidgetVisible('active-accounts') && topAccounts.length > 0 && (
+          <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -2606,8 +2680,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </table>
               </CardContent>
             </Card>
-          )}
           </div>
+          )}
         </div>
       </>
       )}
