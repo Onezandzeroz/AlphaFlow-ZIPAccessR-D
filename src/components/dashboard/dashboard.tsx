@@ -62,7 +62,6 @@ import {
   Video,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { WidgetLayoutEditor } from '@/components/dashboard/widget-layout-editor';
 import { StatsCard } from '@/components/shared/stats-card';
 import { DateRangeFilter } from '@/components/shared/date-range-filter';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
@@ -74,6 +73,7 @@ import { CashFlowForecast } from '@/components/cash-flow-forecast/cash-flow-fore
 import { CategorizationSuggestionsList } from '@/components/transaction/categorization-badge';
 import { OnboardingCompleteOverlay } from '@/components/dashboard/onboarding-complete-overlay';
 import { SubscriptionPlansWidget } from '@/components/dashboard/subscription-plans-widget';
+import { WidgetLayoutEditor } from '@/components/dashboard/widget-layout-editor';
 import { useAccessCacheStore } from '@/hooks/use-write-access-guard';
 import { hasAccess } from '@/lib/tokenpay';
 import { format, subMonths, startOfYear, startOfMonth, addMonths } from 'date-fns';
@@ -208,7 +208,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
   const [onboardingVideoExists, setOnboardingVideoExists] = useState(true);
   const [showCompletionOverlay, setShowCompletionOverlay] = useState(false);
-  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex, widgetSizes, setWidgetSize, reorderWidgets } = useDashboardWidgets();
+  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex } = useDashboardWidgets();
 
   // ─── Access status for subscription widget ─────────────────
   const accessResult = useAccessCacheStore((s) => s.result);
@@ -220,27 +220,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     widgetOrder.forEach((id, idx) => { map[id] = idx; });
     return map;
   }, [widgetOrder]);
-
-  // Helper to get dynamic column span based on saved widget size
-  const getWidgetColSpan = useCallback((widgetId: string): string => {
-    // Check direct widget size
-    const size = widgetSizes[widgetId];
-    if (size) return size === 'full' ? 'lg:col-span-2' : 'lg:col-span-1';
-    // Parent mapping for split widgets that aren't in DASHBOARD_WIDGETS
-    const parentMap: Record<string, string> = {
-      'pnl-result': 'pnl-cash',
-      'cash-position': 'pnl-cash',
-      'vat-breakdown': 'vat-charts',
-      'revenue-expenses-chart': 'vat-charts',
-    };
-    const parentId = parentMap[widgetId];
-    if (parentId) {
-      const parentSize = widgetSizes[parentId];
-      if (parentSize) return parentSize === 'full' ? 'lg:col-span-2' : 'lg:col-span-1';
-    }
-    // Default to full width
-    return 'lg:col-span-2';
-  }, [widgetSizes]);
 
   // ─── Date helpers ───────────────────────────────────────────────
 
@@ -1084,7 +1063,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     },
   ];
 
-  // ─── Widget Layout Editor (replaces old WidgetPicker) ─────────────
+  // ─── Widget Picker (replaced by WidgetLayoutEditor) ───────────
 
   // ─── Render ─────────────────────────────────────────────────────
 
@@ -1294,11 +1273,10 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+        <div className="flex flex-col gap-3 lg:gap-4">
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
-      <div className="lg:col-span-2">
       <PageHeader
         title={t('dashboard')}
         description={language === 'da'
@@ -1320,19 +1298,15 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
         )}
       />
-      </div>
       )}
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
       {showSubscriptionWidget && (
-        <div className="lg:col-span-2">
-          <SubscriptionPlansWidget />
-        </div>
+        <SubscriptionPlansWidget />
       )}
 
       {/* Demo Mode Banner */}
       {demoModeEnabled && !isLoading && (
-      <div className="lg:col-span-2">
         <div className="flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50">
           <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
             <FlaskConical className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -1357,7 +1331,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
             {language === 'da' ? 'Tilbage til min data' : 'Back to My Data'}
           </Button>
         </div>
-      </div>
       )}
 
       {/* ═══════════════════════════════════════════════════════════
@@ -1365,7 +1338,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Stat Cards ──────────────────────────────── */}
           {isWidgetVisible('kpi-cards') && (
-          <div className={getWidgetColSpan('kpi-cards')}>
+          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger-children">
             <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
               <StatsCard
@@ -1410,7 +1383,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
-          <div className={getWidgetColSpan('pnl-result')}>
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }}>
               <Card className={`hover-lift overflow-hidden rounded-2xl sm:rounded-xl border-0 ${
                 incomeStatement.netResult >= 0
                   ? 'bg-gradient-to-br from-[#edf5ef] to-[#f0fdf9] dark:from-[#142e24] dark:to-[#1a2e2b]'
@@ -1505,7 +1478,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Cash Position ────────────────────────────────── */}
           {isWidgetVisible('cash-position') && balanceSheet && (
-          <div className={getWidgetColSpan('cash-position')}>
+          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }}>
               <Card className="hover-lift rounded-2xl sm:rounded-xl bg-gradient-to-br from-[#f0fdf9] to-[#edf4f7] dark:from-[#1a2e2b] dark:to-[#1e2e32] border border-[#d1e7dd]/50 dark:border-[#2a3e38]/50">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1638,7 +1611,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-          <div className={getWidgetColSpan('financial-health-score')}>
+          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className="w-full">
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center gap-2 mb-4">
@@ -1725,7 +1698,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Monthly Comparison ────────────────────── */}
           {isWidgetVisible('monthly-comparison') && monthlyComparison && (
-          <div className={getWidgetColSpan('monthly-comparison')}>
+          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {/* Revenue Change */}
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#edf5ef] dark:from-gray-900 dark:to-[#242e26]">
@@ -1859,7 +1832,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Cash Flow Trend Mini Chart ────────────────────────── */}
           {isWidgetVisible('cash-flow-trend') && dailyRevenueChart.length > 0 && (
-          <div className={getWidgetColSpan('cash-flow-trend')}>
+          <div style={{ order: widgetOrderMap['cash-flow-trend'] ?? 999 }}>
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -1906,7 +1879,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Quick Actions Widget ──────────────────────────────── */}
           {isWidgetVisible('quick-actions') && (
-          <div className={getWidgetColSpan('quick-actions')}>
+          <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }}>
           <Card className="stat-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1958,7 +1931,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── SAF-T Export Widget ────────────────────────────── */}
           {isWidgetVisible('saft-export') && (
-          <div className={getWidgetColSpan('saft-export')}>
+          <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }}>
           <Card className="stat-card cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center gap-4">
@@ -1989,7 +1962,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
-          <div className={getWidgetColSpan('invoice-overview')}>
+          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -2084,7 +2057,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── VAT Breakdown Pie Chart ─────────────────────────────── */}
           {isWidgetVisible('vat-breakdown') && (
-          <div className={getWidgetColSpan('vat-breakdown')}>
+          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className="w-full">
             <Card className="stat-card lg:max-w-lg lg:mx-auto">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2141,7 +2114,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
           {isWidgetVisible('revenue-expenses-chart') && (
-          <div className={getWidgetColSpan('revenue-expenses-chart')}>
+          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2198,7 +2171,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Net Revenue Area Chart ─────────────────────────── */}
           {isWidgetVisible('net-result-chart') && dailyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
-          <div className={getWidgetColSpan('net-result-chart')}>
+          <div style={{ order: widgetOrderMap['net-result-chart'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2243,42 +2216,42 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Expense Category Analysis ──────────────────────── */}
           {isWidgetVisible('expense-analysis') && (
-          <div className={getWidgetColSpan('expense-analysis')}>
+          <div style={{ order: widgetOrderMap['expense-analysis'] ?? 999 }}>
             <ExpenseAnalysis dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Profit & Loss Waterfall ────────────────────────── */}
           {isWidgetVisible('profit-loss-waterfall') && (
-          <div className={getWidgetColSpan('profit-loss-waterfall')}>
+          <div style={{ order: widgetOrderMap['profit-loss-waterfall'] ?? 999 }}>
             <ProfitLossWaterfall dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Financial Health Detail ────────────────────── */}
           {isWidgetVisible('financial-health-detail') && (
-          <div className={getWidgetColSpan('financial-health-detail')}>
+          <div style={{ order: widgetOrderMap['financial-health-detail'] ?? 999 }}>
             <FinancialHealthWidget dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Cash Flow Forecast ──────────────────────────────── */}
           {isWidgetVisible('cash-flow-forecast') && (
-          <div className={getWidgetColSpan('cash-flow-forecast')}>
+          <div style={{ order: widgetOrderMap['cash-flow-forecast'] ?? 999 }}>
             <CashFlowForecast dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Budget vs Actual ──────────────────────────────── */}
           {isWidgetVisible('budget-vs-actual') && (
-          <div className={getWidgetColSpan('budget-vs-actual')}>
+          <div style={{ order: widgetOrderMap['budget-vs-actual'] ?? 999 }}>
             <BudgetVsActualWidget user={user} />
           </div>
           )}
 
           {/* ─── AI Categorization Suggestions ──────────────────── */}
           {isWidgetVisible('ai-categorization') && transactions.length > 0 && (
-          <div className={getWidgetColSpan('ai-categorization')}>
+          <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }}>
             <Card className="stat-card">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -2316,7 +2289,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Recent Journal Entries + Activity Feed ──────────── */}
           {isWidgetVisible('recent-activity') && (
-          <div className={getWidgetColSpan('recent-activity')}>
+          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Recent Journal Entries */}
             <Card className="stat-card">
@@ -2543,7 +2516,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Account Balance Overview ───────────────────────── */}
           {isWidgetVisible('active-accounts') && topAccounts.length > 0 && (
-          <div className={getWidgetColSpan('active-accounts')}>
+          <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }}>
             <Card className="stat-card">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">

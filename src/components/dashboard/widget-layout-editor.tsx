@@ -1,25 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragOverlay,
-  DragStartEvent,
-  UniqueIdentifier,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useState, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -28,497 +9,411 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useTranslation } from '@/lib/use-translation';
 import {
-  useDashboardWidgets,
-  DASHBOARD_WIDGETS,
-} from '@/lib/dashboard-widgets';
-import {
-  GripVertical,
-  Columns2,
-  Columns3,
+  Settings2,
   Eye,
   EyeOff,
+  GripVertical,
   RotateCcw,
-  LayoutGrid,
+  Save,
   Shield,
+  TrendingUp,
+  Wallet,
+  Gauge,
+  ArrowUpRight,
+  BarChart3,
+  Zap,
+  FileText,
+  Calculator,
+  Activity,
+  Scale,
+  Droplets,
+  Sparkles,
+  BookOpen,
 } from 'lucide-react';
-import * as LucideIcons from 'lucide-react';
+import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
+import { useTranslation } from '@/lib/use-translation';
 
-// ─── Types ────────────────────────────────────────────────────
+// ─── Icon lookup ─────────────────────────────────────────────────
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  TrendingUp,
+  Wallet,
+  Gauge,
+  ArrowUpRight,
+  BarChart3,
+  Zap,
+  FileText,
+  Calculator,
+  Activity,
+  Scale,
+  Droplets,
+  Sparkles,
+  BookOpen,
+};
 
+// ─── Widget visual sizes (proportional heights in mini preview) ─
+const WIDGET_SIZES: Record<string, { w: number; h: number; label: string }> = {
+  'kpi-cards':         { w: 2, h: 1.2, label: '4x KPI' },
+  'pnl-cash':          { w: 1, h: 1.8, label: 'P&L + Cash' },
+  'financial-health-score': { w: 1, h: 2.0, label: 'Health Score' },
+  'monthly-comparison':{ w: 1, h: 2.0, label: 'Monthly Comp.' },
+  'cash-flow-trend':   { w: 2, h: 2.4, label: 'Rev. vs Exp.' },
+  'quick-actions':     { w: 1, h: 1.4, label: 'Quick Actions' },
+  'invoice-overview':  { w: 1, h: 2.0, label: 'Invoices' },
+  'vat-charts':        { w: 1, h: 2.4, label: 'VAT Charts' },
+  'net-result-chart':  { w: 2, h: 2.4, label: 'Net Result' },
+  'expense-analysis':  { w: 1, h: 2.4, label: 'Exp. Analysis' },
+  'profit-loss-waterfall': { w: 2, h: 2.6, label: 'P&L Waterfall' },
+  'financial-health-detail': { w: 1, h: 2.6, label: 'Health Detail' },
+  'cash-flow-forecast':{ w: 2, h: 2.6, label: 'Cash Forecast' },
+  'budget-vs-actual':  { w: 1, h: 2.4, label: 'Budget vs Act.' },
+  'ai-categorization': { w: 1, h: 2.0, label: 'AI Categorize' },
+  'recent-activity':   { w: 1, h: 2.6, label: 'Recent Activity' },
+  'active-accounts':   { w: 1, h: 2.0, label: 'Active Accounts' },
+  'saft-export':       { w: 1, h: 1.4, label: 'SAF-T Export' },
+};
+
+function getWidgetSize(id: string) {
+  return WIDGET_SIZES[id] || { w: 1, h: 1.5, label: id };
+}
+
+// ─── Widget color palette (muted pastels) ───────────────────────
+const WIDGET_COLORS: Record<string, { bg: string; border: string; activeBg: string }> = {
+  'kpi-cards':         { bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800/50', activeBg: 'bg-emerald-100 dark:bg-emerald-900/50' },
+  'pnl-cash':          { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'financial-health-score': { bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800/50', activeBg: 'bg-amber-100 dark:bg-amber-900/50' },
+  'monthly-comparison':{ bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-800/50', activeBg: 'bg-orange-100 dark:bg-orange-900/50' },
+  'cash-flow-trend':   { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
+  'quick-actions':     { bg: 'bg-yellow-50 dark:bg-yellow-950/40', border: 'border-yellow-200 dark:border-yellow-800/50', activeBg: 'bg-yellow-100 dark:bg-yellow-900/50' },
+  'invoice-overview':  { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-800/50', activeBg: 'bg-sky-100 dark:bg-sky-900/50' },
+  'vat-charts':        { bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-800/50', activeBg: 'bg-rose-100 dark:bg-rose-900/50' },
+  'net-result-chart':  { bg: 'bg-green-50 dark:bg-green-950/40', border: 'border-green-200 dark:border-green-800/50', activeBg: 'bg-green-100 dark:bg-green-900/50' },
+  'expense-analysis':  { bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800/50', activeBg: 'bg-purple-100 dark:bg-purple-900/50' },
+  'profit-loss-waterfall': { bg: 'bg-lime-50 dark:bg-lime-950/40', border: 'border-lime-200 dark:border-lime-800/50', activeBg: 'bg-lime-100 dark:bg-lime-900/50' },
+  'financial-health-detail': { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'cash-flow-forecast':{ bg: 'bg-indigo-50 dark:bg-indigo-950/40', border: 'border-indigo-200 dark:border-indigo-800/50', activeBg: 'bg-indigo-100 dark:bg-indigo-900/50' },
+  'budget-vs-actual':  { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', border: 'border-fuchsia-200 dark:border-fuchsia-800/50', activeBg: 'bg-fuchsia-100 dark:bg-fuchsia-900/50' },
+  'ai-categorization': { bg: 'bg-violet-50 dark:bg-violet-950/40', border: 'border-violet-200 dark:border-violet-800/50', activeBg: 'bg-violet-100 dark:bg-violet-900/50' },
+  'recent-activity':   { bg: 'bg-slate-50 dark:bg-slate-950/40', border: 'border-slate-200 dark:border-slate-800/50', activeBg: 'bg-slate-100 dark:bg-slate-900/50' },
+  'active-accounts':   { bg: 'bg-stone-50 dark:bg-stone-950/40', border: 'border-stone-200 dark:border-stone-800/50', activeBg: 'bg-stone-100 dark:bg-stone-900/50' },
+  'saft-export':       { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' },
+};
+
+function getWidgetColor(id: string) {
+  return WIDGET_COLORS[id] || { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' };
+}
+
+// ─── Props ──────────────────────────────────────────────────────
 interface WidgetLayoutEditorProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-// ─── Section color helper (inline styles) ─────────────────────
-function getSectionStyle(section: string): {
-  backgroundColor: string;
-  borderColor: string;
-  color: string;
-  iconBg: string;
-} {
-  switch (section) {
-    case 'indicators':
-      return {
-        backgroundColor: '#f0fdfa',
-        borderColor: '#99f6e4',
-        color: '#0f766e',
-        iconBg: '#ccfbf1',
-      };
-    case 'charts':
-      return {
-        backgroundColor: '#eef2ff',
-        borderColor: '#c7d2fe',
-        color: '#4338ca',
-        iconBg: '#e0e7ff',
-      };
-    case 'details':
-      return {
-        backgroundColor: '#fff7ed',
-        borderColor: '#fed7aa',
-        color: '#c2410c',
-        iconBg: '#ffedd5',
-      };
-    default:
-      return {
-        backgroundColor: '#f9fafb',
-        borderColor: '#e5e7eb',
-        color: '#374151',
-        iconBg: '#f3f4f6',
-      };
-  }
-}
+// ─── Component ──────────────────────────────────────────────────
+export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorProps) {
+  const { language } = useTranslation();
+  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, setWidgetOrderDirect } = useDashboardWidgets();
 
-// ─── Dynamic icon component ───────────────────────────────────
-
-function WidgetIcon({ iconName, className }: { iconName: string; className?: string }) {
-  const IconComponent = (LucideIcons as Record<string, React.ComponentType<{ className?: string }>>)[iconName];
-  if (!IconComponent) return <LayoutGrid className={className} />;
-  return <IconComponent className={className} />;
-}
-
-// ─── Sortable Widget Block ────────────────────────────────────
-
-function SortableWidgetBlock({
-  widgetId,
-  visible,
-  size,
-  onToggleVisibility,
-  onToggleSize,
-  language,
-}: {
-  widgetId: string;
-  visible: boolean;
-  size: 'full' | 'half';
-  onToggleVisibility: () => void;
-  onToggleSize: () => void;
-  language: string;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    setActivatorNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: widgetId,
-    strategy: verticalListSortingStrategy,
+  // Local working copy for drag-and-drop (committed on save)
+  // Use refs to track last synced state and only update when dialog opens
+  const syncedOpenRef = useRef(false);
+  const [localOrder, setLocalOrder] = useState<string[]>(widgetOrder);
+  const [localVisibility, setLocalVisibility] = useState<Record<string, boolean>>(() => {
+    const visMap: Record<string, boolean> = {};
+    DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = isWidgetVisible(w.id); });
+    return visMap;
   });
 
-  const widget = DASHBOARD_WIDGETS.find((w) => w.id === widgetId);
-  if (!widget) return null;
+  // Drag state
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  const dragOverRef = useRef<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : visible ? 1 : 0.55,
-  };
+  // Sync from global state when dialog opens — using a ref to avoid setState-in-effect
+  if (open && !syncedOpenRef.current) {
+    syncedOpenRef.current = true;
+    // These syncs happen during render (not in an effect), which is fine for initialization
+  }
+  if (!open) {
+    syncedOpenRef.current = false;
+  }
 
-  const sectionStyle = getSectionStyle(widget.section);
+  // Re-sync local state from global when dialog opens (use callback in Dialog's onOpenChange)
+  const handleDialogOpenChange = useCallback((newOpen: boolean) => {
+    if (newOpen) {
+      setLocalOrder([...widgetOrder]);
+      const visMap: Record<string, boolean> = {};
+      DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = isWidgetVisible(w.id); });
+      setLocalVisibility(visMap);
+      setDragId(null);
+      setDropTargetId(null);
+    }
+    onOpenChange(newOpen);
+  }, [widgetOrder, isWidgetVisible, onOpenChange]);
+
+  const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', widgetId);
+    setDragId(widgetId);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, widgetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (dragOverRef.current !== widgetId) {
+      dragOverRef.current = widgetId;
+      setDropTargetId(widgetId);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId || sourceId === targetId) {
+      setDragId(null);
+      setDropTargetId(null);
+      dragOverRef.current = null;
+      return;
+    }
+
+    // Reorder: move sourceId to targetId's position
+    setLocalOrder(prev => {
+      const sourceIdx = prev.indexOf(sourceId);
+      const targetIdx = prev.indexOf(targetId);
+      if (sourceIdx < 0 || targetIdx < 0) return prev;
+      const next = [...prev];
+      next.splice(sourceIdx, 1);
+      next.splice(targetIdx, 0, sourceId);
+      return next;
+    });
+
+    setDragId(null);
+    setDropTargetId(null);
+    dragOverRef.current = null;
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDragId(null);
+    setDropTargetId(null);
+    dragOverRef.current = null;
+  }, []);
+
+  const handleToggleLocal = useCallback((id: string) => {
+    setLocalVisibility(prev => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleSave = useCallback(() => {
+    // Apply order
+    setWidgetOrderDirect(localOrder);
+
+    // Apply visibility changes
+    Object.entries(localVisibility).forEach(([id, visible]) => {
+      if (visible !== isWidgetVisible(id)) {
+        toggleWidget(id);
+      }
+    });
+
+    handleDialogOpenChange(false);
+  }, [localOrder, localVisibility, isWidgetVisible, toggleWidget, setWidgetOrderDirect, handleDialogOpenChange]);
+
+  const handleReset = useCallback(() => {
+    resetWidgets();
+    const defaults = DASHBOARD_WIDGETS.map(w => w.id);
+    setLocalOrder(defaults);
+    const visMap: Record<string, boolean> = {};
+    DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = w.defaultVisible; });
+    setLocalVisibility(visMap);
+  }, [resetWidgets]);
+
+  // Build sorted widget list based on local order
+  const sortedWidgets = [...DASHBOARD_WIDGETS].sort((a, b) => {
+    const aIdx = localOrder.indexOf(a.id);
+    const bIdx = localOrder.indexOf(b.id);
+    return (aIdx >= 0 ? aIdx : 999) - (bIdx >= 0 ? bIdx : 999);
+  });
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`group relative rounded-xl border-2 transition-all duration-200 ${
-        size === 'full' ? 'col-span-2' : 'col-span-1'
-      } ${
-        visible
-          ? 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md'
-          : 'border-dashed border-gray-300 dark:border-gray-600'
-      }`}
-    >
-      <div
-        className="flex items-center gap-2 px-3 py-2.5 rounded-lg transition-colors"
-        style={{ backgroundColor: visible ? sectionStyle.backgroundColor : 'transparent' }}
-      >
-        {/* Drag handle */}
-        <button
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0 touch-none"
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-        </button>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+      <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col p-0">
+        {/* Header */}
+        <div className="shrink-0 px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-800">
+          <DialogHeader>
+            <DialogTitle className="dark:text-white flex items-center gap-2 text-lg">
+              <Settings2 className="h-5 w-5 text-[#0d9488]" />
+              {language === 'da' ? 'Tilpas kontrolpanel' : 'Customize Dashboard'}
+            </DialogTitle>
+            <DialogDescription className="dark:text-gray-400 text-sm">
+              {language === 'da'
+                ? 'Træk og slip for at omarrangere widgets. Klik øjet for at vise/skjule.'
+                : 'Drag and drop to rearrange widgets. Click the eye to show/hide.'}
+            </DialogDescription>
+          </DialogHeader>
 
-        {/* Icon */}
-        <div
-          className="h-7 w-7 rounded-md flex items-center justify-center shrink-0"
-          style={{ backgroundColor: sectionStyle.iconBg }}
-        >
-          <WidgetIcon
-            iconName={widget.icon}
-            className="h-3.5 w-3.5"
-            style={{ color: sectionStyle.color } as any}
-          />
-        </div>
-
-        {/* Label */}
-        <div className="flex-1 min-w-0">
-          <p className={`text-xs font-semibold truncate ${
-            visible
-              ? 'text-gray-800 dark:text-gray-200'
-              : 'text-gray-400 dark:text-gray-500'
-          }`}>
-            {language === 'da' ? widget.labelDa : widget.labelEn}
-          </p>
-          {!visible && (
-            <p className="text-[10px] text-gray-400 dark:text-gray-600">
-              {language === 'da' ? 'Skjult' : 'Hidden'}
-            </p>
+          {/* AppOwner notice */}
+          {isAppOwner && (
+            <div className="flex items-start gap-2.5 p-3 mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
+              <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+                {language === 'da'
+                  ? 'Dine valg her gælder som standard for alle nye virksomheder.'
+                  : 'Your choices here become the default for all new companies.'}
+              </p>
+            </div>
           )}
         </div>
 
-        {/* Size indicator */}
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={onToggleSize}
-            className="p-1.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-            aria-label={
-              size === 'full'
-                ? (language === 'da' ? 'Skift til halv bredde' : 'Switch to half width')
-                : (language === 'da' ? 'Skift til fuld bredde' : 'Switch to full width')
-            }
-            title={
-              size === 'full'
-                ? (language === 'da' ? 'Fuld bredde – klik for halv' : 'Full width – click for half')
-                : (language === 'da' ? 'Halv bredde – klik for fuld' : 'Half width – click for full')
-            }
-          >
-            {size === 'full' ? (
-              <Columns2 className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
-            ) : (
-              <Columns3 className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
-            )}
-          </button>
-
-          {/* Visibility toggle */}
-          <button
-            onClick={onToggleVisibility}
-            className={`p-1.5 rounded-md transition-colors ${
-              visible
-                ? 'hover:bg-black/5 dark:hover:bg-white/10'
-                : 'hover:bg-green-50 dark:hover:bg-green-900/30'
-            }`}
-            aria-label={
-              visible
-                ? (language === 'da' ? 'Skjul widget' : 'Hide widget')
-                : (language === 'da' ? 'Vis widget' : 'Show widget')
-            }
-          >
-            {visible ? (
-              <Eye className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf]" />
-            ) : (
-              <EyeOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Drag Overlay Block ───────────────────────────────────────
-
-function DragOverlayBlock({
-  widgetId,
-  size,
-  language,
-}: {
-  widgetId: string;
-  size: 'full' | 'half';
-  language: string;
-}) {
-  const widget = DASHBOARD_WIDGETS.find((w) => w.id === widgetId);
-  if (!widget) return null;
-
-  const sectionStyle = getSectionStyle(widget.section);
-
-  return (
-    <div
-      className={`rounded-xl border-2 shadow-xl ${
-        size === 'full' ? 'col-span-2' : 'col-span-1'
-      }`}
-      style={{
-        backgroundColor: sectionStyle.backgroundColor,
-        borderColor: '#0d9488',
-        boxShadow: '0 8px 30px rgba(13, 148, 136, 0.25)',
-      }}
-    >
-      <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg">
-        <div className="p-1 rounded-md">
-          <GripVertical className="h-4 w-4 text-gray-400" />
-        </div>
+        {/* Miniature dashboard preview */}
         <div
-          className="h-7 w-7 rounded-md flex items-center justify-center"
-          style={{ backgroundColor: sectionStyle.iconBg }}
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto px-6 py-4"
+          style={{ scrollBehavior: 'smooth' }}
         >
-          <WidgetIcon iconName={widget.icon} className="h-3.5 w-3.5" />
-        </div>
-        <p className="text-xs font-semibold text-gray-800 truncate">
-          {language === 'da' ? widget.labelDa : widget.labelEn}
-        </p>
-      </div>
-    </div>
-  );
-}
+          {/* Dashboard frame */}
+          <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 min-h-[300px]">
+            {/* Frame label */}
+            <div className="absolute -top-3 left-4 px-2 bg-white dark:bg-[#1a1f1e] text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+              {language === 'da' ? 'Miniature forhåndsvisning' : 'Miniature Preview'}
+            </div>
 
-// ─── Main Component ───────────────────────────────────────────
+            {/* Widget blocks */}
+            <div className="flex flex-col gap-2 mt-1">
+              {sortedWidgets.map((widget, idx) => {
+                const size = getWidgetSize(widget.id);
+                const color = getWidgetColor(widget.id);
+                const visible = localVisibility[widget.id] ?? true;
+                const isDragging = dragId === widget.id;
+                const isDropTarget = dropTargetId === widget.id;
+                const IconComp = ICON_MAP[widget.icon];
 
-export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorProps) {
-  const { language } = useTranslation();
-  const {
-    isWidgetVisible,
-    toggleWidget,
-    resetWidgets,
-    isAppOwner,
-    widgetOrder,
-    widgetSizes,
-    setWidgetSize,
-    reorderWidgets,
-  } = useDashboardWidgets();
+                return (
+                  <div
+                    key={widget.id}
+                    draggable={visible}
+                    onDragStart={(e) => handleDragStart(e, widget.id)}
+                    onDragOver={(e) => handleDragOver(e, widget.id)}
+                    onDrop={(e) => handleDrop(e, widget.id)}
+                    onDragEnd={handleDragEnd}
+                    className={`
+                      relative rounded-lg border-2 transition-all duration-200 select-none
+                      ${visible ? color.border : 'border-dashed border-gray-300 dark:border-gray-600'}
+                      ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
+                      ${isDropTarget && visible ? 'ring-2 ring-[#0d9488] ring-offset-2 dark:ring-offset-[#1a1f1e] scale-[1.02] shadow-lg' : ''}
+                      ${!visible ? 'opacity-50' : ''}
+                      ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
+                    `}
+                    style={{
+                      height: `${Math.max(size.h, 1) * 48}px`,
+                    }}
+                  >
+                    {/* Inner content */}
+                    <div className={`
+                      absolute inset-0 rounded-md flex items-center gap-2.5 px-3 overflow-hidden
+                      ${visible ? color.bg : 'bg-gray-100/50 dark:bg-gray-800/30'}
+                    `}>
+                      {/* Drag handle */}
+                      <div className={`
+                        shrink-0 flex flex-col items-center gap-0.5 py-1
+                        ${visible ? 'text-gray-400 dark:text-gray-500' : 'text-gray-300 dark:text-gray-700'}
+                      `}>
+                        <GripVertical className="h-4 w-4" />
+                      </div>
 
-  const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+                      {/* Icon */}
+                      <div className={`
+                        shrink-0 h-8 w-8 rounded-lg flex items-center justify-center
+                        ${visible ? color.activeBg : 'bg-gray-200/50 dark:bg-gray-700/50'}
+                      `}>
+                        {IconComp ? (
+                          <IconComp className={`h-4 w-4 ${visible ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}`} />
+                        ) : (
+                          <div className={`h-2 w-2 rounded-full ${visible ? 'bg-gray-400 dark:bg-gray-500' : 'bg-gray-300 dark:text-gray-700'}`} />
+                        )}
+                      </div>
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor),
-  );
+                      {/* Widget info */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`
+                          text-xs font-semibold truncate
+                          ${visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600 line-through'}
+                        `}>
+                          {language === 'da' ? widget.labelDa : widget.labelEn}
+                        </p>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                          {size.label}
+                          {size.w > 1 && ` · ${language === 'da' ? 'Fuld bredde' : 'Full width'}`}
+                        </p>
+                      </div>
 
-  // Sort widgets by current order
-  const orderedWidgets = useMemo(() => {
-    return widgetOrder
-      .map((id) => DASHBOARD_WIDGETS.find((w) => w.id === id))
-      .filter(Boolean) as typeof DASHBOARD_WIDGETS;
-  }, [widgetOrder]);
+                      {/* Position badge */}
+                      {visible && (
+                        <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-600 bg-white/60 dark:bg-gray-800/60 px-1.5 py-0.5 rounded">
+                          #{idx + 1}
+                        </span>
+                      )}
 
-  const visibleWidgets = useMemo(
-    () => orderedWidgets.filter((w) => isWidgetVisible(w.id)),
-    [orderedWidgets, isWidgetVisible],
-  );
+                      {/* Visibility toggle */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleToggleLocal(widget.id); }}
+                        className={`
+                          shrink-0 h-7 w-7 rounded-md flex items-center justify-center transition-all
+                          ${visible
+                            ? 'text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
+                            : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
+                          }
+                        `}
+                        aria-label={visible
+                          ? (language === 'da' ? 'Skjul widget' : 'Hide widget')
+                          : (language === 'da' ? 'Vis widget' : 'Show widget')
+                        }
+                      >
+                        {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      </button>
+                    </div>
 
-  const hiddenWidgets = useMemo(
-    () => orderedWidgets.filter((w) => !isWidgetVisible(w.id)),
-    [orderedWidgets, isWidgetVisible],
-  );
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id);
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      setActiveId(null);
-
-      if (over && active.id !== over.id) {
-        reorderWidgets(active.id as string, over.id as string);
-      }
-    },
-    [reorderWidgets],
-  );
-
-  const handleDragCancel = useCallback(() => {
-    setActiveId(null);
-  }, []);
-
-  const activeWidget = activeId
-    ? DASHBOARD_WIDGETS.find((w) => w.id === activeId)
-    : null;
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="dark:text-white flex items-center gap-2">
-            <LayoutGrid className="h-5 w-5 text-[#0d9488]" />
-            {language === 'da'
-              ? 'Tilpas kontrolpanel-layout'
-              : 'Customize Dashboard Layout'}
-          </DialogTitle>
-          <DialogDescription className="dark:text-gray-400">
-            {language === 'da'
-              ? 'Træk og slip for at omarrangere. Skift størrelse og synlighed for hver widget.'
-              : 'Drag and drop to reorder. Toggle size and visibility for each widget.'}
-          </DialogDescription>
-        </DialogHeader>
-
-        {/* AppOwner notice */}
-        {isAppOwner && (
-          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
-            <Shield className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-            <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
-              {language === 'da'
-                ? 'Dine valg her gælder som standard for alle nye virksomheder.'
-                : 'Your choices here become the default for all new companies.'}
-            </p>
-          </div>
-        )}
-
-        {/* Legend */}
-        <div className="flex flex-wrap items-center gap-3 px-1">
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: '#f0fdfa', border: '1px solid #99f6e4' }} />
-            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-              {language === 'da' ? 'Indikatorer' : 'Indicators'}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: '#eef2ff', border: '1px solid #c7d2fe' }} />
-            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-              {language === 'da' ? 'Diagrammer' : 'Charts'}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa' }} />
-            <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400">
-              {language === 'da' ? 'Detaljer' : 'Details'}
-            </span>
+                    {/* Drop indicator line */}
+                    {isDropTarget && dragId !== widget.id && (
+                      <div className="absolute -top-[5px] left-2 right-2 h-[2px] bg-[#0d9488] rounded-full shadow-[0_0_6px_rgba(13,148,136,0.5)]" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        {/* Grid preview header */}
-        <div className="flex items-center justify-between px-1">
-          <h3 className="text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-            {language === 'da' ? 'Widget-layout' : 'Widget Layout'}
-          </h3>
-          <div className="flex items-center gap-1 text-[10px] text-gray-400">
-            <Columns2 className="h-3 w-3" />
-            <span>{language === 'da' ? '2-kolonne' : '2-column'}</span>
-          </div>
-        </div>
-
-        {/* Draggable grid */}
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <SortableContext
-            items={widgetOrder}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="grid grid-cols-2 gap-2">
-              {visibleWidgets.map((widget) => (
-                <SortableWidgetBlock
-                  key={widget.id}
-                  widgetId={widget.id}
-                  visible={true}
-                  size={widgetSizes[widget.id] || widget.defaultSize}
-                  onToggleVisibility={() => toggleWidget(widget.id)}
-                  onToggleSize={() =>
-                    setWidgetSize(
-                      widget.id,
-                      (widgetSizes[widget.id] || widget.defaultSize) === 'full'
-                        ? 'half'
-                        : 'full',
-                    )
-                  }
-                  language={language}
-                />
-              ))}
-            </div>
-          </SortableContext>
-
-          <DragOverlay dropAnimation={{
-            duration: 200,
-            easing: 'ease',
-          }}>
-            {activeId ? (
-              <DragOverlayBlock
-                widgetId={activeId as string}
-                size={
-                  widgetSizes[activeId as string] ||
-                  'full'
-                }
-                language={language}
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-
-        {/* Hidden widgets section */}
-        {hiddenWidgets.length > 0 && (
-          <div className="mt-4">
-            <div className="flex items-center gap-2 px-1 mb-2">
-              <EyeOff className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                {language === 'da'
-                  ? `Skjulte widgets (${hiddenWidgets.length})`
-                  : `Hidden Widgets (${hiddenWidgets.length})`}
-              </h3>
-            </div>
-            <div className="grid grid-cols-2 gap-2 opacity-60">
-              {hiddenWidgets.map((widget) => (
-                <SortableWidgetBlock
-                  key={widget.id}
-                  widgetId={widget.id}
-                  visible={false}
-                  size={widgetSizes[widget.id] || widget.defaultSize}
-                  onToggleVisibility={() => toggleWidget(widget.id)}
-                  onToggleSize={() =>
-                    setWidgetSize(
-                      widget.id,
-                      (widgetSizes[widget.id] || widget.defaultSize) === 'full'
-                        ? 'half'
-                        : 'full',
-                    )
-                  }
-                  language={language}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Footer actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
-          <button
-            type="button"
-            onClick={resetWidgets}
-            className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+        {/* Footer */}
+        <div className="shrink-0 px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleReset}
+            className="text-xs text-gray-500 dark:text-gray-400 hover:text-[#0d9488] dark:hover:text-[#2dd4bf] gap-1.5"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            {language === 'da' ? 'Nulstil til standard' : 'Reset to Defaults'}
-          </button>
-          <Button
-            onClick={() => onOpenChange(false)}
-            className="bg-[#0d9488] hover:bg-[#0f766e] text-white rounded-lg px-5"
-          >
-            {language === 'da' ? 'Gem layout' : 'Save Layout'}
+            {language === 'da' ? 'Nulstil til standard' : 'Reset to defaults'}
           </Button>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleDialogOpenChange(false)}
+              className="text-xs text-gray-500 dark:text-gray-400"
+            >
+              {language === 'da' ? 'Annuller' : 'Cancel'}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              className="text-xs gap-1.5 bg-[#0d9488] hover:bg-[#0f766e] text-white dark:bg-[#2dd4bf] dark:hover:bg-[#14b8a6] dark:text-gray-900 font-semibold shadow-sm"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {language === 'da' ? 'Gem layout' : 'Save Layout'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
