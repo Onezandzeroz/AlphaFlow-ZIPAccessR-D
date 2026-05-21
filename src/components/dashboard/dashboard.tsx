@@ -1025,92 +1025,74 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
         )}
 
-        <div className="space-y-4 mt-2">
-          {/* Sections — widgets grouped visually but ordered across all sections */}
-          {(['indicators', 'charts', 'details'] as const).map((section) => {
-            const sectionWidgets = DASHBOARD_WIDGETS
-              .filter((w) => w.section === section)
-              .sort((a, b) => (widgetOrderMap[a.id] ?? 999) - (widgetOrderMap[b.id] ?? 999));
-            if (sectionWidgets.length === 0) return null;
-            const sectionLabel = section === 'indicators'
-              ? (language === 'da' ? 'Indikatorer' : 'Indicators')
-              : section === 'charts'
-                ? (language === 'da' ? 'Diagrammer' : 'Charts')
-                : (language === 'da' ? 'Detaljer' : 'Details');
-            return (
-              <div key={section}>
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                  {sectionLabel}
-                </p>
-                <div className="space-y-1">
-                  {sectionWidgets.map((w) => {
-                    const orderIdx = widgetOrder.indexOf(w.id);
-                    const isFirst = orderIdx <= 0;
-                    const isLast = orderIdx < 0 || orderIdx >= widgetOrder.length - 1;
-                    return (
-                      <div
-                        key={w.id}
-                        className={`flex items-center gap-1 px-3 py-2.5 rounded-lg border transition-all duration-150 ${
-                          isWidgetVisible(w.id)
-                            ? 'border-[#0d9488]/30 bg-[#f0fdf9]/50 dark:bg-[#0d9488]/10 dark:border-[#2dd4bf]/30'
-                            : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 opacity-60'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleWidget(w.id)}
-                          className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                        >
-                          <div className={`h-5 w-5 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
-                            isWidgetVisible(w.id)
-                              ? 'bg-[#0d9488] border-[#0d9488] dark:bg-[#2dd4bf] dark:border-[#2dd4bf]'
-                              : 'border-gray-300 dark:border-gray-600'
-                          }`}>
-                            {isWidgetVisible(w.id) && <Check className="h-3 w-3 text-white" />}
-                          </div>
-                          <span className={`text-sm font-medium truncate ${
-                            isWidgetVisible(w.id)
-                              ? 'text-gray-900 dark:text-white'
-                              : 'text-gray-500 dark:text-gray-400'
-                          }`}>
-                            {language === 'da' ? w.labelDa : w.labelEn}
-                          </span>
-                        </button>
-                        <div className="flex items-center gap-0.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); moveWidgetUp(w.id); }}
-                            disabled={isFirst}
-                            className={`p-1 rounded-md transition-colors ${
-                              isFirst
-                                ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-700/60'
-                            }`}
-                            aria-label={language === 'da' ? 'Flyt op' : 'Move up'}
-                          >
-                            <ChevronUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); moveWidgetDown(w.id); }}
-                            disabled={isLast}
-                            className={`p-1 rounded-md transition-colors ${
-                              isLast
-                                ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                                : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-700/60'
-                            }`}
-                            aria-label={language === 'da' ? 'Flyt ned' : 'Move down'}
-                          >
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+        <div className="space-y-1 mt-2">
+          {/* All widgets in a single flat list, sorted by dashboard order */}
+          {[...DASHBOARD_WIDGETS]
+            .sort((a, b) => (widgetOrderMap[a.id] ?? 999) - (widgetOrderMap[b.id] ?? 999))
+            .map((w) => {
+              const orderIdx = widgetOrder.indexOf(w.id);
+              const isFirst = orderIdx <= 0;
+              const isLast = orderIdx < 0 || orderIdx >= widgetOrder.length - 1;
+              return (
+                <div
+                  key={w.id}
+                  className={`flex items-center gap-1 px-3 py-2.5 rounded-lg border transition-all duration-150 ${
+                    isWidgetVisible(w.id)
+                      ? 'border-[#0d9488]/30 bg-[#f0fdf9]/50 dark:bg-[#0d9488]/10 dark:border-[#2dd4bf]/30'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 opacity-60'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleWidget(w.id)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    <div className={`h-5 w-5 rounded-md border-2 flex items-center justify-center transition-colors shrink-0 ${
+                      isWidgetVisible(w.id)
+                        ? 'bg-[#0d9488] border-[#0d9488] dark:bg-[#2dd4bf] dark:border-[#2dd4bf]'
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}>
+                      {isWidgetVisible(w.id) && <Check className="h-3 w-3 text-white" />}
+                    </div>
+                    <span className={`text-sm font-medium truncate ${
+                      isWidgetVisible(w.id)
+                        ? 'text-gray-900 dark:text-white'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {language === 'da' ? w.labelDa : w.labelEn}
+                    </span>
+                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); moveWidgetUp(w.id); }}
+                      disabled={isFirst}
+                      className={`p-1 rounded-md transition-colors ${
+                        isFirst
+                          ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-700/60'
+                      }`}
+                      aria-label={language === 'da' ? 'Flyt op' : 'Move up'}
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); moveWidgetDown(w.id); }}
+                      disabled={isLast}
+                      className={`p-1 rounded-md transition-colors ${
+                        isLast
+                          ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                          : 'text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-700/60'
+                      }`}
+                      aria-label={language === 'da' ? 'Flyt ned' : 'Move down'}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
           {/* Reset */}
           <button
             type="button"
@@ -1342,6 +1324,20 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ? `Regnskabsoversigt for ${tm(new Date())}`
           : `Accounting overview for ${tm(new Date())}`
         }
+        action={(
+          <div className="flex items-center gap-1.5 [&_button]:text-white/70 [&_button:hover]:text-white [&_button:hover]:bg-white/15 [&_button]:backdrop-blur-sm">
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setWidgetPickerOpen(true)}
+              className="gap-1.5 text-white/70 hover:text-white hover:bg-white/15 text-xs font-medium shrink-0 h-8 px-3 backdrop-blur-sm"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              {language === 'da' ? 'Tilpas' : 'Customize'}
+            </Button>
+          </div>
+        )}
       />
       )}
 
@@ -1377,20 +1373,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </Button>
         </div>
       )}
-
-      {/* ─── Date Range Filter + Customize (toolbar row) ──────────────── */}
-      <div className="flex items-center justify-end gap-1.5">
-        <DateRangeFilter value={dateRange} onChange={setDateRange} />
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setWidgetPickerOpen(true)}
-          className="gap-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 text-xs font-medium shrink-0 h-8 px-3"
-        >
-          <Settings2 className="h-3.5 w-3.5" />
-          {language === 'da' ? 'Tilpas' : 'Customize'}
-        </Button>
-      </div>
 
       {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
@@ -1440,11 +1422,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           )}
           </div>
 
-          {/* ─── P&L Summary + Cash Position ────────────────────── */}
-          <div style={{ order: widgetOrderMap['pnl-cash'] ?? 999 }}>
-          {isWidgetVisible('pnl-cash') && incomeStatement && balanceSheet && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* P&L Trend Indicator Card */}
+          {/* ─── P&L Summary ──────────────────────────────────── */}
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }}>
+          {isWidgetVisible('pnl-result') && incomeStatement && (
               <Card className={`hover-lift overflow-hidden rounded-2xl sm:rounded-xl border-0 ${
                 incomeStatement.netResult >= 0
                   ? 'bg-gradient-to-br from-[#edf5ef] to-[#f0fdf9] dark:from-[#142e24] dark:to-[#1a2e2b]'
@@ -1534,8 +1514,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </div>
                 </CardContent>
               </Card>
+          )}
+          </div>
 
-              {/* Cash Position Quick View Card */}
+          {/* ─── Cash Position ────────────────────────────────── */}
+          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }}>
+          {isWidgetVisible('cash-position') && balanceSheet && (
               <Card className="hover-lift rounded-2xl sm:rounded-xl bg-gradient-to-br from-[#f0fdf9] to-[#edf4f7] dark:from-[#1a2e2b] dark:to-[#1e2e32] border border-[#d1e7dd]/50 dark:border-[#2a3e38]/50">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1663,7 +1647,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-            </div>
           )}
           </div>
 
@@ -2113,11 +2096,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           )}
           </div>
 
-          {/* ─── Charts Row ─────────────────────────────────────── */}
-          <div style={{ order: widgetOrderMap['vat-charts'] ?? 999 }}>
-          {isWidgetVisible('vat-charts') && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-            {/* VAT Breakdown Pie Chart */}
+          {/* ─── VAT Breakdown Pie Chart ─────────────────────────────── */}
+          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }}>
+          {isWidgetVisible('vat-breakdown') && (
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2169,8 +2150,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
+          )}
+          </div>
 
-            {/* Monthly Revenue vs Expenses Chart */}
+          {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
+          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }}>
+          {isWidgetVisible('revenue-expenses-chart') && (
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2222,7 +2207,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
-          </div>
           )}
           </div>
 
