@@ -1127,7 +1127,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="p-3 lg:p-6 space-y-4 lg:space-y-6">
+    <div className="p-3 lg:p-6">
       {/* ── Mobile completion overlay (animated teal + checkmark) ── */}
       <OnboardingCompleteOverlay
         visible={showCompletionOverlay}
@@ -1332,6 +1332,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
+        <div className="flex flex-col gap-4 lg:gap-6">
+
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
       <PageHeader
@@ -1393,8 +1395,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
           ═══════════════════════════════════════════════════════════ */}
-
-        <div className="flex flex-col gap-4 lg:gap-6">
           {/* ─── KPI Stat Cards ──────────────────────────────── */}
           <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }}>
           {isWidgetVisible('kpi-cards') && (
@@ -2627,6 +2627,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
         </div>
       </>
       )}
+      <WidgetPicker />
     </div>
   );
 }
