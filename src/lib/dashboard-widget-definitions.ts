@@ -66,8 +66,7 @@ export function getDefaultSizesMap(): Record<string, WidgetSize> {
 }
 
 // ─── Grid span lookup ───────────────────────────────────────────
-// 12-column grid system:
-// full = 12, half = 6, third = 4, quarter = 3
+// Kept for backwards compat — not used in the flex-wrap layout
 
 const SIZE_SPAN_MAP: Record<WidgetSize, number> = {
   full: 12,
@@ -87,18 +86,31 @@ export function getWidgetGridSpanById(widgetId: string, sizesMap?: Record<string
   return SIZE_SPAN_MAP[widget.defaultSize] ?? 6;
 }
 
-// ─── Responsive grid span class helper ──────────────────────────
-// 12-column grid:
-// sm: 2-col grid → full = span 2, others = span 1
-// lg: 12-col grid → full = 12, half = 6, third = 4, quarter = 3
+// ─── Flex-wrap width helper ──────────────────────────────────────
+// Dynamic board layout: flex-wrap with percentage widths.
+// gap-3 (12px) on mobile, gap-4 (16px) on lg.
+//
+// With N items per row and (N-1) gaps of G pixels:
+//   item_width = (100% - (N-1)*G) / N
+//
+// full    = 100%              (1 per row, 0 gaps)
+// half    = calc(50% - G/2)   (2 per row, 1 gap)
+// third   = calc(33.333% - 2G/3) (3 per row, 2 gaps)
+// quarter = calc(25% - 3G/4) (4 per row, 3 gaps)
 
 export function getGridSpanClasses(size: WidgetSize): string {
   switch (size) {
-    case 'full':    return 'sm:col-span-2 lg:col-span-12';
-    case 'half':    return 'sm:col-span-1 lg:col-span-6';
-    case 'third':   return 'sm:col-span-1 lg:col-span-4';
-    case 'quarter': return 'sm:col-span-1 lg:col-span-3';
-    default:        return 'sm:col-span-1 lg:col-span-6';
+    case 'full':
+      return 'w-full shrink-0';
+    case 'half':
+      // Mobile: full width | sm: 2-col (gap-3=12px) | lg: flexible (gap-4=16px)
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(50%-8px)] shrink-0';
+    case 'third':
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-10.667px)] shrink-0';
+    case 'quarter':
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(25%-12px)] shrink-0';
+    default:
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(50%-8px)] shrink-0';
   }
 }
 

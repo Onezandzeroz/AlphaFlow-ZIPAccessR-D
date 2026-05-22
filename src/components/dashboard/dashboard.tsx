@@ -1369,11 +1369,11 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 items-start" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
+        <div className="flex flex-wrap gap-3 lg:gap-4 content-start" id="dashboard-grid">
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
-      <div className="sm:col-span-2 lg:col-span-12">
+      <div className="w-full">
       <PageHeader
         title={t('dashboard')}
         description={language === 'da'
@@ -1400,12 +1400,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
       {showSubscriptionWidget && (
-        <div className="sm:col-span-2 lg:col-span-12"><SubscriptionPlansWidget /></div>
+        <div className="w-full"><SubscriptionPlansWidget /></div>
       )}
 
       {/* Demo Mode Banner */}
       {demoModeEnabled && !isLoading && (
-        <div className="sm:col-span-2 lg:col-span-12 flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50">
+        <div className="w-full flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50">
           <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
             <FlaskConical className="h-5 w-5 text-amber-600 dark:text-amber-400" />
           </div>
@@ -1550,8 +1550,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
-          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={`${getWidgetSpanClass('pnl-result')} flex`}>
-              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={getWidgetSpanClass('pnl-result')}>
+              <Card className="stat-card card-hover-lift overflow-hidden flex flex-col">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
@@ -1586,7 +1586,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: P&L breakdown */}
-                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
+                <CardContent className="p-4 sm:p-5 pt-3">
                   <div className="space-y-2.5">
                     {/* Gross Profit */}
                     <div className="flex items-center justify-between text-xs">
@@ -1780,8 +1780,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={`${getWidgetSpanClass('financial-health-score')} flex`}>
-            <Card className="stat-card overflow-hidden flex-1 flex flex-col">
+          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={getWidgetSpanClass('financial-health-score')}>
+            <Card className="stat-card overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center gap-2.5">
                     <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
@@ -1797,7 +1797,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     </div>
                   </div>
                 </div>
-                <CardContent className="p-4 sm:p-5 pt-0 flex-1">
+                <CardContent className="p-4 sm:p-5 pt-0">
 
                   {/* SVG Circular Progress Ring */}
                   <div className="flex items-center justify-center mb-4">
@@ -2186,8 +2186,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
-          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={`${getWidgetSpanClass('invoice-overview')} flex`}>
-            <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
+          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={getWidgetSpanClass('invoice-overview')}>
+            <Card className="stat-card card-hover-lift overflow-hidden flex flex-col">
               {/* Header */}
               <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center justify-between">
@@ -2211,7 +2211,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
 
               {/* Body: invoice stats */}
-              <CardContent className="p-4 sm:p-5 pt-3 flex-1">
+              <CardContent className="p-4 sm:p-5 pt-3">
                 <div className="grid grid-cols-2 gap-3 h-full content-start">
                   {/* Outstanding */}
                   <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 p-3">
