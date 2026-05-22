@@ -67,7 +67,7 @@ function writeLocalWidgetOrder(order: string[]): void {
 
 // Migration: reset specific widget sizes when defaults change
 const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
-const CURRENT_SIZES_MIGRATION = 2; // bump when changing default sizes
+const CURRENT_SIZES_MIGRATION = 3; // bump when changing default sizes
 
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
@@ -81,6 +81,11 @@ function readLocalWidgetSizes(): Record<string, WidgetSize> {
         // Remove stored sizes that should fall back to new defaults
         delete parsed['profit-loss-waterfall'];
         delete parsed['cash-flow-forecast'];
+        // v3: Omsætning, Driftsresultat, Udgående moms, Indgående moms changed from third → quarter
+        delete parsed['kpi-revenue'];
+        delete parsed['kpi-operating-result'];
+        delete parsed['vat-output'];
+        delete parsed['vat-input'];
         localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(parsed));
       }
       localStorage.setItem(SIZES_MIGRATION_KEY, String(CURRENT_SIZES_MIGRATION));
@@ -181,6 +186,10 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
         // Migration: clear stale overrides for widgets whose defaults changed
         delete serverSizes['profit-loss-waterfall'];
         delete serverSizes['cash-flow-forecast'];
+        delete serverSizes['kpi-revenue'];
+        delete serverSizes['kpi-operating-result'];
+        delete serverSizes['vat-output'];
+        delete serverSizes['vat-input'];
         sizes = { ...DEFAULT_SIZES, ...serverSizes };
       } else {
         sizes = readLocalWidgetSizes();
