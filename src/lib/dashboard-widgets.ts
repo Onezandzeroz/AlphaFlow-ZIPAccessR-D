@@ -16,8 +16,15 @@ export { getGridSpanClasses, getWidgetGridSpanById, getWidgetGridSpan } from '@/
 const STORAGE_KEY = 'alphaflow-dashboard-widgets';
 const ORDER_STORAGE_KEY = 'alphaflow-dashboard-widget-order';
 const SIZES_STORAGE_KEY = 'alphaflow-dashboard-widget-sizes';
+const POSITIONS_STORAGE_KEY = 'alphaflow-dashboard-widget-positions';
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
+
+export interface WidgetPosition {
+  x: number;
+  y: number;
+  width: number;
+}
 
 function readLocalVisibilityMap(): Record<string, boolean> {
   if (typeof window === 'undefined') return getDefaultVisibilityMap();
@@ -110,6 +117,26 @@ function writeLocalWidgetSizes(sizes: Record<string, WidgetSize>): void {
   }
 }
 
+function readLocalWidgetPositions(): Record<string, WidgetPosition> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(POSITIONS_STORAGE_KEY);
+    if (raw === null) return {};
+    return JSON.parse(raw) as Record<string, WidgetPosition>;
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalWidgetPositions(positions: Record<string, WidgetPosition>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(positions));
+  } catch {
+    // silently ignore
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Zustand Store — single source of truth, shared across all components
 // ---------------------------------------------------------------------------
@@ -118,6 +145,7 @@ interface DashboardWidgetState {
   visibilityMap: Record<string, boolean>;
   widgetOrder: string[];
   widgetSizes: Record<string, WidgetSize>;
+  widgetPositions: Record<string, WidgetPosition>;
   isAppOwner: boolean;
   isLoaded: boolean;
 }
@@ -138,6 +166,10 @@ interface DashboardWidgetActions {
   // Size
   setWidgetSize: (id: string, size: WidgetSize) => void;
   getWidgetSize: (id: string) => WidgetSize;
+  // Positions
+  setWidgetPosition: (id: string, position: WidgetPosition) => void;
+  getWidgetPositions: () => Record<string, WidgetPosition>;
+  clearWidgetPositions: () => void;
   // Reset
   resetWidgets: () => void;
   // Utility
@@ -154,6 +186,7 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
   visibilityMap: getDefaultVisibilityMap(),
   widgetOrder: [...DEFAULT_ORDER],
   widgetSizes: { ...DEFAULT_SIZES },
+  widgetPositions: {},
   isAppOwner: false,
   isLoaded: false,
 
@@ -205,10 +238,15 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
         sizes = readLocalWidgetSizes();
       }
 
+      // Positions — use server positions if available
+      const serverPositions = data.positions as Record<string, WidgetPosition> | undefined;
+      const positions = serverPositions || readLocalWidgetPositions();
+
       set({
         visibilityMap: merged,
         widgetOrder: order,
         widgetSizes: sizes,
+        widgetPositions: positions,
         isAppOwner: !!data.isAppOwner,
         isLoaded: true,
       });
@@ -216,25 +254,28 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       writeLocalVisibilityMap(merged);
       writeLocalWidgetOrder(order);
       writeLocalWidgetSizes(sizes);
+      writeLocalWidgetPositions(positions);
     } catch {
       // API failed — fall back to localStorage
       set({
         visibilityMap: readLocalVisibilityMap(),
         widgetOrder: readLocalWidgetOrder(),
         widgetSizes: readLocalWidgetSizes(),
+        widgetPositions: readLocalWidgetPositions(),
         isLoaded: true,
       });
     }
   },
 
   _persistToServer: () => {
-    const { visibilityMap, widgetOrder, widgetSizes, isLoaded } = get();
+    const { visibilityMap, widgetOrder, widgetSizes, widgetPositions, isLoaded } = get();
     if (!isLoaded) return;
 
     // Always keep localStorage in sync
     writeLocalVisibilityMap(visibilityMap);
     writeLocalWidgetOrder(widgetOrder);
     writeLocalWidgetSizes(widgetSizes);
+    writeLocalWidgetPositions(widgetPositions);
 
     // Debounce API call
     if (persistDebounce) clearTimeout(persistDebounce);
@@ -243,7 +284,7 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
         await fetch('/api/widget-settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ widgets: visibilityMap, order: widgetOrder, sizes: widgetSizes }),
+          body: JSON.stringify({ widgets: visibilityMap, order: widgetOrder, sizes: widgetSizes, positions: widgetPositions }),
         });
       } catch {
         // Silently fail — data is cached locally
@@ -320,13 +361,34 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
     return sizes[id] ?? DEFAULT_SIZES[id] ?? 'half';
   },
 
+  // ─── Positions ───────────────────────────────────────────
+  setWidgetPosition: (id: string, position: WidgetPosition) => {
+    set((s) => ({
+      widgetPositions: { ...s.widgetPositions, [id]: position },
+    }));
+    // Debounced persist
+    setTimeout(() => get()._persistToServer(), 0);
+  },
+
+  getWidgetPositions: () => {
+    return get().widgetPositions;
+  },
+
+  clearWidgetPositions: () => {
+    set({ widgetPositions: {} });
+    writeLocalWidgetPositions({});
+    setTimeout(() => get()._persistToServer(), 0);
+  },
+
   // ─── Reset ─────────────────────────────────────────────────
   resetWidgets: () => {
     set({
       visibilityMap: getDefaultVisibilityMap(),
       widgetOrder: [...DEFAULT_ORDER],
       widgetSizes: { ...DEFAULT_SIZES },
+      widgetPositions: {},
     });
+    writeLocalWidgetPositions({});
     setTimeout(() => get()._persistToServer(), 0);
   },
 

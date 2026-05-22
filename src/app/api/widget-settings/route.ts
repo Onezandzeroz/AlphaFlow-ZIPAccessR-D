@@ -26,16 +26,17 @@ interface WidgetSettingsV2 {
   visibility: Record<string, boolean>;
   order: string[];
   sizes?: Record<string, WidgetSize>;
+  positions?: Record<string, { x: number; y: number; width: number }>;
 }
 
-function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, WidgetSize> } {
+function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, WidgetSize>; positions: Record<string, { x: number; y: number; width: number }> } {
   const parsed = raw;
 
   // v1 format — plain { widgetId: boolean }
   if (parsed !== null && typeof parsed === 'object' && !('v' in parsed)) {
     const legacy = parsed as WidgetSettingsV1;
     const defaults = getDefaultVisibilityMap();
-    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES } };
+    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {} };
   }
 
   // v2 format
@@ -50,11 +51,12 @@ function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>;
     ];
     // Merge sizes with defaults
     const sizes = { ...DEFAULT_SIZES, ...(v2.sizes || {}) };
-    return { visibility, order, sizes };
+    const positions = v2.positions || {};
+    return { visibility, order, sizes, positions };
   }
 
   // Fallback
-  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES } };
+  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {} };
 }
 
 // ── GET ────────────────────────────────────────────────────────────
@@ -73,12 +75,14 @@ export async function GET(request: NextRequest) {
   let visibility: Record<string, boolean>;
   let order: string[];
   let sizes: Record<string, WidgetSize>;
+  let positions: Record<string, { x: number; y: number; width: number }>;
 
   if (company?.dashboardWidgets) {
     const normalized = normalizeSettings(company.dashboardWidgets);
     visibility = normalized.visibility;
     order = normalized.order;
     sizes = normalized.sizes;
+    positions = normalized.positions;
   } else {
     // No saved preferences — fall back to AppOwner's company (AlphaAi) or hardcoded defaults
     const appOwnerCompany = await db.company.findUnique({
@@ -91,16 +95,18 @@ export async function GET(request: NextRequest) {
       visibility = normalized.visibility;
       order = normalized.order;
       sizes = normalized.sizes;
+      positions = normalized.positions;
     } else {
       visibility = getDefaultVisibilityMap();
       order = [...DEFAULT_ORDER];
       sizes = { ...DEFAULT_SIZES };
+      positions = {};
     }
   }
 
   const isAppOwner = ctx.isSuperDev && ctx.activeCompanyName === 'AlphaAi';
 
-  return NextResponse.json({ widgets: visibility, order, sizes, isAppOwner });
+  return NextResponse.json({ widgets: visibility, order, sizes, positions, isAppOwner });
 }
 
 // ── PUT ────────────────────────────────────────────────────────────
@@ -120,10 +126,11 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { widgets, order, sizes } = body as {
+  const { widgets, order, sizes, positions } = body as {
     widgets: Record<string, boolean>;
     order: string[];
     sizes?: Record<string, WidgetSize>;
+    positions?: Record<string, { x: number; y: number; width: number }>;
   };
 
   if (!widgets || typeof widgets !== 'object') {
@@ -182,6 +189,7 @@ export async function PUT(request: NextRequest) {
     visibility: widgets,
     order: finalOrder,
     sizes: mergedSizes,
+    positions: positions || {},
   };
 
   // Capture old widgets for audit
