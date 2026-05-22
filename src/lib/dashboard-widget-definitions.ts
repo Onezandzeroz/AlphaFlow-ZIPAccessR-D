@@ -16,12 +16,12 @@ export interface DashboardWidget {
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // ── INDICATORS ──────────────────────────────────────────────
-  { id: 'kpi-revenue',          labelDa: 'Omsætning',              labelEn: 'Revenue',                icon: 'TrendingUp',    defaultVisible: true,  defaultSize: 'half',    section: 'indicators' },
-  { id: 'kpi-operating-result', labelDa: 'Driftsresultat',         labelEn: 'Operating Result',       icon: 'Scale',         defaultVisible: true,  defaultSize: 'half',    section: 'indicators' },
-  { id: 'vat-output',           labelDa: 'Udgående moms',           labelEn: 'Output VAT',             icon: 'ArrowUpCircle', defaultVisible: true,  defaultSize: 'half',    section: 'indicators' },
-  { id: 'vat-input',            labelDa: 'Indgående moms',          labelEn: 'Input VAT',              icon: 'ArrowDownCircle',defaultVisible: true, defaultSize: 'half',    section: 'indicators' },
-  { id: 'pnl-result',           labelDa: 'Resultat & Likviditet',   labelEn: 'P&L Result',             icon: 'Wallet',        defaultVisible: true,  defaultSize: 'half',    section: 'indicators' },
-  { id: 'cash-position',        labelDa: 'Likviditetsoversigt',     labelEn: 'Cash Position',          icon: 'Wallet',        defaultVisible: true,  defaultSize: 'half',    section: 'indicators' },
+  { id: 'kpi-revenue',          labelDa: 'Omsætning',              labelEn: 'Revenue',                icon: 'TrendingUp',    defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
+  { id: 'kpi-operating-result', labelDa: 'Driftsresultat',         labelEn: 'Operating Result',       icon: 'Scale',         defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
+  { id: 'vat-output',           labelDa: 'Udgående moms',           labelEn: 'Output VAT',             icon: 'ArrowUpCircle', defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
+  { id: 'vat-input',            labelDa: 'Indgående moms',          labelEn: 'Input VAT',              icon: 'ArrowDownCircle',defaultVisible: true, defaultSize: 'third',   section: 'indicators' },
+  { id: 'pnl-result',           labelDa: 'Resultat & Likviditet',   labelEn: 'P&L Result',             icon: 'Wallet',        defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
+  { id: 'cash-position',        labelDa: 'Likviditetsoversigt',     labelEn: 'Cash Position',          icon: 'Wallet',        defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
   { id: 'comparison-revenue',   labelDa: 'Omsætningsændring',       labelEn: 'Revenue Change',         icon: 'ArrowUpRight',  defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
   { id: 'comparison-expenses',  labelDa: 'Udgiftsændring',          labelEn: 'Expense Change',         icon: 'TrendingDown',  defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
   { id: 'comparison-net',       labelDa: 'Nettoprofitændring',      labelEn: 'Net Profit Change',      icon: 'Activity',      defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
