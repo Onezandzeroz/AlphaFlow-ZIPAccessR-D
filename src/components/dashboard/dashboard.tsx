@@ -14,6 +14,14 @@ import {
   DialogTitle,
 
 } from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 import {
   Calculator,
@@ -23,6 +31,8 @@ import {
   Loader2,
   ArrowUpRight,
   ArrowDownRight,
+  ArrowUpCircle,
+  ArrowDownCircle,
   Zap,
   Shield,
   Scale,
@@ -174,6 +184,15 @@ interface DashboardProps {
 // ─── Constants ────────────────────────────────────────────────────
 
 const COLORS = ['#0d9488', '#7c9a82', '#d4915c', '#6366f1', '#c9928f', '#7dabb5'];
+const VAT_OUTPUT_COLORS = ['#0d9488', '#7c9a82', '#c9a87c', '#9490e8', '#c9928f', '#7dabb5'];
+const VAT_INPUT_COLORS = ['#c9a87c', '#5eead4', '#6a66d8', '#8a6644', '#0f766e', '#d4a574'];
+
+const chartTooltipStyle = {
+  backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  border: 'none',
+  borderRadius: '8px',
+  color: 'white',
+};
 
 
 // ─── Component ────────────────────────────────────────────────────
@@ -677,6 +696,48 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     // No output VAT breakdown available — return empty
     return [];
   }, [vatRegister]);
+
+  const purchasesThisMonth = useMemo(() => {
+    return thisMonthTransactions.filter((t) => t.type === 'PURCHASE');
+  }, [thisMonthTransactions]);
+
+  // Per-rate pie chart data for Output VAT
+  const outputVATBreakdown = useMemo(() => {
+    if (vatRegister?.outputVAT && vatRegister.outputVAT.length > 0) {
+      return vatRegister.outputVAT.map((entry) => ({
+        rate: entry.rate,
+        totalVAT: entry.netAmount,
+      }));
+    }
+    return [];
+  }, [vatRegister]);
+
+  const outputPieData = useMemo(() => {
+    return outputVATBreakdown.map((item, index) => ({
+      name: `${item.rate}%`,
+      value: item.totalVAT,
+      fill: VAT_OUTPUT_COLORS[index % VAT_OUTPUT_COLORS.length],
+    }));
+  }, [outputVATBreakdown]);
+
+  // Per-rate pie chart data for Input VAT
+  const inputVATBreakdown = useMemo(() => {
+    if (vatRegister?.inputVAT && vatRegister.inputVAT.length > 0) {
+      return vatRegister.inputVAT.map((entry) => ({
+        rate: entry.rate,
+        totalVAT: entry.netAmount,
+      }));
+    }
+    return [];
+  }, [vatRegister]);
+
+  const inputPieData = useMemo(() => {
+    return inputVATBreakdown.map((item, index) => ({
+      name: `${item.rate}%`,
+      value: item.totalVAT,
+      fill: VAT_INPUT_COLORS[index % VAT_INPUT_COLORS.length],
+    }));
+  }, [inputVATBreakdown]);
 
   // ─── Double-entry derived data ──────────────────────────────────
 
@@ -2064,60 +2125,201 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
           )}
 
-          {/* ─── VAT Breakdown Pie Chart ─────────────────────────────── */}
+          {/* ─── VAT Indicator Cards (Output + Input) ──────────────── */}
           {isWidgetVisible('vat-breakdown') && (
           <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className={getWidgetSpanClass('vat-breakdown')}>
-            <Card className="stat-card">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Calculator className="h-5 w-5 text-[#0d9488]" />
-                    {t('vatBreakdown')}
-                  </CardTitle>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                    {format(new Date(), 'MMM yyyy')}
-                  </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+              {/* ── Output VAT (Sales) ── */}
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
+                        <ArrowUpCircle className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {language === 'da' ? 'Udgående moms' : 'Output VAT'}
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('salesVATCollected')}</p>
+                      </div>
+                    </div>
+                    <Badge className="status-badge status-badge-sent text-[10px]">
+                      {salesThisMonth.length} {language === 'da' ? 'salg' : 'sales'}
+                    </Badge>
+                  </div>
+                  <p className="text-xl sm:text-2xl font-bold text-[#0d9488] dark:text-[#2dd4bf] mt-1.5 tabular-nums">
+                    {tc(outputVAT)}
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent>
-                {vatBreakdown.length > 0 ? (
-                  <div className="h-64 min-h-[200px] sm:min-h-[250px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={vatBreakdown}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={90}
-                          paddingAngle={5}
-                          dataKey="vat"
-                        >
-                          {vatBreakdown.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+
+                {/* Body: chart + table */}
+                <CardContent className="p-4 pt-3">
+                  {outputPieData.length > 0 ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="w-full sm:w-[140px] shrink-0">
+                        <div className="h-[120px] sm:h-[140px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={outputPieData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={32}
+                                outerRadius={52}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {outputPieData.map((entry, index) => (
+                                  <Cell key={`out-cell-${index}`} fill={entry.fill} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(value: number) => tc(value)}
+                                contentStyle={chartTooltipStyle}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
+                          {outputPieData.map((entry, index) => (
+                            <span key={index} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
+                              {entry.name}
+                            </span>
                           ))}
-                        </Pie>
-                        <RechartsTooltip content={<CustomTooltip />} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-64 min-h-[200px] sm:min-h-[250px] flex flex-col items-center justify-center gap-3">
-                    <div className="h-14 w-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                      <Calculator className="h-6 w-6 text-gray-400 dark:text-gray-600" />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
+                              <TableHead className="py-1.5 text-[11px]">{t('vatRate')}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px]">{t('vatAmount')}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {outputVATBreakdown.map((item) => (
+                              <TableRow key={`out-${item.rate}`} className="border-b border-gray-50 dark:border-gray-800/50">
+                                <TableCell className="py-1.5">
+                                  <Badge variant="outline" className="text-[#0d9488] border-[#0d9488]/30 bg-[#0d9488]/5 text-[11px] font-medium">
+                                    {item.rate}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right py-1.5 font-medium text-[#0d9488] dark:text-[#2dd4bf] tabular-nums text-xs">
+                                  {tc(item.totalVAT)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                        {language === 'da' ? 'Ingen salg denne måned' : 'No sales this month'}
-                      </p>
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                        {language === 'da' ? 'Opret en postering for at se VAT-fordeling' : 'Create a transaction to see VAT breakdown'}
-                      </p>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {t('noDataForPeriod')}
                     </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ── Input VAT (Purchases) ── */}
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className="bg-gradient-to-r from-amber-500/8 to-transparent dark:from-amber-500/15 px-4 pt-4 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                        <ArrowDownCircle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {language === 'da' ? 'Indgående moms' : 'Input VAT'}
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('purchaseVATDeductible')}</p>
+                      </div>
+                    </div>
+                    <Badge className="status-badge status-badge-overdue text-[10px]">
+                      {purchasesThisMonth.length} {language === 'da' ? 'køb' : 'purchases'}
+                    </Badge>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  <p className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-400 mt-1.5 tabular-nums">
+                    {tc(inputVAT)}
+                  </p>
+                </div>
+
+                {/* Body: chart + table */}
+                <CardContent className="p-4 pt-3">
+                  {inputPieData.length > 0 ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="w-full sm:w-[140px] shrink-0">
+                        <div className="h-[120px] sm:h-[140px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={inputPieData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={32}
+                                outerRadius={52}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {inputPieData.map((entry, index) => (
+                                  <Cell key={`in-cell-${index}`} fill={entry.fill} />
+                                ))}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(value: number) => tc(value)}
+                                contentStyle={chartTooltipStyle}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
+                          {inputPieData.map((entry, index) => (
+                            <span key={index} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
+                              {entry.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
+                              <TableHead className="py-1.5 text-[11px]">{t('vatRate')}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px]">{t('vatAmount')}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {inputVATBreakdown.map((item) => (
+                              <TableRow key={`in-${item.rate}`} className="border-b border-gray-50 dark:border-gray-800/50">
+                                <TableCell className="py-1.5">
+                                  <Badge variant="outline" className="text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5 text-[11px] font-medium">
+                                    {item.rate}%
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right py-1.5 font-medium text-amber-600 dark:text-amber-400 tabular-nums text-xs">
+                                  {tc(item.totalVAT)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen køb i perioden' : 'No purchases in period'}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </div>
           )}
 
