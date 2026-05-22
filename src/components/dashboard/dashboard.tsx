@@ -2669,12 +2669,14 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                         </linearGradient>
                       </defs>
                       <Area
-                        type="monotone"
+                        type="linear"
                         dataKey="net"
                         stroke="#0d9488"
                         fill="url(#netGradient)"
                         strokeWidth={2}
                         name="net"
+                        dot={{ r: 4, fill: '#0d9488', stroke: '#fff', strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: '#0d9488', stroke: '#fff', strokeWidth: 2 }}
                       />
                     </AreaChart>
                   </ResponsiveContainer>

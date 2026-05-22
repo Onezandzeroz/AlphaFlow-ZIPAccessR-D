@@ -65,9 +65,27 @@ function writeLocalWidgetOrder(order: string[]): void {
   }
 }
 
+// Migration: reset specific widget sizes when defaults change
+const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
+const CURRENT_SIZES_MIGRATION = 2; // bump when changing default sizes
+
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
   try {
+    // Run migration if needed
+    const migrationVersion = parseInt(localStorage.getItem(SIZES_MIGRATION_KEY) || '0', 10);
+    if (migrationVersion < CURRENT_SIZES_MIGRATION) {
+      const raw = localStorage.getItem(SIZES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, WidgetSize>;
+        // Remove stored sizes that should fall back to new defaults
+        delete parsed['profit-loss-waterfall'];
+        delete parsed['cash-flow-forecast'];
+        localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(parsed));
+      }
+      localStorage.setItem(SIZES_MIGRATION_KEY, String(CURRENT_SIZES_MIGRATION));
+    }
+
     const raw = localStorage.getItem(SIZES_STORAGE_KEY);
     if (raw === null) return { ...DEFAULT_SIZES };
     const parsed = JSON.parse(raw) as Record<string, WidgetSize>;
@@ -160,6 +178,9 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
       let sizes: Record<string, WidgetSize>;
       if (serverSizes) {
+        // Migration: clear stale overrides for widgets whose defaults changed
+        delete serverSizes['profit-loss-waterfall'];
+        delete serverSizes['cash-flow-forecast'];
         sizes = { ...DEFAULT_SIZES, ...serverSizes };
       } else {
         sizes = readLocalWidgetSizes();

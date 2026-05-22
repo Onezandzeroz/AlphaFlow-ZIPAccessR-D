@@ -31,8 +31,8 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // ── CHARTS ───────────────────────────────────────────────────
   { id: 'cash-flow-trend',      labelDa: 'Indtægter vs Omkostninger',labelEn: 'Revenue vs Expenses',   icon: 'BarChart3',     defaultVisible: true,  defaultSize: 'full',    section: 'charts' },
   { id: 'net-result-chart',     labelDa: 'Netto Resultat pr. Måned', labelEn: 'Net Result by Month',    icon: 'BarChart3',     defaultVisible: true,  defaultSize: 'full',    section: 'charts' },
-  { id: 'profit-loss-waterfall',labelDa: 'Resultatopgørelse Vandfald',labelEn: 'P&L Waterfall',        icon: 'BarChart',      defaultVisible: true,  defaultSize: 'full',    section: 'charts' },
-  { id: 'cash-flow-forecast',   labelDa: 'Likviditetsprognose',      labelEn: 'Cash Flow Forecast',     icon: 'TrendingUp',    defaultVisible: true,  defaultSize: 'full',    section: 'charts' },
+  { id: 'profit-loss-waterfall',labelDa: 'Resultatopgørelse Vandfald',labelEn: 'P&L Waterfall',        icon: 'BarChart',      defaultVisible: true,  defaultSize: 'half',    section: 'charts' },
+  { id: 'cash-flow-forecast',   labelDa: 'Likviditetsprognose',      labelEn: 'Cash Flow Forecast',     icon: 'TrendingUp',    defaultVisible: true,  defaultSize: 'half',    section: 'charts' },
   { id: 'revenue-expenses-chart',labelDa: 'Omsætning vs Omkostninger (detaljeret)', labelEn: 'Revenue vs Expenses (detailed)', icon: 'BarChart3', defaultVisible: false, defaultSize: 'full', section: 'charts' },
   { id: 'expense-analysis',     labelDa: 'Udgiftsanalyse',           labelEn: 'Expense Analysis',       icon: 'PieChart',      defaultVisible: true,  defaultSize: 'half',    section: 'charts' },
 
