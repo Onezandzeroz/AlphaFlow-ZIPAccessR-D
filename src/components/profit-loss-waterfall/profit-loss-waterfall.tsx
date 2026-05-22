@@ -70,17 +70,14 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
       let negative = 0;
 
       if (item.type === 'revenue' || item.type === 'subtotal') {
-        // Revenue items grow from 0 upward
         base = 0;
         positive = Math.max(0, item.amount);
         negative = 0;
       } else if (item.type === 'expense') {
-        // Expense items reduce the cumulative
         const prevCumulative = waterfall
           .filter((w) => w.type === 'revenue' || w.type === 'subtotal')
           .reduce((sum, w) => sum + Number(w.amount), 0);
         base = Math.max(0, prevCumulative + item.cumulative - item.amount);
-        // Find the previous cumulative
         const idx = waterfall.indexOf(item);
         const prevItem = idx > 0 ? waterfall[idx - 1] : null;
         base = prevItem ? prevItem.cumulative + item.amount : item.amount;
@@ -96,7 +93,7 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
       }
 
       return {
-        name: item.name.length > 15 ? item.name.substring(0, 14) + '…' : item.name,
+        name: item.name.length > 12 ? item.name.substring(0, 11) + '…' : item.name,
         fullName: item.name,
         type: item.type,
         base: Math.max(0, base),
@@ -200,11 +197,12 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                tick={{ fontSize: 9, fill: 'var(--muted-foreground)' }}
                 axisLine={{ stroke: 'var(--border)' }}
                 interval={0}
-                angle={-20}
+                angle={-25}
                 textAnchor="end"
+                height={55}
               />
               <YAxis
                 tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}

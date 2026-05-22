@@ -1055,22 +1055,24 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     );
   };
 
-  // ─── Custom pie label renderer (line + dot + percentage) ───────
+  // ─── Custom pie label renderer (line + percentage, no dot, radial spacing) ───────
 
   const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, fill }: any) => {
-    if (percent < 0.04) return null; // Skip very small slices
+    if (percent < 0.05) return null; // Skip very small slices
     const RADIAN = Math.PI / 180;
-    const sx = cx + (outerRadius + 2) * Math.cos(-midAngle * RADIAN);
-    const sy = cy + (outerRadius + 2) * Math.sin(-midAngle * RADIAN);
-    const ex = cx + (outerRadius + 10) * Math.cos(-midAngle * RADIAN);
-    const ey = cy + (outerRadius + 10) * Math.sin(-midAngle * RADIAN);
-    const tx = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN);
-    const ty = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN);
+    // Start of connector line: just outside the pie
+    const sx = cx + (outerRadius + 3) * Math.cos(-midAngle * RADIAN);
+    const sy = cy + (outerRadius + 3) * Math.sin(-midAngle * RADIAN);
+    // End of connector line: further out with radial spacing
+    const ex = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN);
+    const ey = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN);
+    // Percentage text: spaced radially from line end
+    const tx = cx + (outerRadius + 20) * Math.cos(-midAngle * RADIAN);
+    const ty = cy + (outerRadius + 20) * Math.sin(-midAngle * RADIAN);
 
     return (
       <g>
-        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={fill} strokeWidth={1} opacity={0.5} />
-        <circle cx={ex} cy={ey} r={2} fill={fill} opacity={0.8} />
+        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={fill} strokeWidth={1} opacity={0.4} />
         <text x={tx} y={ty} fill={fill} fontSize={9} fontWeight={700} textAnchor={tx > cx ? 'start' : 'end'} dominantBaseline="central">
           {`${(percent * 100).toFixed(0)}%`}
         </text>
@@ -1500,8 +1502,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                 })()}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={26}
-                                outerRadius={42}
+                                innerRadius={24}
+                                outerRadius={40}
                                 paddingAngle={3}
                                 dataKey="value"
                                 label={renderPieLabel}
@@ -1520,21 +1522,13 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                             </PieChart>
                           </ResponsiveContainer>
                         </div>
-                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
-                          {monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0).map((m, i) => (
-                            <span key={i} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6] }} />
-                              {m.label}
-                            </span>
-                          ))}
-                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                         <Table>
                           <TableHeader>
                             <TableRow className="border-b border-gray-200 dark:border-gray-700">
                               <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
-                              <TableHead className="text-right py-1.5 text-[11px]">{language === 'da' ? 'Omsætning' : 'Revenue'}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px] whitespace-nowrap">{language === 'da' ? 'Omsætning' : 'Revenue'}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1545,7 +1539,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                     {m.label}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className="text-right py-1.5 font-medium text-green-600 dark:text-green-400 tabular-nums text-xs">
+                                <TableCell className="text-right py-1.5 font-medium text-green-600 dark:text-green-400 tabular-nums text-xs whitespace-nowrap">
                                   {tc(m.revenue)}
                                 </TableCell>
                               </TableRow>
@@ -1622,8 +1616,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                 })()}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={26}
-                                outerRadius={42}
+                                innerRadius={24}
+                                outerRadius={40}
                                 paddingAngle={3}
                                 dataKey="value"
                                 label={renderPieLabel}
@@ -1646,28 +1640,13 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                             </PieChart>
                           </ResponsiveContainer>
                         </div>
-                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
-                          {monthlyRevenueChart.slice(-6).filter(m => m.net !== 0).map((m, i) => {
-                            const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
-                            return (
-                              <span key={i} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{
-                                  backgroundColor: isPositive
-                                    ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
-                                    : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6],
-                                }} />
-                                {m.label}
-                              </span>
-                            );
-                          })}
-                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                         <Table>
                           <TableHeader>
                             <TableRow className="border-b border-gray-200 dark:border-gray-700">
                               <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
-                              <TableHead className="text-right py-1.5 text-[11px]">{language === 'da' ? 'Resultat' : 'Result'}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px] whitespace-nowrap">{language === 'da' ? 'Resultat' : 'Result'}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1681,7 +1660,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                     {m.label}
                                   </Badge>
                                 </TableCell>
-                                <TableCell className={`text-right py-1.5 font-medium tabular-nums text-xs ${m.net >= 0
+                                <TableCell className={`text-right py-1.5 font-medium tabular-nums text-xs whitespace-nowrap ${m.net >= 0
                                   ? 'text-[#0d9488] dark:text-[#2dd4bf]'
                                   : 'text-red-600 dark:text-red-400'
                                 }`}>
@@ -1740,50 +1719,69 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: profit margin */}
+                {/* Body: P&L breakdown */}
                 <CardContent className="p-4 pt-3 flex-1">
-                  <div className="flex items-center justify-between text-xs mb-1.5">
-                    <span className="text-gray-500 dark:text-gray-400">
-                      {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
-                    </span>
-                    <span className={`font-semibold ${
-                      incomeStatement.netResult >= 0
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-red-600 dark:text-red-400'
-                    }`}>
-                      {incomeStatement.grossProfit.revenue > 0
-                        ? `${((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100).toFixed(1)}%`
-                        : '0.0%'
-                      }
-                    </span>
-                  </div>
-                  <div className="h-2 bg-gray-200/60 dark:bg-gray-700/60 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ease-out ${
-                        incomeStatement.netResult >= 0
-                          ? 'bg-gradient-to-r from-green-400 to-emerald-500 dark:from-green-500 dark:to-emerald-400'
-                          : 'bg-gradient-to-r from-red-400 to-rose-500 dark:from-red-500 dark:to-rose-400'
-                      }`}
-                      style={{
-                        width: `${Math.min(
-                          Math.max(
-                            incomeStatement.grossProfit.revenue > 0
-                              ? Math.abs((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100)
-                              : 0,
-                            0
-                          ),
-                          100
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400 dark:text-gray-500">
-                    <span>
-                      {language === 'da' ? 'Indtægter' : 'Revenue'}: {tc(incomeStatement.grossProfit.revenue)}
-                    </span>
-                    <span>
-                      {language === 'da' ? 'Omkostninger' : 'Expenses'}: {tc(incomeStatement.operatingExpenses.total + incomeStatement.financialItems.financialExpenses)}
-                    </span>
+                  <div className="space-y-2.5">
+                    {/* Gross Profit */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {language === 'da' ? 'Bruttofortjeneste' : 'Gross Profit'}
+                      </span>
+                      <span className="font-semibold text-green-600 dark:text-green-400 tabular-nums">
+                        {tc(incomeStatement.grossProfit.grossProfit)}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-gray-200/60 dark:bg-gray-700/60 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-green-400 to-emerald-500 dark:from-green-500 dark:to-emerald-400 transition-all duration-500 ease-out"
+                        style={{
+                          width: `${Math.min(
+                            Math.max(
+                              incomeStatement.grossProfit.revenue > 0
+                                ? (incomeStatement.grossProfit.grossProfit / incomeStatement.grossProfit.revenue) * 100
+                                : 0,
+                              0
+                            ),
+                            100
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    {/* Operating Expenses */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {language === 'da' ? 'Driftsomkostninger' : 'Operating Expenses'}
+                      </span>
+                      <span className="font-semibold text-red-600 dark:text-red-400 tabular-nums">
+                        {tc(incomeStatement.operatingExpenses.total)}
+                      </span>
+                    </div>
+
+                    {/* Financial Items */}
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {language === 'da' ? 'Finansielle poster (netto)' : 'Financial Items (net)'}
+                      </span>
+                      <span className={`font-semibold tabular-nums ${incomeStatement.financialItems.net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {tc(incomeStatement.financialItems.net)}
+                      </span>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-semibold ${incomeStatement.netResult >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
+                          {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
+                        </span>
+                        <span className={`text-xs font-bold tabular-nums ${incomeStatement.netResult >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {incomeStatement.grossProfit.revenue > 0
+                            ? `${((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100).toFixed(1)}%`
+                            : '0.0%'
+                          }
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -1826,63 +1824,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: equity ratio / profit margin */}
+                {/* Body: balance sheet breakdown */}
                 <CardContent className="p-4 pt-3">
-                  {dateRange ? (
-                    incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between text-xs mb-1.5">
-                          <span className="text-gray-500 dark:text-gray-400">
-                            {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
-                          </span>
-                          <span className={`font-semibold ${
-                              (incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100 > 10
-                                ? 'text-green-600 dark:text-green-400'
-                                : (incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100 > 0
-                                  ? 'text-amber-600 dark:text-amber-400'
-                                  : 'text-red-600 dark:text-red-400'
-                            }`}>
-                            {((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="h-2 bg-gray-200/60 dark:bg-gray-700/60 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ease-out ${
-                              (incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100 > 10
-                                ? 'bg-gradient-to-r from-emerald-400 to-[#0d9488] dark:from-emerald-500 dark:to-[#2dd4bf]'
-                                : (incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100 > 0
-                                  ? 'bg-gradient-to-r from-amber-400 to-amber-500 dark:from-amber-500 dark:to-amber-400'
-                                  : 'bg-gradient-to-r from-red-400 to-rose-500 dark:from-red-500 dark:to-rose-400'
-                            }`}
-                            style={{
-                              width: `${Math.min(
-                                Math.max(
-                                  Math.abs((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100),
-                                  0
-                                ),
-                                100
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400 dark:text-gray-500">
-                          <span>
-                            {language === 'da' ? 'Indtægter' : 'Revenue'}: {tc(incomeStatement.grossProfit.revenue)}
-                          </span>
-                          <span>
-                            {language === 'da' ? 'Omkostninger' : 'Expenses'}: {tc(incomeStatement.operatingExpenses.total + incomeStatement.financialItems.financialExpenses)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  ) : (
-                    balanceSheet.assets.totalAssets > 0 && (
+                  {balanceSheet.assets.totalAssets > 0 ? (
+                    <div className="space-y-2.5">
+                      {/* Equity Ratio */}
                       <div>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="text-gray-500 dark:text-gray-400">
                             {language === 'da' ? 'Egenkapitalandel' : 'Equity Ratio'}
                           </span>
-                          <span className={`font-semibold ${
+                          <span className={`font-semibold tabular-nums ${
                             (balanceSheet.equity.totalEquity / balanceSheet.assets.totalAssets) * 100 > 50
                               ? 'text-green-600 dark:text-green-400'
                               : (balanceSheet.equity.totalEquity / balanceSheet.assets.totalAssets) * 100 > 30
@@ -1912,16 +1864,48 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                             }}
                           />
                         </div>
-                        <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400 dark:text-gray-500">
-                          <span>
-                            {language === 'da' ? 'Aktiver' : 'Assets'}: {tc(balanceSheet.assets.totalAssets)}
-                          </span>
-                          <span>
-                            {language === 'da' ? 'Gæld' : 'Liab.'}: {tc(balanceSheet.liabilities.totalLiabilities)}
-                          </span>
+                      </div>
+
+                      {/* Balance Sheet Summary */}
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        <div className="rounded-lg bg-[#e6f7f3]/50 dark:bg-[#1a2e2b]/50 p-2">
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {language === 'da' ? 'Aktiver' : 'Assets'}
+                          </p>
+                          <p className="text-xs font-semibold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums">
+                            {tc(balanceSheet.assets.totalAssets)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-red-50/50 dark:bg-red-900/10 p-2">
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {language === 'da' ? 'Gæld' : 'Liabilities'}
+                          </p>
+                          <p className="text-xs font-semibold text-red-600 dark:text-red-400 tabular-nums">
+                            {tc(balanceSheet.liabilities.totalLiabilities)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-green-50/50 dark:bg-green-900/10 p-2">
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {language === 'da' ? 'Egenkapital' : 'Equity'}
+                          </p>
+                          <p className={`text-xs font-semibold tabular-nums ${balanceSheet.equity.totalEquity >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {tc(balanceSheet.equity.totalEquity)}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50/50 dark:bg-gray-800/30 p-2">
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                            {language === 'da' ? 'Årets resultat' : 'YTD Result'}
+                          </p>
+                          <p className={`text-xs font-semibold tabular-nums ${balanceSheet.equity.currentYearResult >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {tc(balanceSheet.equity.currentYearResult)}
+                          </p>
                         </div>
                       </div>
-                    )
+                    </div>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen balancedata' : 'No balance sheet data'}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -2188,8 +2172,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={dailyRevenueChart} barGap={3} barCategoryGap="25%">
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.08)" vertical={false} />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} angle={-45} textAnchor="end" height={50} />
-                      <YAxis stroke="#b0a89e" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
+                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} height={45} interval="preserveStartEnd" />
+                      <YAxis stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={36} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Legend
                         formatter={(value) => {
@@ -2438,16 +2422,16 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3">
                   {outputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="w-full sm:w-[170px] shrink-0">
-                        <div className="h-[120px] sm:h-[170px]">
+                      <div className="w-full sm:w-[150px] shrink-0">
+                        <div className="h-[120px] sm:h-[150px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
                                 data={outputPieData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={26}
-                                outerRadius={42}
+                                innerRadius={22}
+                                outerRadius={38}
                                 paddingAngle={3}
                                 dataKey="value"
                                 label={renderPieLabel}
@@ -2462,14 +2446,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                               />
                             </PieChart>
                           </ResponsiveContainer>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
-                          {outputPieData.map((entry, index) => (
-                            <span key={index} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
-                              {entry.name}
-                            </span>
-                          ))}
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -2538,16 +2514,16 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3">
                   {inputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="w-full sm:w-[170px] shrink-0">
-                        <div className="h-[120px] sm:h-[170px]">
+                      <div className="w-full sm:w-[150px] shrink-0">
+                        <div className="h-[120px] sm:h-[150px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
                                 data={inputPieData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={26}
-                                outerRadius={42}
+                                innerRadius={22}
+                                outerRadius={38}
                                 paddingAngle={3}
                                 dataKey="value"
                                 label={renderPieLabel}
@@ -2562,14 +2538,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                               />
                             </PieChart>
                           </ResponsiveContainer>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
-                          {inputPieData.map((entry, index) => (
-                            <span key={index} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.fill }} />
-                              {entry.name}
-                            </span>
-                          ))}
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -2628,8 +2596,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={dailyRevenueChart} barGap={2} barCategoryGap="20%">
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                        <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
-                        <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
+                        <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} interval="preserveStartEnd" height={45} />
+                        <YAxis stroke="#b0a89e" fontSize={11} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                         <RechartsTooltip content={<CustomTooltip />} />
                         <Legend
                           formatter={(value) => {
@@ -2684,8 +2652,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={dailyRevenueChart}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
-                      <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
+                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} interval="preserveStartEnd" height={45} />
+                      <YAxis stroke="#b0a89e" fontSize={11} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Legend
                         formatter={(value) => {

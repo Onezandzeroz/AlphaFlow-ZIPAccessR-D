@@ -189,20 +189,20 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
         </div>
 
         {/* Table */}
-        <div className="-mx-5 px-5">
+        <div className="-mx-5 px-5 max-h-72 overflow-y-auto">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 h-8 py-1">
+                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 h-8 py-1 min-w-[100px]">
                   {language === 'da' ? 'Konto' : 'Account'}
                 </TableHead>
-                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1">
+                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1 whitespace-nowrap">
                   {language === 'da' ? 'Budget' : 'Budget'}
                 </TableHead>
-                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1">
+                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1 whitespace-nowrap">
                   {language === 'da' ? 'Faktisk' : 'Actual'}
                 </TableHead>
-                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1">
+                <TableHead className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 text-right h-8 py-1 whitespace-nowrap">
                   {language === 'da' ? 'Afvigelse' : 'Variance'}
                 </TableHead>
               </TableRow>
@@ -211,27 +211,27 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
               {data.map((row) => (
                 <TableRow key={row.accountNumber} className="table-row-teal-hover">
                   <TableCell className="py-2 px-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       {getVarianceIcon(row.variance)}
-                      <div>
-                        <p className="text-xs font-medium text-gray-900 dark:text-white">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-gray-900 dark:text-white truncate">
                           {row.accountNumber}
                         </p>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight">
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight truncate" title={row.accountName}>
                           {row.accountName}
                         </p>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="py-2 px-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-300">
+                  <TableCell className="py-2 px-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap">
                     {tc(row.budgetAmount)}
                   </TableCell>
-                  <TableCell className="py-2 px-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-300">
+                  <TableCell className="py-2 px-2 text-right text-xs tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap">
                     {tc(row.actualAmount)}
                   </TableCell>
                   <TableCell className="py-2 px-2 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <span className={`text-xs font-medium tabular-nums ${getVarianceColor(row.variance)}`}>
+                    <div className="flex items-center justify-end gap-1 flex-nowrap">
+                      <span className={`text-xs font-medium tabular-nums whitespace-nowrap ${getVarianceColor(row.variance)}`}>
                         {row.variance >= 0 ? '+' : ''}{tc(row.variance)}
                       </span>
                       {getVarianceBadge(row.variance, row.variancePercent)}

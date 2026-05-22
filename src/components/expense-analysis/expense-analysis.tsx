@@ -148,15 +148,15 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
         </CardHeader>
         <CardContent className="p-4 pt-0">
           <div className="flex items-start gap-4">
-            <div className="w-40 h-40 shrink-0">
+            <div className="w-44 h-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     data={pieData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={35}
-                    outerRadius={65}
+                    innerRadius={32}
+                    outerRadius={55}
                     paddingAngle={2}
                     dataKey="value"
                     onClick={(data) => setSelectedCategory(selectedCategory === data.name ? null : data.name)}
@@ -175,7 +175,7 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex-1 min-w-0 space-y-1">
               {categories.slice(0, 6).map((cat, i) => (
                 <div
                   key={cat.name}
@@ -186,8 +186,8 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
                 >
                   <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                   <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{cat.name}</span>
-                  <span className="font-medium text-gray-900 dark:text-white tabular-nums">{tc(cat.total)}</span>
-                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                  <span className="font-medium text-gray-900 dark:text-white tabular-nums whitespace-nowrap">{tc(cat.total)}</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">
                     {cat.percentage}%
                   </Badge>
                 </div>
