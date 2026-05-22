@@ -1055,6 +1055,29 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     );
   };
 
+  // ─── Custom pie label renderer (line + dot + percentage) ───────
+
+  const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, fill }: any) => {
+    if (percent < 0.04) return null; // Skip very small slices
+    const RADIAN = Math.PI / 180;
+    const sx = cx + (outerRadius + 2) * Math.cos(-midAngle * RADIAN);
+    const sy = cy + (outerRadius + 2) * Math.sin(-midAngle * RADIAN);
+    const ex = cx + (outerRadius + 10) * Math.cos(-midAngle * RADIAN);
+    const ey = cy + (outerRadius + 10) * Math.sin(-midAngle * RADIAN);
+    const tx = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN);
+    const ty = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN);
+
+    return (
+      <g>
+        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={fill} strokeWidth={1} opacity={0.5} />
+        <circle cx={ex} cy={ey} r={2} fill={fill} opacity={0.8} />
+        <text x={tx} y={ty} fill={fill} fontSize={9} fontWeight={700} textAnchor={tx > cx ? 'start' : 'end'} dominantBaseline="central">
+          {`${(percent * 100).toFixed(0)}%`}
+        </text>
+      </g>
+    );
+  };
+
   // ─── Loading state ──────────────────────────────────────────────
 
   if (isLoading) {
@@ -1462,8 +1485,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
                     <div className="flex flex-col sm:flex-row gap-3 h-full">
-                      <div className="w-full sm:w-[140px] shrink-0">
-                        <div className="h-[120px] sm:h-[140px]">
+                      <div className="w-full sm:w-[170px] shrink-0">
+                        <div className="h-[120px] sm:h-[170px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
@@ -1477,10 +1500,11 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                 })()}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={32}
-                                outerRadius={52}
+                                innerRadius={26}
+                                outerRadius={42}
                                 paddingAngle={3}
                                 dataKey="value"
+                                label={renderPieLabel}
                               >
                                 {(() => {
                                   const last6 = monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0);
@@ -1580,8 +1604,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
                     <div className="flex flex-col sm:flex-row gap-3 h-full">
-                      <div className="w-full sm:w-[140px] shrink-0">
-                        <div className="h-[120px] sm:h-[140px]">
+                      <div className="w-full sm:w-[170px] shrink-0">
+                        <div className="h-[120px] sm:h-[170px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
@@ -1598,10 +1622,11 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                                 })()}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={32}
-                                outerRadius={52}
+                                innerRadius={26}
+                                outerRadius={42}
                                 paddingAngle={3}
                                 dataKey="value"
+                                label={renderPieLabel}
                               >
                                 {(() => {
                                   const last6 = monthlyRevenueChart.slice(-6).filter(m => m.net !== 0);
@@ -2413,18 +2438,19 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3">
                   {outputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="w-full sm:w-[140px] shrink-0">
-                        <div className="h-[120px] sm:h-[140px]">
+                      <div className="w-full sm:w-[170px] shrink-0">
+                        <div className="h-[120px] sm:h-[170px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
                                 data={outputPieData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={32}
-                                outerRadius={52}
+                                innerRadius={26}
+                                outerRadius={42}
                                 paddingAngle={3}
                                 dataKey="value"
+                                label={renderPieLabel}
                               >
                                 {outputPieData.map((entry, index) => (
                                   <Cell key={`out-cell-${index}`} fill={entry.fill} />
@@ -2512,18 +2538,19 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 <CardContent className="p-4 pt-3">
                   {inputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
-                      <div className="w-full sm:w-[140px] shrink-0">
-                        <div className="h-[120px] sm:h-[140px]">
+                      <div className="w-full sm:w-[170px] shrink-0">
+                        <div className="h-[120px] sm:h-[170px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
                                 data={inputPieData}
                                 cx="50%"
                                 cy="50%"
-                                innerRadius={32}
-                                outerRadius={52}
+                                innerRadius={26}
+                                outerRadius={42}
                                 paddingAngle={3}
                                 dataKey="value"
+                                label={renderPieLabel}
                               >
                                 {inputPieData.map((entry, index) => (
                                   <Cell key={`in-cell-${index}`} fill={entry.fill} />
