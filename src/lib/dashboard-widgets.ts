@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { create } from 'zustand';
+import { useEffect, useRef } from 'react';
 import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap, WidgetSize } from '@/lib/dashboard-widget-definitions';
 
 // Re-export so existing imports from this module still work
 export { DASHBOARD_WIDGETS, getDefaultVisibilityMap } from '@/lib/dashboard-widget-definitions';
 export type { DashboardWidget, WidgetSize } from '@/lib/dashboard-widget-definitions';
-export { getGridSpanClasses, getWidgetGridSpanById, cycleSize, getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
+export { getGridSpanClasses, getWidgetGridSpanById, getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
 
 // ---------------------------------------------------------------------------
 // Local storage helpers
@@ -24,7 +25,6 @@ function readLocalVisibilityMap(): Record<string, boolean> {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) return getDefaultVisibilityMap();
     const parsed = JSON.parse(raw) as Record<string, boolean>;
-    // Merge with defaults so newly added widgets still get their default value
     const defaults = getDefaultVisibilityMap();
     return { ...defaults, ...parsed };
   } catch {
@@ -37,7 +37,7 @@ function writeLocalVisibilityMap(map: Record<string, boolean>): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
   } catch {
-    // Storage full or unavailable – silently ignore
+    // silently ignore
   }
 }
 
@@ -47,7 +47,6 @@ function readLocalWidgetOrder(): string[] {
     const raw = localStorage.getItem(ORDER_STORAGE_KEY);
     if (raw === null) return [...DEFAULT_ORDER];
     const parsed = JSON.parse(raw) as string[];
-    // Validate: ensure all known widget IDs are present, add missing ones at the end
     const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
     const filtered = parsed.filter((id) => validIds.has(id));
     const missing = DEFAULT_ORDER.filter((id) => !parsed.includes(id));
@@ -62,7 +61,7 @@ function writeLocalWidgetOrder(order: string[]): void {
   try {
     localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order));
   } catch {
-    // Storage full or unavailable – silently ignore
+    // silently ignore
   }
 }
 
@@ -83,95 +82,123 @@ function writeLocalWidgetSizes(sizes: Record<string, WidgetSize>): void {
   try {
     localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(sizes));
   } catch {
-    // Storage full or unavailable – silently ignore
+    // silently ignore
   }
 }
 
 // ---------------------------------------------------------------------------
-// Hook — API-backed with localStorage cache
+// Zustand Store — single source of truth, shared across all components
 // ---------------------------------------------------------------------------
 
-export function useDashboardWidgets() {
-  const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>(getDefaultVisibilityMap);
-  const [widgetOrder, setWidgetOrder] = useState<string[]>(DEFAULT_ORDER);
-  const [widgetSizes, setWidgetSizes] = useState<Record<string, WidgetSize>>({ ...DEFAULT_SIZES });
-  const [isAppOwner, setIsAppOwner] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+interface DashboardWidgetState {
+  visibilityMap: Record<string, boolean>;
+  widgetOrder: string[];
+  widgetSizes: Record<string, WidgetSize>;
+  isAppOwner: boolean;
+  isLoaded: boolean;
+}
 
-  // Fetch widget settings from API on mount
-  useEffect(() => {
-    let cancelled = false;
+interface DashboardWidgetActions {
+  // Data loading
+  _loadFromServer: () => Promise<void>;
+  _persistToServer: () => void;
+  // Visibility
+  isWidgetVisible: (id: string) => boolean;
+  toggleWidget: (id: string) => void;
+  setWidgetVisibility: (id: string, visible: boolean) => void;
+  // Order
+  setWidgetOrderDirect: (newOrder: string[]) => void;
+  moveWidgetUp: (id: string) => void;
+  moveWidgetDown: (id: string) => void;
+  getWidgetOrderIndex: (id: string) => number;
+  // Size
+  setWidgetSize: (id: string, size: WidgetSize) => void;
+  getWidgetSize: (id: string) => WidgetSize;
+  // Reset
+  resetWidgets: () => void;
+  // Utility
+  getVisibleWidgets: () => string[];
+}
 
-    async function fetchSettings() {
-      try {
-        const res = await fetch('/api/widget-settings');
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (cancelled) return;
+type DashboardWidgetStore = DashboardWidgetState & DashboardWidgetActions;
 
-        const serverWidgets = data.widgets as Record<string, boolean>;
-        // Merge with defaults so newly added widgets still get their default value
-        const defaults = getDefaultVisibilityMap();
-        const merged = { ...defaults, ...serverWidgets };
-        setVisibilityMap(merged);
-        writeLocalVisibilityMap(merged);
+// Debounce timer — shared module-level so multiple store updates coalesce
+let persistDebounce: ReturnType<typeof setTimeout> | null = null;
 
-        // Read order from API response
-        const serverOrder = data.order as string[] | undefined;
-        if (serverOrder && serverOrder.length > 0) {
-          // Ensure all known widget IDs are present
-          const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-          const filtered = serverOrder.filter((id) => validIds.has(id));
-          const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
-          const fullOrder = [...filtered, ...missing];
-          setWidgetOrder(fullOrder);
-          writeLocalWidgetOrder(fullOrder);
-        } else {
-          // No order from API — use local cache or defaults
-          const localOrder = readLocalWidgetOrder();
-          setWidgetOrder(localOrder);
-        }
+export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
+  // ─── Initial state ─────────────────────────────────────────
+  visibilityMap: getDefaultVisibilityMap(),
+  widgetOrder: [...DEFAULT_ORDER],
+  widgetSizes: { ...DEFAULT_SIZES },
+  isAppOwner: false,
+  isLoaded: false,
 
-        // Read sizes from API response
-        const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
-        if (serverSizes) {
-          const mergedSizes = { ...DEFAULT_SIZES, ...serverSizes };
-          setWidgetSizes(mergedSizes);
-          writeLocalWidgetSizes(mergedSizes);
-        } else {
-          const localSizes = readLocalWidgetSizes();
-          setWidgetSizes(localSizes);
-        }
+  // ─── Data loading ──────────────────────────────────────────
+  _loadFromServer: async () => {
+    try {
+      const res = await fetch('/api/widget-settings');
+      if (!res.ok) return;
+      const data = await res.json();
 
-        setIsAppOwner(!!data.isAppOwner);
-      } catch {
-        // API failed — fall back to localStorage cache
-        const cached = readLocalVisibilityMap();
-        setVisibilityMap(cached);
-        const cachedOrder = readLocalWidgetOrder();
-        setWidgetOrder(cachedOrder);
-        const cachedSizes = readLocalWidgetSizes();
-        setWidgetSizes(cachedSizes);
-      } finally {
-        if (!cancelled) setIsLoaded(true);
+      const serverWidgets = data.widgets as Record<string, boolean>;
+      const defaults = getDefaultVisibilityMap();
+      const merged = { ...defaults, ...serverWidgets };
+
+      // Order
+      const serverOrder = data.order as string[] | undefined;
+      let order: string[];
+      if (serverOrder && serverOrder.length > 0) {
+        const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
+        const filtered = serverOrder.filter((id) => validIds.has(id));
+        const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
+        order = [...filtered, ...missing];
+      } else {
+        order = readLocalWidgetOrder();
       }
+
+      // Sizes
+      const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
+      let sizes: Record<string, WidgetSize>;
+      if (serverSizes) {
+        sizes = { ...DEFAULT_SIZES, ...serverSizes };
+      } else {
+        sizes = readLocalWidgetSizes();
+      }
+
+      set({
+        visibilityMap: merged,
+        widgetOrder: order,
+        widgetSizes: sizes,
+        isAppOwner: !!data.isAppOwner,
+        isLoaded: true,
+      });
+
+      writeLocalVisibilityMap(merged);
+      writeLocalWidgetOrder(order);
+      writeLocalWidgetSizes(sizes);
+    } catch {
+      // API failed — fall back to localStorage
+      set({
+        visibilityMap: readLocalVisibilityMap(),
+        widgetOrder: readLocalWidgetOrder(),
+        widgetSizes: readLocalWidgetSizes(),
+        isLoaded: true,
+      });
     }
+  },
 
-    fetchSettings();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Persist to API with debounce whenever visibility, order, or sizes change (after initial load)
-  useEffect(() => {
+  _persistToServer: () => {
+    const { visibilityMap, widgetOrder, widgetSizes, isLoaded } = get();
     if (!isLoaded) return;
-    // Always keep localStorage in sync as a cache
+
+    // Always keep localStorage in sync
     writeLocalVisibilityMap(visibilityMap);
     writeLocalWidgetOrder(widgetOrder);
     writeLocalWidgetSizes(widgetSizes);
 
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
+    // Debounce API call
+    if (persistDebounce) clearTimeout(persistDebounce);
+    persistDebounce = setTimeout(async () => {
       try {
         await fetch('/api/widget-settings', {
           method: 'PUT',
@@ -182,109 +209,107 @@ export function useDashboardWidgets() {
         // Silently fail — data is cached locally
       }
     }, 500);
+  },
 
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [visibilityMap, widgetOrder, widgetSizes, isLoaded]);
+  // ─── Visibility ────────────────────────────────────────────
+  isWidgetVisible: (id: string) => {
+    return get().visibilityMap[id] ?? true;
+  },
 
-  const visibleWidgets = DASHBOARD_WIDGETS.filter((w) => visibilityMap[w.id] !== false).map((w) => w.id);
-
-  const isWidgetVisible = useCallback(
-    (id: string): boolean => {
-      return visibilityMap[id] ?? true;
-    },
-    [visibilityMap],
-  );
-
-  const toggleWidget = useCallback((id: string) => {
-    setVisibilityMap((prev) => ({
-      ...prev,
-      [id]: !prev[id],
+  toggleWidget: (id: string) => {
+    set((s) => ({
+      visibilityMap: { ...s.visibilityMap, [id]: !s.visibilityMap[id] },
     }));
-  }, []);
+    // Persist after state update (next tick)
+    setTimeout(() => get()._persistToServer(), 0);
+  },
 
-  // Direct visibility setter (for real-time dialog sync)
-  const setWidgetVisibility = useCallback((id: string, visible: boolean) => {
-    setVisibilityMap((prev) => ({
-      ...prev,
-      [id]: visible,
+  setWidgetVisibility: (id: string, visible: boolean) => {
+    set((s) => ({
+      visibilityMap: { ...s.visibilityMap, [id]: visible },
     }));
-  }, []);
+    setTimeout(() => get()._persistToServer(), 0);
+  },
 
-  const resetWidgets = useCallback(() => {
-    const defaults = getDefaultVisibilityMap();
-    setVisibilityMap(defaults);
-    setWidgetOrder([...DEFAULT_ORDER]);
-    setWidgetSizes({ ...DEFAULT_SIZES });
-  }, []);
-
-  const setWidgetOrderDirect = useCallback((newOrder: string[]) => {
-    // Ensure all known widget IDs are present
+  // ─── Order ─────────────────────────────────────────────────
+  setWidgetOrderDirect: (newOrder: string[]) => {
     const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
     const filtered = newOrder.filter((id) => validIds.has(id));
     const missing = DEFAULT_ORDER.filter((id) => !newOrder.includes(id));
-    setWidgetOrder([...filtered, ...missing]);
-  }, []);
+    set({ widgetOrder: [...filtered, ...missing] });
+    setTimeout(() => get()._persistToServer(), 0);
+  },
 
-  // Widget size actions
-  const setWidgetSize = useCallback((id: string, size: WidgetSize) => {
-    setWidgetSizes((prev) => ({
-      ...prev,
-      [id]: size,
-    }));
-  }, []);
-
-  const getWidgetSize = useCallback(
-    (id: string): WidgetSize => {
-      return widgetSizes[id] ?? DEFAULT_SIZES[id] ?? 'half';
-    },
-    [widgetSizes],
-  );
-
-  const moveWidgetUp = useCallback((id: string) => {
-    setWidgetOrder((prev) => {
-      const idx = prev.indexOf(id);
-      if (idx <= 0) return prev;
-      const next = [...prev];
+  moveWidgetUp: (id: string) => {
+    set((s) => {
+      const idx = s.widgetOrder.indexOf(id);
+      if (idx <= 0) return s;
+      const next = [...s.widgetOrder];
       [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-      return next;
+      return { widgetOrder: next };
     });
-  }, []);
+    setTimeout(() => get()._persistToServer(), 0);
+  },
 
-  const moveWidgetDown = useCallback((id: string) => {
-    setWidgetOrder((prev) => {
-      const idx = prev.indexOf(id);
-      if (idx < 0 || idx >= prev.length - 1) return prev;
-      const next = [...prev];
+  moveWidgetDown: (id: string) => {
+    set((s) => {
+      const idx = s.widgetOrder.indexOf(id);
+      if (idx < 0 || idx >= s.widgetOrder.length - 1) return s;
+      const next = [...s.widgetOrder];
       [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-      return next;
+      return { widgetOrder: next };
     });
-  }, []);
+    setTimeout(() => get()._persistToServer(), 0);
+  },
 
-  const getWidgetOrderIndex = useCallback(
-    (id: string): number => {
-      const idx = widgetOrder.indexOf(id);
-      return idx >= 0 ? idx : 999;
-    },
-    [widgetOrder],
-  );
+  getWidgetOrderIndex: (id: string) => {
+    const idx = get().widgetOrder.indexOf(id);
+    return idx >= 0 ? idx : 999;
+  },
 
-  return {
-    visibleWidgets,
-    isWidgetVisible,
-    toggleWidget,
-    setWidgetVisibility,
-    resetWidgets,
-    isAppOwner,
-    isLoaded,
-    widgetOrder,
-    widgetSizes,
-    setWidgetSize,
-    getWidgetSize,
-    moveWidgetUp,
-    moveWidgetDown,
-    getWidgetOrderIndex,
-    setWidgetOrderDirect,
-  } as const;
+  // ─── Size ──────────────────────────────────────────────────
+  setWidgetSize: (id: string, size: WidgetSize) => {
+    set((s) => ({
+      widgetSizes: { ...s.widgetSizes, [id]: size },
+    }));
+    setTimeout(() => get()._persistToServer(), 0);
+  },
+
+  getWidgetSize: (id: string) => {
+    const sizes = get().widgetSizes;
+    return sizes[id] ?? DEFAULT_SIZES[id] ?? 'half';
+  },
+
+  // ─── Reset ─────────────────────────────────────────────────
+  resetWidgets: () => {
+    set({
+      visibilityMap: getDefaultVisibilityMap(),
+      widgetOrder: [...DEFAULT_ORDER],
+      widgetSizes: { ...DEFAULT_SIZES },
+    });
+    setTimeout(() => get()._persistToServer(), 0);
+  },
+
+  // ─── Utility ───────────────────────────────────────────────
+  getVisibleWidgets: () => {
+    const { visibilityMap } = get();
+    return DASHBOARD_WIDGETS.filter((w) => visibilityMap[w.id] !== false).map((w) => w.id);
+  },
+}));
+
+// ---------------------------------------------------------------------------
+// Initialization hook — call once at the app/dashboard root to load data
+// ---------------------------------------------------------------------------
+
+export function useDashboardWidgetsInit() {
+  const isLoaded = useDashboardWidgets((s) => s.isLoaded);
+  const loadFromServer = useDashboardWidgets((s) => s._loadFromServer);
+  const hasLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current && !isLoaded) {
+      hasLoadedRef.current = true;
+      loadFromServer();
+    }
+  }, [isLoaded, loadFromServer]);
 }

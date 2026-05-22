@@ -74,7 +74,7 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 import { StatsCard } from '@/components/shared/stats-card';
 import { DateRangeFilter } from '@/components/shared/date-range-filter';
-import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
+import { useDashboardWidgets, useDashboardWidgetsInit, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
 import { getGridSpanClasses } from '@/lib/dashboard-widget-definitions';
 import { ExpenseAnalysis } from '@/components/expense-analysis/expense-analysis';
 import { ProfitLossWaterfall } from '@/components/profit-loss-waterfall/profit-loss-waterfall';
@@ -228,7 +228,21 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
   const [onboardingVideoExists, setOnboardingVideoExists] = useState(true);
   const [showCompletionOverlay, setShowCompletionOverlay] = useState(false);
-  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, widgetSizes, getWidgetSize, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex } = useDashboardWidgets();
+
+  // Initialize widget store (load from server/localStorage once)
+  useDashboardWidgetsInit();
+
+  // Subscribe to widget store state via Zustand selectors
+  const visibilityMap = useDashboardWidgets((s) => s.visibilityMap);
+  const widgetOrder = useDashboardWidgets((s) => s.widgetOrder);
+  const widgetSizes = useDashboardWidgets((s) => s.widgetSizes);
+  const toggleWidget = useDashboardWidgets((s) => s.toggleWidget);
+  const resetWidgets = useDashboardWidgets((s) => s.resetWidgets);
+  const isAppOwner = useDashboardWidgets((s) => s.isAppOwner);
+  const getWidgetSize = useDashboardWidgets((s) => s.getWidgetSize);
+  const isWidgetVisible = useCallback((id: string): boolean => {
+    return visibilityMap[id] ?? true;
+  }, [visibilityMap]);
 
   // ─── Access status for subscription widget ─────────────────
   const accessResult = useAccessCacheStore((s) => s.result);

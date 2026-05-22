@@ -118,15 +118,15 @@ interface WidgetLayoutEditorProps {
 // ─── Component ──────────────────────────────────────────────────
 export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorProps) {
   const { language } = useTranslation();
-  const {
-    isWidgetVisible,
-    toggleWidget,
-    resetWidgets,
-    isAppOwner,
-    widgetOrder,
-    widgetSizes,
-    setWidgetOrderDirect,
-  } = useDashboardWidgets();
+  // Subscribe to widget store state via Zustand selectors (shared single source of truth)
+  const visibilityMap = useDashboardWidgets((s) => s.visibilityMap);
+  const widgetOrder = useDashboardWidgets((s) => s.widgetOrder);
+  const widgetSizes = useDashboardWidgets((s) => s.widgetSizes);
+  const toggleWidget = useDashboardWidgets((s) => s.toggleWidget);
+  const resetWidgets = useDashboardWidgets((s) => s.resetWidgets);
+  const isAppOwner = useDashboardWidgets((s) => s.isAppOwner);
+  const setWidgetOrderDirect = useDashboardWidgets((s) => s.setWidgetOrderDirect);
+  const isWidgetVisible = (id: string) => visibilityMap[id] ?? true;
 
   // Drag state
   const [dragId, setDragId] = useState<string | null>(null);
