@@ -760,21 +760,18 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     if (vatRegister?.totalOutputVAT !== undefined) {
       return Math.round(vatRegister.totalOutputVAT * 100) / 100;
     }
-    // Fallback: estimate output VAT as 25% of revenue
-    if (!incomeStatement) return 0;
-    return Math.round(incomeStatement.grossProfit.revenue * 0.25 * 100) / 100;
-  }, [vatRegister, incomeStatement]);
+    // No VAT register data — don't make up estimates
+    return 0;
+  }, [vatRegister]);
 
   const inputVAT = useMemo(() => {
     // Use VAT register data if available
     if (vatRegister?.totalInputVAT !== undefined) {
       return Math.round(vatRegister.totalInputVAT * 100) / 100;
     }
-    // Fallback: estimate input VAT as 25% of expenses
-    if (!incomeStatement) return 0;
-    const totalExpenses = incomeStatement.operatingExpenses.total + incomeStatement.financialItems.financialExpenses;
-    return Math.round(totalExpenses * 0.25 * 100) / 100;
-  }, [vatRegister, incomeStatement]);
+    // No VAT register data — don't make up estimates
+    return 0;
+  }, [vatRegister]);
 
   const netVAT = useMemo(() => {
     return Math.round((outputVAT - inputVAT) * 100) / 100;
@@ -1055,16 +1052,18 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     );
   };
 
-  // ─── Custom pie label renderer (line + percentage, no dot, radial spacing) ───────
+  // ─── Custom pie label renderer (percentage labels that sum to 100%) ───────
+  // Receives pre-normalized percent values so they always sum to 100%.
+  // Small slices (< 3%) are shown with a smaller font to avoid clutter.
 
-  const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
+  const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
     const RADIAN = Math.PI / 180;
-    const radius = outerRadius + 14;
+    const radius = outerRadius + 16;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
-    if (percent < 0.05) return null;
+    if (percent < 0.01) return null; // Only hide truly invisible slices (< 1%)
     return (
-      <text x={x} y={y} fill="var(--muted-foreground)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={10}>
+      <text x={x} y={y} fill="var(--muted-foreground)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={percent < 0.05 ? 8 : 10}>
         {`${(percent * 100).toFixed(0)}%`}
       </text>
     );
@@ -1473,70 +1472,19 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: chart + table */}
+                {/* Body: bar chart showing monthly revenue */}
                 <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
-                    <div className="flex flex-col sm:flex-row gap-3 h-full">
-                      <div className="w-full sm:w-[170px] shrink-0">
-                        <div className="h-[120px] sm:h-[170px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={(() => {
-                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0);
-                                  return last6.map((m, i) => ({
-                                    name: m.label,
-                                    value: m.revenue,
-                                    fill: ['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6],
-                                  }));
-                                })()}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={24}
-                                outerRadius={40}
-                                paddingAngle={3}
-                                dataKey="value"
-                                label={renderPieLabel}
-                              >
-                                {(() => {
-                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0);
-                                  return last6.map((m, i) => (
-                                    <Cell key={`rev-cell-${i}`} fill={['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6]} />
-                                  ));
-                                })()}
-                              </Pie>
-                              <RechartsTooltip
-                                formatter={(value: number) => tc(value)}
-                                contentStyle={chartTooltipStyle}
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
-                              <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
-                              <TableHead className="text-right py-1.5 text-[11px] whitespace-nowrap">{language === 'da' ? 'Omsætning' : 'Revenue'}</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {monthlyRevenueChart.slice(-6).map((m) => (
-                              <TableRow key={`rev-${m.month}`} className="border-b border-gray-50 dark:border-gray-800/50">
-                                <TableCell className="py-1.5">
-                                  <Badge variant="outline" className="text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/5 text-[11px] font-medium">
-                                    {m.label}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-right py-1.5 font-medium text-green-600 dark:text-green-400 tabular-nums text-xs whitespace-nowrap">
-                                  {tc(m.revenue)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                    <div className="h-[120px] sm:h-[170px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyRevenueChart.slice(-6)} barGap={2} barCategoryGap="25%">
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                          <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} />
+                          <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
+                          <RechartsTooltip content={<CustomTooltip />} />
+                          <Bar dataKey="revenue" fill="#7c9a82" radius={[3, 3, 0, 0]} name="revenue" />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   ) : (
                     <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
@@ -1575,7 +1523,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     </div>
                     {incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
                       <Badge className={`text-[10px] ${incomeStatement.operatingResult >= 0 ? 'status-badge status-badge-sent' : 'status-badge status-badge-overdue'}`}>
-                        {Math.abs(Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100))}% {language === 'da' ? 'margin' : 'margin'}
+                        {Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100)}% {language === 'da' ? 'margin' : 'margin'}
                       </Badge>
                     )}
                   </div>
@@ -1584,83 +1532,23 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: chart + table */}
+                {/* Body: bar chart showing monthly net result (positive & negative) */}
                 <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
-                    <div className="flex flex-col sm:flex-row gap-3 h-full">
-                      <div className="w-full sm:w-[170px] shrink-0">
-                        <div className="h-[120px] sm:h-[170px]">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={(() => {
-                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.net !== 0);
-                                  const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
-                                  return last6.map((m, i) => ({
-                                    name: m.label,
-                                    value: Math.abs(m.net),
-                                    fill: isPositive
-                                      ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
-                                      : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6],
-                                  }));
-                                })()}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={24}
-                                outerRadius={40}
-                                paddingAngle={3}
-                                dataKey="value"
-                                label={renderPieLabel}
-                              >
-                                {(() => {
-                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.net !== 0);
-                                  const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
-                                  return last6.map((m, i) => (
-                                    <Cell key={`res-cell-${i}`} fill={isPositive
-                                      ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
-                                      : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6]
-                                    } />
-                                  ));
-                                })()}
-                              </Pie>
-                              <RechartsTooltip
-                                formatter={(value: number) => tc(value)}
-                                contentStyle={chartTooltipStyle}
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0 overflow-hidden">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
-                              <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
-                              <TableHead className="text-right py-1.5 text-[11px] whitespace-nowrap">{language === 'da' ? 'Resultat' : 'Result'}</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {monthlyRevenueChart.slice(-6).map((m) => (
-                              <TableRow key={`res-${m.month}`} className="border-b border-gray-50 dark:border-gray-800/50">
-                                <TableCell className="py-1.5">
-                                  <Badge variant="outline" className={`text-[11px] font-medium ${m.net >= 0
-                                    ? 'text-[#0d9488] border-[#0d9488]/30 bg-[#0d9488]/5'
-                                    : 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/5'
-                                  }`}>
-                                    {m.label}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className={`text-right py-1.5 font-medium tabular-nums text-xs whitespace-nowrap ${m.net >= 0
-                                  ? 'text-[#0d9488] dark:text-[#2dd4bf]'
-                                  : 'text-red-600 dark:text-red-400'
-                                }`}>
-                                  {tc(m.net)}
-                                </TableCell>
-                              </TableRow>
+                    <div className="h-[120px] sm:h-[170px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyRevenueChart.slice(-6)} barGap={2} barCategoryGap="25%">
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                          <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} />
+                          <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
+                          <RechartsTooltip content={<CustomTooltip />} />
+                          <Bar dataKey="net" radius={[3, 3, 0, 0]} name="net">
+                            {monthlyRevenueChart.slice(-6).map((m, i) => (
+                              <Cell key={`op-res-${i}`} fill={m.net >= 0 ? '#0d9488' : '#dc4a45'} />
                             ))}
-                          </TableBody>
-                        </Table>
-                      </div>
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   ) : (
                     <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
