@@ -1341,11 +1341,11 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
-      <div className="sm:col-span-2 lg:col-span-6">
+      <div className="sm:col-span-2 lg:col-span-12">
       <PageHeader
         title={t('dashboard')}
         description={language === 'da'
@@ -1372,12 +1372,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
       {showSubscriptionWidget && (
-        <div className="sm:col-span-2 lg:col-span-6"><SubscriptionPlansWidget /></div>
+        <div className="sm:col-span-2 lg:col-span-12"><SubscriptionPlansWidget /></div>
       )}
 
       {/* Demo Mode Banner */}
       {demoModeEnabled && !isLoading && (
-        <div className="sm:col-span-2 lg:col-span-6 flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50">
+        <div className="sm:col-span-2 lg:col-span-12 flex items-center gap-3 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/30 border border-amber-200 dark:border-amber-800/50">
           <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
             <FlaskConical className="h-5 w-5 text-amber-600 dark:text-amber-400" />
           </div>
@@ -1406,211 +1406,345 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
           ═══════════════════════════════════════════════════════════ */}
-          {/* ─── KPI Indicator Cards ────────────────────────────── */}
-          {isWidgetVisible('kpi-cards') && (
-          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }} className={getWidgetSpanClass('kpi-cards')}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-children">
-
-            {/* ── Revenue (Omsætning) ── */}
-            <Card className="stat-card card-hover-lift overflow-hidden">
-              <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center">
-                      <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+          {/* ─── KPI Revenue (Omsætning) ─────────────────────────── */}
+          {isWidgetVisible('kpi-revenue') && (
+          <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={getWidgetSpanClass('kpi-revenue')}>
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 pt-4 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-green-500/10 flex items-center justify-center">
+                        <TrendingUp className="h-4.5 w-4.5 text-green-600 dark:text-green-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {language === 'da' ? 'Omsætning' : 'Revenue'}
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                          {dateRange
+                            ? (language === 'da' ? 'Omsætning for periode' : 'Revenue for period')
+                            : (language === 'da' ? 'Årets omsætning' : 'YTD Revenue')}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {language === 'da' ? 'Omsætning' : 'Revenue'}
-                      </h3>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                        {dateRange
-                          ? (language === 'da' ? 'Omsætning for periode' : 'Revenue for period')
-                          : (language === 'da' ? 'Årets omsætning' : 'YTD Revenue')}
-                      </p>
-                    </div>
+                    {monthlyRevenueChart.length >= 2 && (() => {
+                      const curr = monthlyRevenueChart[monthlyRevenueChart.length - 1]?.revenue ?? 0;
+                      const prev = monthlyRevenueChart[monthlyRevenueChart.length - 2]?.revenue ?? 0;
+                      const pct = prev !== 0 ? Math.round(((curr - prev) / Math.abs(prev)) * 100) : 0;
+                      return (
+                        <Badge className={`text-[10px] ${pct >= 0 ? 'status-badge status-badge-sent' : 'status-badge status-badge-overdue'}`}>
+                          {pct >= 0 ? '+' : ''}{pct}%
+                        </Badge>
+                      );
+                    })()}
                   </div>
-                  {incomeStatement && incomeStatement.grossProfit.revenue > 0 && monthlyRevenueChart.length >= 2 && (
-                    <div className="flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
-                      <TrendingUp className="h-3.5 w-3.5" />
-                      {monthlyRevenueChart.length >= 2 ? (
-                        (() => {
-                          const curr = monthlyRevenueChart[monthlyRevenueChart.length - 1]?.revenue ?? 0;
-                          const prev = monthlyRevenueChart[monthlyRevenueChart.length - 2]?.revenue ?? 0;
-                          const pct = prev !== 0 ? Math.round(((curr - prev) / Math.abs(prev)) * 100) : 0;
-                          return `${pct >= 0 ? '+' : ''}${pct}%`;
-                        })()
-                      ) : null}
+                  <p className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400 mt-1.5 tabular-nums">
+                    {tc(incomeStatement?.grossProfit.revenue || 0)}
+                  </p>
+                </div>
+
+                {/* Body: chart + table */}
+                <CardContent className="p-4 pt-3">
+                  {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="w-full sm:w-[140px] shrink-0">
+                        <div className="h-[120px] sm:h-[140px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={(() => {
+                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0);
+                                  return last6.map((m, i) => ({
+                                    name: m.label,
+                                    value: m.revenue,
+                                    fill: ['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6],
+                                  }));
+                                })()}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={32}
+                                outerRadius={52}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {(() => {
+                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0);
+                                  return last6.map((m, i) => (
+                                    <Cell key={`rev-cell-${i}`} fill={['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6]} />
+                                  ));
+                                })()}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(value: number) => tc(value)}
+                                contentStyle={chartTooltipStyle}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
+                          {monthlyRevenueChart.slice(-6).filter(m => m.revenue > 0).map((m, i) => (
+                            <span key={i} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ['#7c9a82', '#a8c5a0', '#4a7c59', '#c9a87c', '#5eead4', '#0d9488'][i % 6] }} />
+                              {m.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
+                              <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px]">{language === 'da' ? 'Omsætning' : 'Revenue'}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {monthlyRevenueChart.slice(-6).map((m) => (
+                              <TableRow key={`rev-${m.month}`} className="border-b border-gray-50 dark:border-gray-800/50">
+                                <TableCell className="py-1.5">
+                                  <Badge variant="outline" className="text-green-600 dark:text-green-400 border-green-500/30 bg-green-500/5 text-[11px] font-medium">
+                                    {m.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right py-1.5 font-medium text-green-600 dark:text-green-400 tabular-nums text-xs">
+                                  {tc(m.revenue)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen omsætningsdata i perioden' : 'No revenue data in period'}
                     </div>
                   )}
-                </div>
-                <p className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400 mt-2 tabular-nums">
-                  {tc(incomeStatement?.grossProfit.revenue || 0)}
-                </p>
-              </div>
-              <CardContent className="p-4 sm:p-5 pt-0 sm:pt-0">
-                <div className="flex items-end gap-[3px] h-8">
-                  {monthlyRevenueChart.slice(-6).map((m, i) => {
-                    const maxVal = Math.max(...monthlyRevenueChart.slice(-6).map(x => x.revenue), 1);
-                    const heightPercent = Math.max((m.revenue / maxVal) * 100, 4);
-                    return (
-                      <div
-                        key={i}
-                        className="flex-1 min-w-[4px] rounded-sm bg-green-500/60 dark:bg-green-400/60 transition-all duration-500"
-                        style={{ height: `${heightPercent}%`, transitionDelay: `${i * 50}ms` }}
-                      />
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ── Operating Result (Driftsresultat) ── */}
-            <Card className="stat-card card-hover-lift overflow-hidden">
-              <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 sm:pt-5 pb-3`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'bg-[#0d9488]/10' : 'bg-red-500/10'}`}>
-                      {incomeStatement && incomeStatement.operatingResult >= 0
-                        ? <Scale className="h-5 w-5 text-[#0d9488] dark:text-[#2dd4bf]" />
-                        : <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
-                      }
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {language === 'da' ? 'Driftsresultat' : 'Operating Result'}
-                      </h3>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                        {dateRange
-                          ? (language === 'da' ? 'Resultat for periode' : 'Result for period')
-                          : (language === 'da' ? 'Årets driftsresultat' : 'YTD Operating Result')}
-                      </p>
-                    </div>
-                  </div>
-                  {incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
-                    <div className={`flex items-center gap-1 text-xs font-medium ${incomeStatement.operatingResult >= 0 ? 'text-[#0d9488] dark:text-[#2dd4bf]' : 'text-red-600 dark:text-red-400'}`}>
-                      {incomeStatement.operatingResult >= 0
-                        ? <TrendingUp className="h-3.5 w-3.5" />
-                        : <TrendingDown className="h-3.5 w-3.5" />
-                      }
-                      {Math.abs(Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100))}%
-                    </div>
-                  )}
-                </div>
-                <p className={`text-2xl sm:text-3xl font-bold mt-2 tabular-nums ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'text-[#0d9488] dark:text-[#2dd4bf]' : 'text-red-600 dark:text-red-400'}`}>
-                  {tc(incomeStatement?.operatingResult || 0)}
-                </p>
-              </div>
-              <CardContent className="p-4 sm:p-5 pt-0 sm:pt-0">
-                <div className="flex items-end gap-[3px] h-8">
-                  {monthlyRevenueChart.slice(-6).map((m, i) => {
-                    const netValues = monthlyRevenueChart.slice(-6).map(x => x.net);
-                    const maxVal = Math.max(...netValues.map(Math.abs), 1);
-                    const heightPercent = Math.max((Math.abs(m.net) / maxVal) * 100, 4);
-                    return (
-                      <div
-                        key={i}
-                        className={`flex-1 min-w-[4px] rounded-sm transition-all duration-500 ${m.net >= 0 ? 'bg-[#0d9488]/60 dark:bg-[#2dd4bf]/60' : 'bg-red-500/60 dark:bg-red-400/60'}`}
-                        style={{ height: `${heightPercent}%`, transitionDelay: `${i * 50}ms` }}
-                      />
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
           </div>
+          )}
+
+          {/* ─── KPI Operating Result (Driftsresultat) ──────────────── */}
+          {isWidgetVisible('kpi-operating-result') && (
+          <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={getWidgetSpanClass('kpi-operating-result')}>
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'bg-[#0d9488]/10' : 'bg-red-500/10'}`}>
+                        {incomeStatement && incomeStatement.operatingResult >= 0
+                          ? <Scale className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                          : <TrendingDown className="h-4.5 w-4.5 text-red-600 dark:text-red-400" />
+                        }
+                      </div>
+                      <div>
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {language === 'da' ? 'Driftsresultat' : 'Operating Result'}
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                          {dateRange
+                            ? (language === 'da' ? 'Resultat for periode' : 'Result for period')
+                            : (language === 'da' ? 'Årets driftsresultat' : 'YTD Operating Result')}
+                        </p>
+                      </div>
+                    </div>
+                    {incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
+                      <Badge className={`text-[10px] ${incomeStatement.operatingResult >= 0 ? 'status-badge status-badge-sent' : 'status-badge status-badge-overdue'}`}>
+                        {Math.abs(Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100))}% {language === 'da' ? 'margin' : 'margin'}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className={`text-xl sm:text-2xl font-bold mt-1.5 tabular-nums ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'text-[#0d9488] dark:text-[#2dd4bf]' : 'text-red-600 dark:text-red-400'}`}>
+                    {tc(incomeStatement?.operatingResult || 0)}
+                  </p>
+                </div>
+
+                {/* Body: chart + table */}
+                <CardContent className="p-4 pt-3">
+                  {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <div className="w-full sm:w-[140px] shrink-0">
+                        <div className="h-[120px] sm:h-[140px]">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={(() => {
+                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.net !== 0);
+                                  const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
+                                  return last6.map((m, i) => ({
+                                    name: m.label,
+                                    value: Math.abs(m.net),
+                                    fill: isPositive
+                                      ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
+                                      : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6],
+                                  }));
+                                })()}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={32}
+                                outerRadius={52}
+                                paddingAngle={3}
+                                dataKey="value"
+                              >
+                                {(() => {
+                                  const last6 = monthlyRevenueChart.slice(-6).filter(m => m.net !== 0);
+                                  const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
+                                  return last6.map((m, i) => (
+                                    <Cell key={`res-cell-${i}`} fill={isPositive
+                                      ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
+                                      : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6]
+                                    } />
+                                  ));
+                                })()}
+                              </Pie>
+                              <RechartsTooltip
+                                formatter={(value: number) => tc(value)}
+                                contentStyle={chartTooltipStyle}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-1 justify-center">
+                          {monthlyRevenueChart.slice(-6).filter(m => m.net !== 0).map((m, i) => {
+                            const isPositive = incomeStatement && incomeStatement.operatingResult >= 0;
+                            return (
+                              <span key={i} className="flex items-center gap-1 text-[10px] text-gray-600 dark:text-gray-400">
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{
+                                  backgroundColor: isPositive
+                                    ? ['#0d9488', '#7c9a82', '#5eead4', '#2dd4bf', '#a8c5a0', '#4a7c59'][i % 6]
+                                    : ['#ef4444', '#c9928f', '#f87171', '#dc2626', '#fca5a5', '#b91c1c'][i % 6],
+                                }} />
+                                {m.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-b border-gray-200 dark:border-gray-700">
+                              <TableHead className="py-1.5 text-[11px]">{language === 'da' ? 'Måned' : 'Month'}</TableHead>
+                              <TableHead className="text-right py-1.5 text-[11px]">{language === 'da' ? 'Resultat' : 'Result'}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {monthlyRevenueChart.slice(-6).map((m) => (
+                              <TableRow key={`res-${m.month}`} className="border-b border-gray-50 dark:border-gray-800/50">
+                                <TableCell className="py-1.5">
+                                  <Badge variant="outline" className={`text-[11px] font-medium ${m.net >= 0
+                                    ? 'text-[#0d9488] border-[#0d9488]/30 bg-[#0d9488]/5'
+                                    : 'text-red-600 dark:text-red-400 border-red-500/30 bg-red-500/5'
+                                  }`}>
+                                    {m.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className={`text-right py-1.5 font-medium tabular-nums text-xs ${m.net >= 0
+                                  ? 'text-[#0d9488] dark:text-[#2dd4bf]'
+                                  : 'text-red-600 dark:text-red-400'
+                                }`}>
+                                  {tc(m.net)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen resultdata i perioden' : 'No result data in period'}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
           </div>
           )}
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
           <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={getWidgetSpanClass('pnl-result')}>
-              <Card className={`hover-lift overflow-hidden rounded-2xl sm:rounded-xl border-0 ${
-                incomeStatement.netResult >= 0
-                  ? 'bg-gradient-to-br from-[#edf5ef] to-[#f0fdf9] dark:from-[#142e24] dark:to-[#1a2e2b]'
-                  : 'bg-gradient-to-br from-[#fef2f2] to-[#fff1f2] dark:from-[#2e1c1c] dark:to-[#2e2024]'
-              }`}>
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
-                        incomeStatement.netResult >= 0
-                          ? 'bg-green-100 dark:bg-green-900/40'
-                          : 'bg-red-100 dark:bg-red-900/40'
-                      }`}>
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${incomeStatement.netResult >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
                         {incomeStatement.netResult >= 0
-                          ? <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
-                          : <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
+                          ? <TrendingUp className="h-4.5 w-4.5 text-green-600 dark:text-green-400" />
+                          : <TrendingDown className="h-4.5 w-4.5 text-red-600 dark:text-red-400" />
                         }
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {language === 'da' ? 'Resultat & Likviditet' : 'P&L Result'}
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
                           {dateRange
                             ? (language === 'da' ? 'Resultat for periode' : 'Result for Period')
                             : (language === 'da' ? 'Årets resultat' : 'YTD Net Result')}
                         </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
-                          {language === 'da' ? 'Indtægter − Omkostninger' : 'Revenue − Expenses'}
-                        </p>
                       </div>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                      incomeStatement.netResult >= 0
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                        : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
-                    }`}>
+                    <Badge className={`text-[10px] ${incomeStatement.netResult >= 0 ? 'status-badge status-badge-sent' : 'status-badge status-badge-overdue'}`}>
                       {incomeStatement.netResult >= 0
                         ? (language === 'da' ? 'Overskud' : 'Profit')
                         : (language === 'da' ? 'Underskud' : 'Loss')
                       }
-                    </span>
+                    </Badge>
                   </div>
-
-                  <p className={`text-2xl sm:text-3xl font-bold tracking-tight ${
-                    incomeStatement.netResult >= 0
-                      ? 'text-green-700 dark:text-green-300'
-                      : 'text-red-700 dark:text-red-300'
-                  }`}>
+                  <p className={`text-xl sm:text-2xl font-bold mt-1.5 tabular-nums ${incomeStatement.netResult >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                     {tc(incomeStatement.netResult)}
                   </p>
+                </div>
 
-                  {/* Profit Margin Bar */}
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-gray-500 dark:text-gray-400">
-                        {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
-                      </span>
-                      <span className={`font-semibold ${
+                {/* Body: profit margin */}
+                <CardContent className="p-4 pt-3">
+                  <div className="flex items-center justify-between text-xs mb-1.5">
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
+                    </span>
+                    <span className={`font-semibold ${
+                      incomeStatement.netResult >= 0
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {incomeStatement.grossProfit.revenue > 0
+                        ? `${((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100).toFixed(1)}%`
+                        : '0.0%'
+                      }
+                    </span>
+                  </div>
+                  <div className="h-2 bg-gray-200/60 dark:bg-gray-700/60 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ease-out ${
                         incomeStatement.netResult >= 0
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {incomeStatement.grossProfit.revenue > 0
-                          ? `${((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100).toFixed(1)}%`
-                          : '0.0%'
-                        }
-                      </span>
-                    </div>
-                    <div className="h-2 bg-gray-200/60 dark:bg-gray-700/60 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ease-out ${
-                          incomeStatement.netResult >= 0
-                            ? 'bg-gradient-to-r from-green-400 to-emerald-500 dark:from-green-500 dark:to-emerald-400'
-                            : 'bg-gradient-to-r from-red-400 to-rose-500 dark:from-red-500 dark:to-rose-400'
-                        }`}
-                        style={{
-                          width: `${Math.min(
-                            Math.max(
-                              incomeStatement.grossProfit.revenue > 0
-                                ? Math.abs((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100)
-                                : 0,
-                              0
-                            ),
-                            100
-                          )}%`,
-                        }}
-                      />
-                    </div>
+                          ? 'bg-gradient-to-r from-green-400 to-emerald-500 dark:from-green-500 dark:to-emerald-400'
+                          : 'bg-gradient-to-r from-red-400 to-rose-500 dark:from-red-500 dark:to-rose-400'
+                      }`}
+                      style={{
+                        width: `${Math.min(
+                          Math.max(
+                            incomeStatement.grossProfit.revenue > 0
+                              ? Math.abs((incomeStatement.netResult / incomeStatement.grossProfit.revenue) * 100)
+                              : 0,
+                            0
+                          ),
+                          100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-2 text-[10px] text-gray-400 dark:text-gray-500">
+                    <span>
+                      {language === 'da' ? 'Indtægter' : 'Revenue'}: {tc(incomeStatement.grossProfit.revenue)}
+                    </span>
+                    <span>
+                      {language === 'da' ? 'Omkostninger' : 'Expenses'}: {tc(incomeStatement.operatingExpenses.total + incomeStatement.financialItems.financialExpenses)}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
@@ -1620,39 +1754,44 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Cash Position ────────────────────────────────── */}
           {isWidgetVisible('cash-position') && balanceSheet && (
           <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }} className={getWidgetSpanClass('cash-position')}>
-              <Card className="hover-lift rounded-2xl sm:rounded-xl bg-gradient-to-br from-[#f0fdf9] to-[#edf4f7] dark:from-[#1a2e2b] dark:to-[#1e2e32] border border-[#d1e7dd]/50 dark:border-[#2a3e38]/50">
-                <CardContent className="p-4 sm:p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-9 w-9 rounded-lg bg-[#e8f2f4] dark:bg-[#1e2e32] flex items-center justify-center">
-                        <Wallet className="h-5 w-5 text-[#0d9488] dark:text-[#2dd4bf]" />
+              <Card className="stat-card card-hover-lift overflow-hidden">
+                {/* Header with total */}
+                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
+                        <Wallet className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Likviditetsoversigt' : 'Cash Position'}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                        </h3>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
                           {dateRange
                             ? (language === 'da' ? 'Resultat for periode' : 'Result for Period')
                             : (language === 'da' ? 'Egenkapital (Aktiver − Gæld)' : 'Equity (Assets − Liabilities)')}
                         </p>
                       </div>
                     </div>
-                    <div className="h-9 w-9 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
-                      <PiggyBank className="h-5 w-5 text-[#7c9a82] dark:text-[#8cc492]" />
-                    </div>
+                    <Badge className="status-badge status-badge-sent text-[10px]">
+                      {balanceSheet.equity.totalEquity >= 0
+                        ? (language === 'da' ? 'Positiv' : 'Positive')
+                        : (language === 'da' ? 'Negativ' : 'Negative')
+                      }
+                    </Badge>
                   </div>
-
-                  <p className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0d9488] dark:text-[#2dd4bf]">
+                  <p className="text-xl sm:text-2xl font-bold text-[#0d9488] dark:text-[#2dd4bf] mt-1.5 tabular-nums">
                     {dateRange
                       ? tc(incomeStatement?.netResult ?? 0)
                       : tc(balanceSheet.equity.totalEquity)}
                   </p>
+                </div>
 
-                  {/* Progress Bar — period: profit margin | all time: equity ratio */}
+                {/* Body: equity ratio / profit margin */}
+                <CardContent className="p-4 pt-3">
                   {dateRange ? (
                     incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
-                      <div className="mt-3">
+                      <div>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="text-gray-500 dark:text-gray-400">
                             {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
@@ -1699,7 +1838,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     )
                   ) : (
                     balanceSheet.assets.totalAssets > 0 && (
-                      <div className="mt-3">
+                      <div>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="text-gray-500 dark:text-gray-400">
                             {language === 'da' ? 'Egenkapitalandel' : 'Equity Ratio'}
@@ -1837,11 +1976,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
           )}
 
-          {/* ─── Monthly Comparison ────────────────────── */}
-          {isWidgetVisible('monthly-comparison') && monthlyComparison && (
-          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }} className={getWidgetSpanClass('monthly-comparison')}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            {/* Revenue Change */}
+          {/* ─── Comparison: Revenue Change ────────────────────── */}
+          {isWidgetVisible('comparison-revenue') && monthlyComparison && (
+          <div style={{ order: widgetOrderMap['comparison-revenue'] ?? 999 }} className={getWidgetSpanClass('comparison-revenue')}>
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#edf5ef] dark:from-gray-900 dark:to-[#242e26]">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1880,8 +2017,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
+          </div>
+          )}
 
-            {/* Expense Change */}
+          {/* ─── Comparison: Expense Change ────────────────────── */}
+          {isWidgetVisible('comparison-expenses') && monthlyComparison && (
+          <div style={{ order: widgetOrderMap['comparison-expenses'] ?? 999 }} className={getWidgetSpanClass('comparison-expenses')}>
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#faf5ee] dark:from-gray-900 dark:to-[#302a22]">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -1920,8 +2061,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
+          </div>
+          )}
 
-            {/* Net Profit Change */}
+          {/* ─── Comparison: Net Profit Change ────────────────────── */}
+          {isWidgetVisible('comparison-net') && monthlyComparison && (
+          <div style={{ order: widgetOrderMap['comparison-net'] ?? 999 }} className={getWidgetSpanClass('comparison-net')}>
             <Card className={`hover-lift overflow-hidden border-0 bg-gradient-to-br ${
                   monthlyComparison.netProfitChange >= 0
                     ? 'from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]'
@@ -1968,7 +2113,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </CardContent>
             </Card>
           </div>
-          </div>
           )}
 
           {/* ─── Cash Flow Trend Mini Chart ────────────────────────── */}
@@ -2006,8 +2150,16 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     <BarChart data={dailyRevenueChart} barGap={3} barCategoryGap="25%">
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.08)" vertical={false} />
                       <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} angle={-45} textAnchor="end" height={50} />
-                      <YAxis stroke="#b0a89e" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
+                      <YAxis stroke="#b0a89e" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
                       <RechartsTooltip content={<CustomTooltip />} />
+                      <Legend
+                        formatter={(value) => {
+                          if (value === 'revenue') return language === 'da' ? 'Indtægt' : 'Revenue';
+                          if (value === 'expenses') return language === 'da' ? 'Omkost.' : 'Expenses';
+                          return value;
+                        }}
+                        wrapperStyle={{ fontSize: '11px', color: '#b0a89e' }}
+                      />
                       <Bar dataKey="revenue" fill="#7c9a82" radius={[3, 3, 0, 0]} name="revenue" />
                       <Bar dataKey="expenses" fill="#c9928f" radius={[3, 3, 0, 0]} name="expenses" />
                     </BarChart>
@@ -2073,28 +2225,42 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── SAF-T Export Widget ────────────────────────────── */}
           {isWidgetVisible('saft-export') && (
           <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }} className={getWidgetSpanClass('saft-export')}>
-          <Card className="stat-card cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center gap-4">
-                <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-[#0d9488] to-[#0f766e] flex items-center justify-center shrink-0 shadow-md">
-                  <Shield className="h-7 w-7 text-white" />
+          <Card className="stat-card card-hover-lift overflow-hidden cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
+                    <Shield className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                      {t('saftExport')}
+                    </h3>
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                      {language === 'da'
+                        ? 'Skattestyrelsen-kompatibel revisionsfil'
+                        : 'Danish Tax Authority compliant audit file'}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-gray-900 dark:text-white text-lg">
-                    {t('saftExport')}
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {language === 'da'
-                      ? 'Generer Skattestyrelsen-kompatibel revisionsfil'
-                      : 'Generate Danish Tax Authority compliant audit file'}
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <Button variant="outline" size="sm" className="gap-2 border-[#e2d8d0] text-[#0d9488] hover:bg-[#e6f7f3] dark:border-[#2dd4bf] dark:text-[#2dd4bf] dark:hover:bg-[#302b26]">
-                    <FileText className="h-4 w-4" />
-                    {language === 'da' ? 'Generer' : 'Generate'}
-                  </Button>
-                </div>
+                <Badge className="status-badge status-badge-sent text-[10px]">
+                  {language === 'da' ? 'Klar' : 'Ready'}
+                </Badge>
+              </div>
+            </div>
+            {/* Body */}
+            <CardContent className="p-4 pt-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {language === 'da'
+                    ? 'Generer din SAF-T fil til Skattestyrelsen'
+                    : 'Generate your SAF-T file for the Danish Tax Authority'}
+                </p>
+                <Button variant="outline" size="sm" className="gap-2 border-[#0d9488]/30 text-[#0d9488] hover:bg-[#0d9488]/10 dark:border-[#2dd4bf]/30 dark:text-[#2dd4bf] dark:hover:bg-[#2dd4bf]/10 shrink-0">
+                  <FileText className="h-4 w-4" />
+                  {language === 'da' ? 'Generer' : 'Generate'}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -2104,25 +2270,31 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
           <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={getWidgetSpanClass('invoice-overview')}>
-            <Card className="stat-card">
-              <CardHeader className="pb-3">
+            <Card className="stat-card card-hover-lift overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <FileText className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
-                    {language === 'da' ? 'Fakturaoversigt' : 'Invoice Overview'}
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10"
-                    onClick={() => onNavigate?.('invoices')}
-                  >
-                    {language === 'da' ? 'Vis alle' : 'View all'}
-                    <ArrowRight className="ml-1 h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
+                      <FileText className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Fakturaoversigt' : 'Invoice Overview'}
+                      </h3>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        {language === 'da' ? 'Faktura status oversigt' : 'Invoice status overview'}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge className="status-badge status-badge-sent text-[10px]">
+                    {invoices.filter(i => i.status !== 'CANCELLED' && i.status !== 'DRAFT').length} {language === 'da' ? 'fakturaer' : 'invoices'}
+                  </Badge>
                 </div>
-              </CardHeader>
-              <CardContent className="pt-0">
+              </div>
+
+              {/* Body: invoice stats */}
+              <CardContent className="p-4 pt-3">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {/* Outstanding */}
                   <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 p-3">
@@ -2196,12 +2368,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
           )}
 
-          {/* ─── VAT Indicator Cards (Output + Input) ──────────────── */}
-          {isWidgetVisible('vat-breakdown') && (
-          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className={getWidgetSpanClass('vat-breakdown')}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-              {/* ── Output VAT (Sales) ── */}
+          {/* ─── VAT Output Card ────────────────────────────────── */}
+          {isWidgetVisible('vat-output') && (
+          <div style={{ order: widgetOrderMap['vat-output'] ?? 999 }} className={getWidgetSpanClass('vat-output')}>
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
@@ -2295,8 +2464,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
+          </div>
+          )}
 
-              {/* ── Input VAT (Purchases) ── */}
+          {/* ─── VAT Input Card ─────────────────────────────────── */}
+          {isWidgetVisible('vat-input') && (
+          <div style={{ order: widgetOrderMap['vat-input'] ?? 999 }} className={getWidgetSpanClass('vat-input')}>
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-amber-500/8 to-transparent dark:from-amber-500/15 px-4 pt-4 pb-3">
@@ -2390,7 +2563,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-            </div>
           </div>
           )}
 
@@ -2416,7 +2588,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                       <BarChart data={dailyRevenueChart} barGap={2} barCategoryGap="20%">
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
                         <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
-                        <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} />
+                        <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
                         <RechartsTooltip content={<CustomTooltip />} />
                         <Legend
                           formatter={(value) => {
@@ -2472,8 +2644,15 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     <AreaChart data={dailyRevenueChart}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
                       <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} angle={-45} textAnchor="end" height={50} />
-                      <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} />
+                      <YAxis stroke="#b0a89e" fontSize={12} tickFormatter={(v) => `${v / 1000}k`} label={{ value: 'DKK', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }} />
                       <RechartsTooltip content={<CustomTooltip />} />
+                      <Legend
+                        formatter={(value) => {
+                          if (value === 'net') return language === 'da' ? 'Netto resultat' : 'Net Result';
+                          return value;
+                        }}
+                        wrapperStyle={{ fontSize: '12px', color: '#b0a89e' }}
+                      />
                       <defs>
                         <linearGradient id="netGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#0d9488" stopOpacity={0.25} />
@@ -2569,11 +2748,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
           )}
 
-          {/* ─── Recent Journal Entries + Activity Feed ──────────── */}
-          {isWidgetVisible('recent-activity') && (
-          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }} className={getWidgetSpanClass('recent-activity')}>
-          <div className="space-y-4">
-            {/* Recent Journal Entries */}
+          {/* ─── Recent Journal Entries ────────────────────────────── */}
+          {isWidgetVisible('recent-journal') && (
+          <div style={{ order: widgetOrderMap['recent-journal'] ?? 999 }} className={getWidgetSpanClass('recent-journal')}>
             <Card className="stat-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -2654,8 +2831,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
+          </div>
+          )}
 
-            {/* Recent Activity Feed */}
+          {/* ─── Activity Feed ────────────────────────────────────── */}
+          {isWidgetVisible('activity-feed') && (
+          <div style={{ order: widgetOrderMap['activity-feed'] ?? 999 }} className={getWidgetSpanClass('activity-feed')}>
             <Card className="stat-card">
               <CardContent className="p-4 sm:p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -2793,20 +2974,36 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </CardContent>
             </Card>
           </div>
-          </div>
           )}
 
           {/* ─── Account Balance Overview ───────────────────────── */}
           {isWidgetVisible('active-accounts') && topAccounts.length > 0 && (
           <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }} className={getWidgetSpanClass('active-accounts')}>
-            <Card className="stat-card">
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-[#0d9488]" />
-                  {language === 'da' ? 'Mest aktive konti' : 'Most Active Accounts'}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            <Card className="stat-card card-hover-lift overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
+                      <BarChart3 className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Mest aktive konti' : 'Most Active Accounts'}
+                      </h3>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        {language === 'da' ? 'Top konti efter aktivitet' : 'Top accounts by activity'}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge className="status-badge status-badge-sent text-[10px]">
+                    {topAccounts.length} {language === 'da' ? 'konti' : 'accounts'}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Body: table */}
+              <CardContent className="p-4 pt-3">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200">

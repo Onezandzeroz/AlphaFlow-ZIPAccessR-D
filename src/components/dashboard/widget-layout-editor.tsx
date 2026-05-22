@@ -23,18 +23,18 @@ import {
   BarChart3,
   Zap,
   FileText,
-  Calculator,
   Activity,
   Scale,
   Droplets,
   Sparkles,
   BookOpen,
-  Maximize2,
-  Minimize2,
-  Columns2,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  TrendingDown,
+  PieChart,
 } from 'lucide-react';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { getWidgetGridSpanById, cycleSize, type WidgetSize } from '@/lib/dashboard-widget-definitions';
+import { getWidgetGridSpanById, type WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { useTranslation } from '@/lib/use-translation';
 
 // ─── Icon lookup ─────────────────────────────────────────────────
@@ -46,36 +46,44 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   BarChart3,
   Zap,
   FileText,
-  Calculator,
   Activity,
   Scale,
   Droplets,
   Sparkles,
   BookOpen,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  TrendingDown,
+  PieChart,
 };
 
 // ─── Widget color palette (muted pastels) ───────────────────────
 const WIDGET_COLORS: Record<string, { bg: string; border: string; activeBg: string }> = {
-  'kpi-cards':         { bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800/50', activeBg: 'bg-emerald-100 dark:bg-emerald-900/50' },
-  'pnl-result':        { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
-  'cash-position':     { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
-  'financial-health-score': { bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800/50', activeBg: 'bg-amber-100 dark:bg-amber-900/50' },
-  'monthly-comparison':{ bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-800/50', activeBg: 'bg-orange-100 dark:bg-orange-900/50' },
-  'cash-flow-trend':   { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
-  'quick-actions':     { bg: 'bg-yellow-50 dark:bg-yellow-950/40', border: 'border-yellow-200 dark:border-yellow-800/50', activeBg: 'bg-yellow-100 dark:bg-yellow-900/50' },
-  'invoice-overview':  { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-800/50', activeBg: 'bg-sky-100 dark:bg-sky-900/50' },
-  'vat-breakdown':     { bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-800/50', activeBg: 'bg-rose-100 dark:bg-rose-900/50' },
-  'net-result-chart':  { bg: 'bg-green-50 dark:bg-green-950/40', border: 'border-green-200 dark:border-green-800/50', activeBg: 'bg-green-100 dark:bg-green-900/50' },
-  'expense-analysis':  { bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800/50', activeBg: 'bg-purple-100 dark:bg-purple-900/50' },
+  'kpi-revenue':           { bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800/50', activeBg: 'bg-emerald-100 dark:bg-emerald-900/50' },
+  'kpi-operating-result':  { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'vat-output':            { bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-800/50', activeBg: 'bg-rose-100 dark:bg-rose-900/50' },
+  'vat-input':             { bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800/50', activeBg: 'bg-amber-100 dark:bg-amber-900/50' },
+  'pnl-result':            { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'cash-position':         { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'comparison-revenue':    { bg: 'bg-green-50 dark:bg-green-950/40', border: 'border-green-200 dark:border-green-800/50', activeBg: 'bg-green-100 dark:bg-green-900/50' },
+  'comparison-expenses':   { bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-800/50', activeBg: 'bg-orange-100 dark:bg-orange-900/50' },
+  'comparison-net':        { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-800/50', activeBg: 'bg-sky-100 dark:bg-sky-900/50' },
+  'financial-health-score':{ bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800/50', activeBg: 'bg-amber-100 dark:bg-amber-900/50' },
+  'quick-actions':         { bg: 'bg-yellow-50 dark:bg-yellow-950/40', border: 'border-yellow-200 dark:border-yellow-800/50', activeBg: 'bg-yellow-100 dark:bg-yellow-900/50' },
+  'cash-flow-trend':       { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
+  'net-result-chart':      { bg: 'bg-green-50 dark:bg-green-950/40', border: 'border-green-200 dark:border-green-800/50', activeBg: 'bg-green-100 dark:bg-green-900/50' },
   'profit-loss-waterfall': { bg: 'bg-lime-50 dark:bg-lime-950/40', border: 'border-lime-200 dark:border-lime-800/50', activeBg: 'bg-lime-100 dark:bg-lime-900/50' },
+  'cash-flow-forecast':    { bg: 'bg-indigo-50 dark:bg-indigo-950/40', border: 'border-indigo-200 dark:border-indigo-800/50', activeBg: 'bg-indigo-100 dark:bg-indigo-900/50' },
+  'revenue-expenses-chart':{ bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
+  'expense-analysis':      { bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800/50', activeBg: 'bg-purple-100 dark:bg-purple-900/50' },
+  'budget-vs-actual':      { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', border: 'border-fuchsia-200 dark:border-fuchsia-800/50', activeBg: 'bg-fuchsia-100 dark:bg-fuchsia-900/50' },
+  'invoice-overview':      { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-800/50', activeBg: 'bg-sky-100 dark:bg-sky-900/50' },
+  'recent-journal':        { bg: 'bg-slate-50 dark:bg-slate-950/40', border: 'border-slate-200 dark:border-slate-800/50', activeBg: 'bg-slate-100 dark:bg-slate-900/50' },
+  'activity-feed':         { bg: 'bg-stone-50 dark:bg-stone-950/40', border: 'border-stone-200 dark:border-stone-800/50', activeBg: 'bg-stone-100 dark:bg-stone-900/50' },
+  'active-accounts':       { bg: 'bg-stone-50 dark:bg-stone-950/40', border: 'border-stone-200 dark:border-stone-800/50', activeBg: 'bg-stone-100 dark:bg-stone-900/50' },
+  'saft-export':           { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' },
+  'ai-categorization':     { bg: 'bg-violet-50 dark:bg-violet-950/40', border: 'border-violet-200 dark:border-violet-800/50', activeBg: 'bg-violet-100 dark:bg-violet-900/50' },
   'financial-health-detail': { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
-  'cash-flow-forecast':{ bg: 'bg-indigo-50 dark:bg-indigo-950/40', border: 'border-indigo-200 dark:border-indigo-800/50', activeBg: 'bg-indigo-100 dark:bg-indigo-900/50' },
-  'budget-vs-actual':  { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', border: 'border-fuchsia-200 dark:border-fuchsia-800/50', activeBg: 'bg-fuchsia-100 dark:bg-fuchsia-900/50' },
-  'ai-categorization': { bg: 'bg-violet-50 dark:bg-violet-950/40', border: 'border-violet-200 dark:border-violet-800/50', activeBg: 'bg-violet-100 dark:bg-violet-900/50' },
-  'recent-activity':   { bg: 'bg-slate-50 dark:bg-slate-950/40', border: 'border-slate-200 dark:border-slate-800/50', activeBg: 'bg-slate-100 dark:bg-slate-900/50' },
-  'active-accounts':   { bg: 'bg-stone-50 dark:bg-stone-950/40', border: 'border-stone-200 dark:border-stone-800/50', activeBg: 'bg-stone-100 dark:bg-stone-900/50' },
-  'saft-export':       { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' },
-  'revenue-expenses-chart': { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
 };
 
 function getWidgetColor(id: string) {
@@ -84,22 +92,21 @@ function getWidgetColor(id: string) {
 
 // ─── Size label helpers ──────────────────────────────────────────
 function getSizeLabel(size: WidgetSize, language: string) {
-  if (size === 'full') return language === 'da' ? 'Fuld' : 'Full';
-  if (size === 'half') return language === 'da' ? 'Halv' : 'Half';
-  return '1/3';
-}
-
-function getSizeIcon(size: WidgetSize) {
-  if (size === 'full') return Maximize2;
-  if (size === 'half') return Columns2;
-  return Minimize2;
+  switch (size) {
+    case 'full':    return language === 'da' ? 'Fuld' : 'Full';
+    case 'half':    return language === 'da' ? 'Halv' : '½';
+    case 'third':   return '⅓';
+    case 'quarter': return '¼';
+    default:        return size;
+  }
 }
 
 // ─── Height multiplier for dialog preview ────────────────────────
 function getHeightMultiplier(size: WidgetSize): number {
   if (size === 'full') return 1.2;
   if (size === 'half') return 1.8;
-  return 2.0;
+  if (size === 'quarter') return 1.8;
+  return 2.0; // third
 }
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -118,8 +125,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     isAppOwner,
     widgetOrder,
     widgetSizes,
-    setWidgetSize,
-    getWidgetSize,
     setWidgetOrderDirect,
   } = useDashboardWidgets();
 
@@ -127,7 +132,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const dragOverRef = useRef<string | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -176,12 +180,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     dragOverRef.current = null;
   }, []);
 
-  const handleSizeCycle = useCallback((id: string) => {
-    const current = getWidgetSize(id);
-    const next = cycleSize(current);
-    setWidgetSize(id, next);
-  }, [getWidgetSize, setWidgetSize]);
-
   const handleReset = useCallback(() => {
     resetWidgets();
   }, [resetWidgets]);
@@ -205,8 +203,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
             </DialogTitle>
             <DialogDescription className="dark:text-gray-400 text-sm">
               {language === 'da'
-                ? 'Træk og slip for at omarrangere widgets. Klik øjet for at vise/skjule. Klik størrelsesikonet for at ændre bredde.'
-                : 'Drag and drop to rearrange. Click eye to show/hide. Click size icon to change width.'}
+                ? 'Træk og slip for at omarrangere widgets. Klik øjet for at vise/skjule.'
+                : 'Drag and drop to rearrange. Click eye to show/hide.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -224,11 +222,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
         </div>
 
         {/* Miniature dashboard preview — real-time synced */}
-        <div
-          ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto px-6 py-4"
-          style={{ scrollBehavior: 'smooth' }}
-        >
+        <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* Dashboard frame */}
           <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 min-h-[300px]">
             {/* Frame label */}
@@ -236,10 +230,10 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
               {language === 'da' ? 'Live forhåndsvisning' : 'Live Preview'}
             </div>
 
-            {/* Widget blocks — 6-column grid layout */}
-            <div className="grid grid-cols-6 gap-2 mt-1">
+            {/* Widget blocks — 12-column grid layout */}
+            <div className="grid grid-cols-12 gap-2 mt-1">
               {sortedWidgets.map((widget, idx) => {
-                const size = getWidgetSize(widget.id);
+                const size = widgetSizes[widget.id] || widget.defaultSize;
                 const gridSpan = getWidgetGridSpanById(widget.id, widgetSizes);
                 const color = getWidgetColor(widget.id);
                 const visible = isWidgetVisible(widget.id);
@@ -247,8 +241,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                 const isDropTarget = dropTargetId === widget.id;
                 const IconComp = ICON_MAP[widget.icon];
                 const isThird = size === 'third';
-                const isHalf = size === 'half';
-                const SizeIcon = getSizeIcon(size);
+                const isQuarter = size === 'quarter';
 
                 return (
                   <div
@@ -268,28 +261,28 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                     `}
                     style={{
                       gridColumn: `span ${gridSpan} / span ${gridSpan}`,
-                      minHeight: `${Math.max(getHeightMultiplier(size), 1) * 44}px`,
+                      minHeight: `${Math.max(getHeightMultiplier(size), 1) * 40}px`,
                     }}
                   >
                     {/* Inner content */}
                     <div className={`
                       absolute inset-0 rounded-md flex overflow-hidden
                       ${visible ? color.bg : 'bg-gray-100/50 dark:bg-gray-800/30'}
-                      ${isThird ? 'flex-col items-center justify-center gap-1 px-2 py-2' : 'flex-row items-center gap-2 px-3'}
+                      ${isThird || isQuarter ? 'flex-col items-center justify-center gap-1 px-2 py-2' : 'flex-row items-center gap-2 px-3'}
                     `}>
                       {/* Drag handle */}
                       <div className={`
                         shrink-0 flex items-center justify-center
                         ${visible ? 'text-gray-400 dark:text-gray-500' : 'text-gray-300 dark:text-gray-700'}
-                        ${isThird ? 'absolute top-1.5 left-1.5' : ''}
+                        ${isThird || isQuarter ? 'absolute top-1.5 left-1.5' : ''}
                       `}>
-                        <GripVertical className={isThird ? 'h-3 w-3' : 'h-4 w-4'} />
+                        <GripVertical className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} />
                       </div>
 
                       {/* Icon */}
                       <div className={`
                         shrink-0 rounded-lg flex items-center justify-center
-                        ${isThird ? 'h-7 w-7' : 'h-8 w-8'}
+                        ${isThird || isQuarter ? 'h-7 w-7' : 'h-8 w-8'}
                         ${visible ? color.activeBg : 'bg-gray-200/50 dark:bg-gray-700/50'}
                       `}>
                         {IconComp ? (
@@ -300,46 +293,26 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       </div>
 
                       {/* Widget info */}
-                      <div className={`flex-1 min-w-0 ${isThird ? 'text-center' : ''}`}>
+                      <div className={`flex-1 min-w-0 ${isThird || isQuarter ? 'text-center' : ''}`}>
                         <p className={`
                           font-semibold truncate
-                          ${isThird ? 'text-[10px] leading-tight' : 'text-xs'}
+                          ${isThird || isQuarter ? 'text-[10px] leading-tight' : 'text-xs'}
                           ${visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600 line-through'}
                         `}>
                           {language === 'da' ? widget.labelDa : widget.labelEn}
                         </p>
-                        {/* Size sublabel — only for half and full blocks */}
-                        {!isThird && (
-                          <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                            <span className="opacity-60">{getSizeLabel(size, language)}</span>
-                          </p>
-                        )}
+                        {/* Size sublabel */}
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                          <span className="opacity-60">{getSizeLabel(size, language)}</span>
+                        </p>
                       </div>
 
                       {/* Position badge — only for full-width blocks */}
-                      {!isHalf && !isThird && visible && (
+                      {size === 'full' && visible && (
                         <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-600 bg-white/60 dark:bg-gray-800/60 px-1.5 py-0.5 rounded">
                           #{idx + 1}
                         </span>
                       )}
-
-                      {/* Size cycling button */}
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleSizeCycle(widget.id); }}
-                        className={`
-                          shrink-0 rounded-md flex items-center justify-center transition-all
-                          ${isThird ? 'absolute bottom-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
-                          ${visible
-                            ? 'text-gray-400 dark:text-gray-500 hover:text-[#0d9488] dark:hover:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
-                            : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
-                          }
-                        `}
-                        aria-label={language === 'da' ? 'Ændr størrelse' : 'Change size'}
-                        title={`${language === 'da' ? 'Størrelse' : 'Size'}: ${getSizeLabel(size, language)} → ${getSizeLabel(cycleSize(size), language)}`}
-                      >
-                        <SizeIcon className={isThird ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
-                      </button>
 
                       {/* Visibility toggle */}
                       <button
@@ -347,7 +320,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         onClick={(e) => { e.stopPropagation(); toggleWidget(widget.id); }}
                         className={`
                           shrink-0 rounded-md flex items-center justify-center transition-all
-                          ${isThird ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
+                          ${isThird || isQuarter ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
                           ${visible
                             ? 'text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
                             : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -358,7 +331,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                           : (language === 'da' ? 'Vis widget' : 'Show widget')
                         }
                       >
-                        {visible ? <Eye className={isThird ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isThird ? 'h-3 w-3' : 'h-4 w-4'} />}
+                        {visible ? <Eye className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} />}
                       </button>
                     </div>
 
