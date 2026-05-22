@@ -65,7 +65,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import { StatsCard } from '@/components/shared/stats-card';
 import { DateRangeFilter } from '@/components/shared/date-range-filter';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
+import { getGridSpanClasses } from '@/lib/dashboard-widget-definitions';
 import { ExpenseAnalysis } from '@/components/expense-analysis/expense-analysis';
 import { ProfitLossWaterfall } from '@/components/profit-loss-waterfall/profit-loss-waterfall';
 import { FinancialHealthWidget } from '@/components/financial-health/financial-health-widget';
@@ -209,7 +209,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const [widgetPickerOpen, setWidgetPickerOpen] = useState(false);
   const [onboardingVideoExists, setOnboardingVideoExists] = useState(true);
   const [showCompletionOverlay, setShowCompletionOverlay] = useState(false);
-  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex } = useDashboardWidgets();
+  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, widgetSizes, getWidgetSize, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex } = useDashboardWidgets();
 
   // ─── Access status for subscription widget ─────────────────
   const accessResult = useAccessCacheStore((s) => s.result);
@@ -221,6 +221,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     widgetOrder.forEach((id, idx) => { map[id] = idx; });
     return map;
   }, [widgetOrder]);
+
+  // Helper to get dynamic grid span class for a widget
+  const getWidgetSpanClass = useCallback((widgetId: string): string => {
+    const size = getWidgetSize(widgetId);
+    return getGridSpanClasses(size);
+  }, [getWidgetSize]);
 
   // ─── Date helpers ───────────────────────────────────────────────
 
@@ -1274,7 +1280,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4" id="dashboard-grid">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
@@ -1341,7 +1347,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Stat Cards ──────────────────────────────── */}
           {isWidgetVisible('kpi-cards') && (
-          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }} className={getWidgetSpanClass('kpi-cards')}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger-children">
             <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
               <StatsCard
@@ -1386,7 +1392,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
-          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={getWidgetSpanClass('pnl-result')}>
               <Card className={`hover-lift overflow-hidden rounded-2xl sm:rounded-xl border-0 ${
                 incomeStatement.netResult >= 0
                   ? 'bg-gradient-to-br from-[#edf5ef] to-[#f0fdf9] dark:from-[#142e24] dark:to-[#1a2e2b]'
@@ -1481,7 +1487,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Cash Position ────────────────────────────────── */}
           {isWidgetVisible('cash-position') && balanceSheet && (
-          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }} className={getWidgetSpanClass('cash-position')}>
               <Card className="hover-lift rounded-2xl sm:rounded-xl bg-gradient-to-br from-[#f0fdf9] to-[#edf4f7] dark:from-[#1a2e2b] dark:to-[#1e2e32] border border-[#d1e7dd]/50 dark:border-[#2a3e38]/50">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center justify-between mb-3">
@@ -1614,7 +1620,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className="sm:col-span-1 lg:col-span-2">
+          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={getWidgetSpanClass('financial-health-score')}>
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto">
                 <CardContent className="p-4 sm:p-5">
                   <div className="flex items-center gap-2 mb-4">
@@ -1701,7 +1707,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Monthly Comparison ────────────────────── */}
           {isWidgetVisible('monthly-comparison') && monthlyComparison && (
-          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['monthly-comparison'] ?? 999 }} className={getWidgetSpanClass('monthly-comparison')}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {/* Revenue Change */}
             <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#edf5ef] dark:from-gray-900 dark:to-[#242e26]">
@@ -1835,7 +1841,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Cash Flow Trend Mini Chart ────────────────────────── */}
           {isWidgetVisible('cash-flow-trend') && dailyRevenueChart.length > 0 && (
-          <div style={{ order: widgetOrderMap['cash-flow-trend'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['cash-flow-trend'] ?? 999 }} className={getWidgetSpanClass('cash-flow-trend')}>
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -1882,7 +1888,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Quick Actions Widget ──────────────────────────────── */}
           {isWidgetVisible('quick-actions') && (
-          <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }} className={getWidgetSpanClass('quick-actions')}>
           <Card className="stat-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -1934,7 +1940,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── SAF-T Export Widget ────────────────────────────── */}
           {isWidgetVisible('saft-export') && (
-          <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }} className={getWidgetSpanClass('saft-export')}>
           <Card className="stat-card cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center gap-4">
@@ -1965,7 +1971,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
-          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={getWidgetSpanClass('invoice-overview')}>
             <Card className="stat-card">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -2060,7 +2066,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── VAT Breakdown Pie Chart ─────────────────────────────── */}
           {isWidgetVisible('vat-breakdown') && (
-          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['vat-breakdown'] ?? 999 }} className={getWidgetSpanClass('vat-breakdown')}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2117,7 +2123,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
           {isWidgetVisible('revenue-expenses-chart') && (
-          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }} className={getWidgetSpanClass('revenue-expenses-chart')}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2174,7 +2180,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Net Revenue Area Chart ─────────────────────────── */}
           {isWidgetVisible('net-result-chart') && dailyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
-          <div style={{ order: widgetOrderMap['net-result-chart'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['net-result-chart'] ?? 999 }} className={getWidgetSpanClass('net-result-chart')}>
             <Card className="stat-card">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2219,42 +2225,42 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Expense Category Analysis ──────────────────────── */}
           {isWidgetVisible('expense-analysis') && (
-          <div style={{ order: widgetOrderMap['expense-analysis'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['expense-analysis'] ?? 999 }} className={getWidgetSpanClass('expense-analysis')}>
             <ExpenseAnalysis dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Profit & Loss Waterfall ────────────────────────── */}
           {isWidgetVisible('profit-loss-waterfall') && (
-          <div style={{ order: widgetOrderMap['profit-loss-waterfall'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['profit-loss-waterfall'] ?? 999 }} className={getWidgetSpanClass('profit-loss-waterfall')}>
             <ProfitLossWaterfall dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Financial Health Detail ────────────────────── */}
           {isWidgetVisible('financial-health-detail') && (
-          <div style={{ order: widgetOrderMap['financial-health-detail'] ?? 999 }} className="sm:col-span-1 lg:col-span-2">
+          <div style={{ order: widgetOrderMap['financial-health-detail'] ?? 999 }} className={getWidgetSpanClass('financial-health-detail')}>
             <FinancialHealthWidget dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Cash Flow Forecast ──────────────────────────────── */}
           {isWidgetVisible('cash-flow-forecast') && (
-          <div style={{ order: widgetOrderMap['cash-flow-forecast'] ?? 999 }} className="sm:col-span-2 lg:col-span-6">
+          <div style={{ order: widgetOrderMap['cash-flow-forecast'] ?? 999 }} className={getWidgetSpanClass('cash-flow-forecast')}>
             <CashFlowForecast dateRange={dateRange} />
           </div>
           )}
 
           {/* ─── Budget vs Actual ──────────────────────────────── */}
           {isWidgetVisible('budget-vs-actual') && (
-          <div style={{ order: widgetOrderMap['budget-vs-actual'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['budget-vs-actual'] ?? 999 }} className={getWidgetSpanClass('budget-vs-actual')}>
             <BudgetVsActualWidget user={user} />
           </div>
           )}
 
           {/* ─── AI Categorization Suggestions ──────────────────── */}
           {isWidgetVisible('ai-categorization') && transactions.length > 0 && (
-          <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }} className={getWidgetSpanClass('ai-categorization')}>
             <Card className="stat-card">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-3">
@@ -2292,7 +2298,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Recent Journal Entries + Activity Feed ──────────── */}
           {isWidgetVisible('recent-activity') && (
-          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['recent-activity'] ?? 999 }} className={getWidgetSpanClass('recent-activity')}>
           <div className="space-y-4">
             {/* Recent Journal Entries */}
             <Card className="stat-card">
@@ -2519,7 +2525,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Account Balance Overview ───────────────────────── */}
           {isWidgetVisible('active-accounts') && topAccounts.length > 0 && (
-          <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }} className="sm:col-span-1 lg:col-span-3">
+          <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }} className={getWidgetSpanClass('active-accounts')}>
             <Card className="stat-card">
               <CardHeader>
                 <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">

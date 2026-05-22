@@ -15,7 +15,6 @@ import {
   EyeOff,
   GripVertical,
   RotateCcw,
-  Save,
   Shield,
   TrendingUp,
   Wallet,
@@ -30,9 +29,12 @@ import {
   Droplets,
   Sparkles,
   BookOpen,
+  Maximize2,
+  Minimize2,
+  Columns2,
 } from 'lucide-react';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
+import { getWidgetGridSpanById, cycleSize, type WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { useTranslation } from '@/lib/use-translation';
 
 // ─── Icon lookup ─────────────────────────────────────────────────
@@ -52,53 +54,17 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   BookOpen,
 };
 
-// ─── Widget visual sizes ─────────────────────────────────────────
-// gridSpan: 6 = full width, 3 = half width (2 per row), 2 = third width (3 per row)
-// The gridSpan in the dialog preview corresponds to the proportional width
-// of the actual widget on the dashboard.
-const WIDGET_SIZES: Record<string, { w: number; h: number; label: string; gridSpan: 2 | 3 | 6 }> = {
-  // ── Full-width widgets (span entire row) ──
-  'kpi-cards':             { w: 2, h: 1.2, label: '4x KPI', gridSpan: 6 },
-  'cash-flow-trend':       { w: 2, h: 2.4, label: 'Rev. vs Exp.', gridSpan: 6 },
-  'quick-actions':         { w: 2, h: 1.4, label: 'Quick Actions', gridSpan: 6 },
-  'net-result-chart':      { w: 2, h: 2.4, label: 'Net Result', gridSpan: 6 },
-  'profit-loss-waterfall': { w: 2, h: 2.6, label: 'P&L Waterfall', gridSpan: 6 },
-  'cash-flow-forecast':    { w: 2, h: 2.6, label: 'Cash Forecast', gridSpan: 6 },
-
-  // ── Half-width widgets (2 per row) ──
-  'pnl-cash':              { w: 1, h: 1.8, label: 'P&L + Cash', gridSpan: 3 },
-  'monthly-comparison':    { w: 1, h: 2.0, label: 'Monthly Comp.', gridSpan: 3 },
-  'invoice-overview':      { w: 1, h: 2.0, label: 'Invoices', gridSpan: 3 },
-  'vat-charts':            { w: 1, h: 2.4, label: 'VAT Charts', gridSpan: 3 },
-  'expense-analysis':      { w: 1, h: 2.4, label: 'Exp. Analysis', gridSpan: 3 },
-  'budget-vs-actual':      { w: 1, h: 2.4, label: 'Budget vs Act.', gridSpan: 3 },
-  'ai-categorization':     { w: 1, h: 2.0, label: 'AI Categorize', gridSpan: 3 },
-  'recent-activity':       { w: 1, h: 2.6, label: 'Recent Activity', gridSpan: 3 },
-  'active-accounts':       { w: 1, h: 2.0, label: 'Active Accounts', gridSpan: 3 },
-  'saft-export':           { w: 1, h: 1.4, label: 'SAF-T Export', gridSpan: 3 },
-
-  // ── Third-width widgets (3 per row) ──
-  'financial-health-score':   { w: 1, h: 2.0, label: 'Health Score', gridSpan: 2 },
-  'financial-health-detail': { w: 1, h: 2.6, label: 'Health Detail', gridSpan: 2 },
-};
-
-function getWidgetSize(id: string) {
-  const local = WIDGET_SIZES[id];
-  const gridSpan = getWidgetGridSpan(id) as 2 | 3 | 6;
-  if (local) return { ...local, gridSpan };
-  return { w: 1, h: 1.5, label: id, gridSpan };
-}
-
 // ─── Widget color palette (muted pastels) ───────────────────────
 const WIDGET_COLORS: Record<string, { bg: string; border: string; activeBg: string }> = {
   'kpi-cards':         { bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800/50', activeBg: 'bg-emerald-100 dark:bg-emerald-900/50' },
-  'pnl-cash':          { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'pnl-result':        { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
+  'cash-position':     { bg: 'bg-teal-50 dark:bg-teal-950/40', border: 'border-teal-200 dark:border-teal-800/50', activeBg: 'bg-teal-100 dark:bg-teal-900/50' },
   'financial-health-score': { bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800/50', activeBg: 'bg-amber-100 dark:bg-amber-900/50' },
   'monthly-comparison':{ bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-800/50', activeBg: 'bg-orange-100 dark:bg-orange-900/50' },
   'cash-flow-trend':   { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
   'quick-actions':     { bg: 'bg-yellow-50 dark:bg-yellow-950/40', border: 'border-yellow-200 dark:border-yellow-800/50', activeBg: 'bg-yellow-100 dark:bg-yellow-900/50' },
   'invoice-overview':  { bg: 'bg-sky-50 dark:bg-sky-950/40', border: 'border-sky-200 dark:border-sky-800/50', activeBg: 'bg-sky-100 dark:bg-sky-900/50' },
-  'vat-charts':        { bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-800/50', activeBg: 'bg-rose-100 dark:bg-rose-900/50' },
+  'vat-breakdown':     { bg: 'bg-rose-50 dark:bg-rose-950/40', border: 'border-rose-200 dark:border-rose-800/50', activeBg: 'bg-rose-100 dark:bg-rose-900/50' },
   'net-result-chart':  { bg: 'bg-green-50 dark:bg-green-950/40', border: 'border-green-200 dark:border-green-800/50', activeBg: 'bg-green-100 dark:bg-green-900/50' },
   'expense-analysis':  { bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800/50', activeBg: 'bg-purple-100 dark:bg-purple-900/50' },
   'profit-loss-waterfall': { bg: 'bg-lime-50 dark:bg-lime-950/40', border: 'border-lime-200 dark:border-lime-800/50', activeBg: 'bg-lime-100 dark:bg-lime-900/50' },
@@ -109,17 +75,31 @@ const WIDGET_COLORS: Record<string, { bg: string; border: string; activeBg: stri
   'recent-activity':   { bg: 'bg-slate-50 dark:bg-slate-950/40', border: 'border-slate-200 dark:border-slate-800/50', activeBg: 'bg-slate-100 dark:bg-slate-900/50' },
   'active-accounts':   { bg: 'bg-stone-50 dark:bg-stone-950/40', border: 'border-stone-200 dark:border-stone-800/50', activeBg: 'bg-stone-100 dark:bg-stone-900/50' },
   'saft-export':       { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' },
+  'revenue-expenses-chart': { bg: 'bg-cyan-50 dark:bg-cyan-950/40', border: 'border-cyan-200 dark:border-cyan-800/50', activeBg: 'bg-cyan-100 dark:bg-cyan-900/50' },
 };
 
 function getWidgetColor(id: string) {
   return WIDGET_COLORS[id] || { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' };
 }
 
-// ─── Size label helper ──────────────────────────────────────────
-function getSizeLabel(gridSpan: number, language: string) {
-  if (gridSpan === 6) return language === 'da' ? 'Fuld bredde' : 'Full width';
-  if (gridSpan === 3) return language === 'da' ? 'Halv bredde' : 'Half width';
-  return language === 'da' ? '1/3 bredde' : '1/3 width';
+// ─── Size label helpers ──────────────────────────────────────────
+function getSizeLabel(size: WidgetSize, language: string) {
+  if (size === 'full') return language === 'da' ? 'Fuld' : 'Full';
+  if (size === 'half') return language === 'da' ? 'Halv' : 'Half';
+  return '1/3';
+}
+
+function getSizeIcon(size: WidgetSize) {
+  if (size === 'full') return Maximize2;
+  if (size === 'half') return Columns2;
+  return Minimize2;
+}
+
+// ─── Height multiplier for dialog preview ────────────────────────
+function getHeightMultiplier(size: WidgetSize): number {
+  if (size === 'full') return 1.2;
+  if (size === 'half') return 1.8;
+  return 2.0;
 }
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -131,45 +111,23 @@ interface WidgetLayoutEditorProps {
 // ─── Component ──────────────────────────────────────────────────
 export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorProps) {
   const { language } = useTranslation();
-  const { isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, widgetOrder, setWidgetOrderDirect } = useDashboardWidgets();
-
-  // Local working copy for drag-and-drop (committed on save)
-  // Use refs to track last synced state and only update when dialog opens
-  const syncedOpenRef = useRef(false);
-  const [localOrder, setLocalOrder] = useState<string[]>(widgetOrder);
-  const [localVisibility, setLocalVisibility] = useState<Record<string, boolean>>(() => {
-    const visMap: Record<string, boolean> = {};
-    DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = isWidgetVisible(w.id); });
-    return visMap;
-  });
+  const {
+    isWidgetVisible,
+    toggleWidget,
+    resetWidgets,
+    isAppOwner,
+    widgetOrder,
+    widgetSizes,
+    setWidgetSize,
+    getWidgetSize,
+    setWidgetOrderDirect,
+  } = useDashboardWidgets();
 
   // Drag state
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const dragOverRef = useRef<string | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-  // Sync from global state when dialog opens — using a ref to avoid setState-in-effect
-  if (open && !syncedOpenRef.current) {
-    syncedOpenRef.current = true;
-    // These syncs happen during render (not in an effect), which is fine for initialization
-  }
-  if (!open) {
-    syncedOpenRef.current = false;
-  }
-
-  // Re-sync local state from global when dialog opens (use callback in Dialog's onOpenChange)
-  const handleDialogOpenChange = useCallback((newOpen: boolean) => {
-    if (newOpen) {
-      setLocalOrder([...widgetOrder]);
-      const visMap: Record<string, boolean> = {};
-      DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = isWidgetVisible(w.id); });
-      setLocalVisibility(visMap);
-      setDragId(null);
-      setDropTargetId(null);
-    }
-    onOpenChange(newOpen);
-  }, [widgetOrder, isWidgetVisible, onOpenChange]);
 
   const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -197,21 +155,20 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
       return;
     }
 
-    // Reorder: move sourceId to targetId's position
-    setLocalOrder(prev => {
-      const sourceIdx = prev.indexOf(sourceId);
-      const targetIdx = prev.indexOf(targetId);
-      if (sourceIdx < 0 || targetIdx < 0) return prev;
-      const next = [...prev];
-      next.splice(sourceIdx, 1);
-      next.splice(targetIdx, 0, sourceId);
-      return next;
-    });
+    // Reorder: move sourceId to targetId's position — directly update store
+    const currentOrder = [...widgetOrder];
+    const sourceIdx = currentOrder.indexOf(sourceId);
+    const targetIdx = currentOrder.indexOf(targetId);
+    if (sourceIdx >= 0 && targetIdx >= 0) {
+      currentOrder.splice(sourceIdx, 1);
+      currentOrder.splice(targetIdx, 0, sourceId);
+      setWidgetOrderDirect(currentOrder);
+    }
 
     setDragId(null);
     setDropTargetId(null);
     dragOverRef.current = null;
-  }, []);
+  }, [widgetOrder, setWidgetOrderDirect]);
 
   const handleDragEnd = useCallback(() => {
     setDragId(null);
@@ -219,42 +176,25 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     dragOverRef.current = null;
   }, []);
 
-  const handleToggleLocal = useCallback((id: string) => {
-    setLocalVisibility(prev => ({ ...prev, [id]: !prev[id] }));
-  }, []);
-
-  const handleSave = useCallback(() => {
-    // Apply order
-    setWidgetOrderDirect(localOrder);
-
-    // Apply visibility changes
-    Object.entries(localVisibility).forEach(([id, visible]) => {
-      if (visible !== isWidgetVisible(id)) {
-        toggleWidget(id);
-      }
-    });
-
-    handleDialogOpenChange(false);
-  }, [localOrder, localVisibility, isWidgetVisible, toggleWidget, setWidgetOrderDirect, handleDialogOpenChange]);
+  const handleSizeCycle = useCallback((id: string) => {
+    const current = getWidgetSize(id);
+    const next = cycleSize(current);
+    setWidgetSize(id, next);
+  }, [getWidgetSize, setWidgetSize]);
 
   const handleReset = useCallback(() => {
     resetWidgets();
-    const defaults = DASHBOARD_WIDGETS.map(w => w.id);
-    setLocalOrder(defaults);
-    const visMap: Record<string, boolean> = {};
-    DASHBOARD_WIDGETS.forEach(w => { visMap[w.id] = w.defaultVisible; });
-    setLocalVisibility(visMap);
   }, [resetWidgets]);
 
-  // Build sorted widget list based on local order
+  // Build sorted widget list based on store order
   const sortedWidgets = [...DASHBOARD_WIDGETS].sort((a, b) => {
-    const aIdx = localOrder.indexOf(a.id);
-    const bIdx = localOrder.indexOf(b.id);
+    const aIdx = widgetOrder.indexOf(a.id);
+    const bIdx = widgetOrder.indexOf(b.id);
     return (aIdx >= 0 ? aIdx : 999) - (bIdx >= 0 ? bIdx : 999);
   });
 
   return (
-    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col p-0">
         {/* Header */}
         <div className="shrink-0 px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-800">
@@ -265,8 +205,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
             </DialogTitle>
             <DialogDescription className="dark:text-gray-400 text-sm">
               {language === 'da'
-                ? 'Træk og slip for at omarrangere widgets. Klik øjet for at vise/skjule.'
-                : 'Drag and drop to rearrange widgets. Click the eye to show/hide.'}
+                ? 'Træk og slip for at omarrangere widgets. Klik øjet for at vise/skjule. Klik størrelsesikonet for at ændre bredde.'
+                : 'Drag and drop to rearrange. Click eye to show/hide. Click size icon to change width.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -283,7 +223,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
           )}
         </div>
 
-        {/* Miniature dashboard preview */}
+        {/* Miniature dashboard preview — real-time synced */}
         <div
           ref={scrollContainerRef}
           className="flex-1 overflow-y-auto px-6 py-4"
@@ -293,20 +233,22 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
           <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 min-h-[300px]">
             {/* Frame label */}
             <div className="absolute -top-3 left-4 px-2 bg-white dark:bg-[#1a1f1e] text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-              {language === 'da' ? 'Miniature forhåndsvisning' : 'Miniature Preview'}
+              {language === 'da' ? 'Live forhåndsvisning' : 'Live Preview'}
             </div>
 
             {/* Widget blocks — 6-column grid layout */}
             <div className="grid grid-cols-6 gap-2 mt-1">
               {sortedWidgets.map((widget, idx) => {
                 const size = getWidgetSize(widget.id);
+                const gridSpan = getWidgetGridSpanById(widget.id, widgetSizes);
                 const color = getWidgetColor(widget.id);
-                const visible = localVisibility[widget.id] ?? true;
+                const visible = isWidgetVisible(widget.id);
                 const isDragging = dragId === widget.id;
                 const isDropTarget = dropTargetId === widget.id;
                 const IconComp = ICON_MAP[widget.icon];
-                const isThird = size.gridSpan === 2;
-                const isHalf = size.gridSpan === 3;
+                const isThird = size === 'third';
+                const isHalf = size === 'half';
+                const SizeIcon = getSizeIcon(size);
 
                 return (
                   <div
@@ -325,8 +267,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     `}
                     style={{
-                      gridColumn: `span ${size.gridSpan} / span ${size.gridSpan}`,
-                      minHeight: `${Math.max(size.h, 1) * 44}px`,
+                      gridColumn: `span ${gridSpan} / span ${gridSpan}`,
+                      minHeight: `${Math.max(getHeightMultiplier(size), 1) * 44}px`,
                     }}
                   >
                     {/* Inner content */}
@@ -369,8 +311,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         {/* Size sublabel — only for half and full blocks */}
                         {!isThird && (
                           <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                            {size.label}
-                            <span className="opacity-60"> · {getSizeLabel(size.gridSpan, language)}</span>
+                            <span className="opacity-60">{getSizeLabel(size, language)}</span>
                           </p>
                         )}
                       </div>
@@ -382,10 +323,28 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         </span>
                       )}
 
+                      {/* Size cycling button */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handleSizeCycle(widget.id); }}
+                        className={`
+                          shrink-0 rounded-md flex items-center justify-center transition-all
+                          ${isThird ? 'absolute bottom-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
+                          ${visible
+                            ? 'text-gray-400 dark:text-gray-500 hover:text-[#0d9488] dark:hover:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
+                            : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
+                          }
+                        `}
+                        aria-label={language === 'da' ? 'Ændr størrelse' : 'Change size'}
+                        title={`${language === 'da' ? 'Størrelse' : 'Size'}: ${getSizeLabel(size, language)} → ${getSizeLabel(cycleSize(size), language)}`}
+                      >
+                        <SizeIcon className={isThird ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+                      </button>
+
                       {/* Visibility toggle */}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); handleToggleLocal(widget.id); }}
+                        onClick={(e) => { e.stopPropagation(); toggleWidget(widget.id); }}
                         className={`
                           shrink-0 rounded-md flex items-center justify-center transition-all
                           ${isThird ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
@@ -414,7 +373,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer — minimal: only reset button */}
         <div className="shrink-0 px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
           <Button
             variant="ghost"
@@ -426,24 +385,11 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
             {language === 'da' ? 'Nulstil til standard' : 'Reset to defaults'}
           </Button>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleDialogOpenChange(false)}
-              className="text-xs text-gray-500 dark:text-gray-400"
-            >
-              {language === 'da' ? 'Annuller' : 'Cancel'}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSave}
-              className="text-xs gap-1.5 bg-[#0d9488] hover:bg-[#0f766e] text-white dark:bg-[#2dd4bf] dark:hover:bg-[#14b8a6] dark:text-gray-900 font-semibold shadow-sm"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {language === 'da' ? 'Gem layout' : 'Save Layout'}
-            </Button>
-          </div>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500">
+            {language === 'da'
+              ? 'Ændringer anvendes direkte på kontrolpanelet'
+              : 'Changes are applied directly to the dashboard'}
+          </p>
         </div>
       </DialogContent>
     </Dialog>

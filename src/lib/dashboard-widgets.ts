@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { DASHBOARD_WIDGETS, getDefaultVisibilityMap } from '@/lib/dashboard-widget-definitions';
+import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap, WidgetSize } from '@/lib/dashboard-widget-definitions';
 
 // Re-export so existing imports from this module still work
 export { DASHBOARD_WIDGETS, getDefaultVisibilityMap } from '@/lib/dashboard-widget-definitions';
-export type { DashboardWidget } from '@/lib/dashboard-widget-definitions';
+export type { DashboardWidget, WidgetSize } from '@/lib/dashboard-widget-definitions';
+export { getGridSpanClasses, getWidgetGridSpanById, cycleSize, getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
 
 // ---------------------------------------------------------------------------
 // Local storage helpers
@@ -13,7 +14,9 @@ export type { DashboardWidget } from '@/lib/dashboard-widget-definitions';
 
 const STORAGE_KEY = 'alphaflow-dashboard-widgets';
 const ORDER_STORAGE_KEY = 'alphaflow-dashboard-widget-order';
+const SIZES_STORAGE_KEY = 'alphaflow-dashboard-widget-sizes';
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
+const DEFAULT_SIZES = getDefaultSizesMap();
 
 function readLocalVisibilityMap(): Record<string, boolean> {
   if (typeof window === 'undefined') return getDefaultVisibilityMap();
@@ -63,6 +66,27 @@ function writeLocalWidgetOrder(order: string[]): void {
   }
 }
 
+function readLocalWidgetSizes(): Record<string, WidgetSize> {
+  if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
+  try {
+    const raw = localStorage.getItem(SIZES_STORAGE_KEY);
+    if (raw === null) return { ...DEFAULT_SIZES };
+    const parsed = JSON.parse(raw) as Record<string, WidgetSize>;
+    return { ...DEFAULT_SIZES, ...parsed };
+  } catch {
+    return { ...DEFAULT_SIZES };
+  }
+}
+
+function writeLocalWidgetSizes(sizes: Record<string, WidgetSize>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(sizes));
+  } catch {
+    // Storage full or unavailable – silently ignore
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Hook — API-backed with localStorage cache
 // ---------------------------------------------------------------------------
@@ -70,6 +94,7 @@ function writeLocalWidgetOrder(order: string[]): void {
 export function useDashboardWidgets() {
   const [visibilityMap, setVisibilityMap] = useState<Record<string, boolean>>(getDefaultVisibilityMap);
   const [widgetOrder, setWidgetOrder] = useState<string[]>(DEFAULT_ORDER);
+  const [widgetSizes, setWidgetSizes] = useState<Record<string, WidgetSize>>({ ...DEFAULT_SIZES });
   const [isAppOwner, setIsAppOwner] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,6 +133,17 @@ export function useDashboardWidgets() {
           setWidgetOrder(localOrder);
         }
 
+        // Read sizes from API response
+        const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
+        if (serverSizes) {
+          const mergedSizes = { ...DEFAULT_SIZES, ...serverSizes };
+          setWidgetSizes(mergedSizes);
+          writeLocalWidgetSizes(mergedSizes);
+        } else {
+          const localSizes = readLocalWidgetSizes();
+          setWidgetSizes(localSizes);
+        }
+
         setIsAppOwner(!!data.isAppOwner);
       } catch {
         // API failed — fall back to localStorage cache
@@ -115,6 +151,8 @@ export function useDashboardWidgets() {
         setVisibilityMap(cached);
         const cachedOrder = readLocalWidgetOrder();
         setWidgetOrder(cachedOrder);
+        const cachedSizes = readLocalWidgetSizes();
+        setWidgetSizes(cachedSizes);
       } finally {
         if (!cancelled) setIsLoaded(true);
       }
@@ -124,12 +162,13 @@ export function useDashboardWidgets() {
     return () => { cancelled = true; };
   }, []);
 
-  // Persist to API with debounce whenever visibility or order changes (after initial load)
+  // Persist to API with debounce whenever visibility, order, or sizes change (after initial load)
   useEffect(() => {
     if (!isLoaded) return;
     // Always keep localStorage in sync as a cache
     writeLocalVisibilityMap(visibilityMap);
     writeLocalWidgetOrder(widgetOrder);
+    writeLocalWidgetSizes(widgetSizes);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
@@ -137,7 +176,7 @@ export function useDashboardWidgets() {
         await fetch('/api/widget-settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ widgets: visibilityMap, order: widgetOrder }),
+          body: JSON.stringify({ widgets: visibilityMap, order: widgetOrder, sizes: widgetSizes }),
         });
       } catch {
         // Silently fail — data is cached locally
@@ -147,7 +186,7 @@ export function useDashboardWidgets() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [visibilityMap, widgetOrder, isLoaded]);
+  }, [visibilityMap, widgetOrder, widgetSizes, isLoaded]);
 
   const visibleWidgets = DASHBOARD_WIDGETS.filter((w) => visibilityMap[w.id] !== false).map((w) => w.id);
 
@@ -165,10 +204,19 @@ export function useDashboardWidgets() {
     }));
   }, []);
 
+  // Direct visibility setter (for real-time dialog sync)
+  const setWidgetVisibility = useCallback((id: string, visible: boolean) => {
+    setVisibilityMap((prev) => ({
+      ...prev,
+      [id]: visible,
+    }));
+  }, []);
+
   const resetWidgets = useCallback(() => {
     const defaults = getDefaultVisibilityMap();
     setVisibilityMap(defaults);
     setWidgetOrder([...DEFAULT_ORDER]);
+    setWidgetSizes({ ...DEFAULT_SIZES });
   }, []);
 
   const setWidgetOrderDirect = useCallback((newOrder: string[]) => {
@@ -178,6 +226,21 @@ export function useDashboardWidgets() {
     const missing = DEFAULT_ORDER.filter((id) => !newOrder.includes(id));
     setWidgetOrder([...filtered, ...missing]);
   }, []);
+
+  // Widget size actions
+  const setWidgetSize = useCallback((id: string, size: WidgetSize) => {
+    setWidgetSizes((prev) => ({
+      ...prev,
+      [id]: size,
+    }));
+  }, []);
+
+  const getWidgetSize = useCallback(
+    (id: string): WidgetSize => {
+      return widgetSizes[id] ?? DEFAULT_SIZES[id] ?? 'half';
+    },
+    [widgetSizes],
+  );
 
   const moveWidgetUp = useCallback((id: string) => {
     setWidgetOrder((prev) => {
@@ -207,5 +270,21 @@ export function useDashboardWidgets() {
     [widgetOrder],
   );
 
-  return { visibleWidgets, isWidgetVisible, toggleWidget, resetWidgets, isAppOwner, isLoaded, widgetOrder, moveWidgetUp, moveWidgetDown, getWidgetOrderIndex, setWidgetOrderDirect } as const;
+  return {
+    visibleWidgets,
+    isWidgetVisible,
+    toggleWidget,
+    setWidgetVisibility,
+    resetWidgets,
+    isAppOwner,
+    isLoaded,
+    widgetOrder,
+    widgetSizes,
+    setWidgetSize,
+    getWidgetSize,
+    moveWidgetUp,
+    moveWidgetDown,
+    getWidgetOrderIndex,
+    setWidgetOrderDirect,
+  } as const;
 }
