@@ -1355,7 +1355,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 lg:auto-rows-fr" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
