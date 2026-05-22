@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { User, useAuthStore } from '@/lib/auth-store';
 import { useTranslation } from '@/lib/use-translation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -1057,26 +1057,16 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
   // ─── Custom pie label renderer (line + percentage, no dot, radial spacing) ───────
 
-  const renderPieLabel = ({ cx, cy, midAngle, outerRadius, percent, fill }: any) => {
-    if (percent < 0.05) return null; // Skip very small slices
+  const renderPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
     const RADIAN = Math.PI / 180;
-    // Start of connector line: just outside the pie
-    const sx = cx + (outerRadius + 3) * Math.cos(-midAngle * RADIAN);
-    const sy = cy + (outerRadius + 3) * Math.sin(-midAngle * RADIAN);
-    // End of connector line: further out with radial spacing
-    const ex = cx + (outerRadius + 14) * Math.cos(-midAngle * RADIAN);
-    const ey = cy + (outerRadius + 14) * Math.sin(-midAngle * RADIAN);
-    // Percentage text: spaced radially from line end
-    const tx = cx + (outerRadius + 20) * Math.cos(-midAngle * RADIAN);
-    const ty = cy + (outerRadius + 20) * Math.sin(-midAngle * RADIAN);
-
+    const radius = outerRadius + 14;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    if (percent < 0.05) return null;
     return (
-      <g>
-        <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={fill} strokeWidth={1} opacity={0.4} />
-        <text x={tx} y={ty} fill={fill} fontSize={9} fontWeight={700} textAnchor={tx > cx ? 'start' : 'end'} dominantBaseline="central">
-          {`${(percent * 100).toFixed(0)}%`}
-        </text>
-      </g>
+      <text x={x} y={y} fill="var(--muted-foreground)" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={10}>
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
     );
   };
 
@@ -1450,17 +1440,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={`${getWidgetSpanClass('kpi-revenue')} flex`}>
               <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
-                <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 pt-4 pb-3">
+                <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="h-9 w-9 rounded-xl bg-green-500/10 flex items-center justify-center">
-                        <TrendingUp className="h-4.5 w-4.5 text-green-600 dark:text-green-400" />
+                      <div className="h-8 w-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+                        <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Omsætning' : 'Revenue'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
                           {dateRange
                             ? (language === 'da' ? 'Omsætning for periode' : 'Revenue for period')
                             : (language === 'da' ? 'Årets omsætning' : 'YTD Revenue')}
@@ -1484,7 +1474,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3 flex-1">
+                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
                     <div className="flex flex-col sm:flex-row gap-3 h-full">
                       <div className="w-full sm:w-[170px] shrink-0">
@@ -1563,20 +1553,20 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={`${getWidgetSpanClass('kpi-operating-result')} flex`}>
               <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
-                <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
+                <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'bg-[#0d9488]/10' : 'bg-red-500/10'}`}>
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'bg-[#0d9488]/10' : 'bg-red-500/10'}`}>
                         {incomeStatement && incomeStatement.operatingResult >= 0
-                          ? <Scale className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
-                          : <TrendingDown className="h-4.5 w-4.5 text-red-600 dark:text-red-400" />
+                          ? <Scale className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                          : <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                         }
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Driftsresultat' : 'Operating Result'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
                           {dateRange
                             ? (language === 'da' ? 'Resultat for periode' : 'Result for period')
                             : (language === 'da' ? 'Årets driftsresultat' : 'YTD Operating Result')}
@@ -1595,7 +1585,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3 flex-1">
+                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
                     <div className="flex flex-col sm:flex-row gap-3 h-full">
                       <div className="w-full sm:w-[170px] shrink-0">
@@ -1687,20 +1677,20 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={`${getWidgetSpanClass('pnl-result')} flex`}>
               <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
-                <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
+                <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${incomeStatement.netResult >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${incomeStatement.netResult >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
                         {incomeStatement.netResult >= 0
-                          ? <TrendingUp className="h-4.5 w-4.5 text-green-600 dark:text-green-400" />
-                          : <TrendingDown className="h-4.5 w-4.5 text-red-600 dark:text-red-400" />
+                          ? <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          : <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
                         }
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Resultat & Likviditet' : 'P&L Result'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
                           {dateRange
                             ? (language === 'da' ? 'Resultat for periode' : 'Result for Period')
                             : (language === 'da' ? 'Årets resultat' : 'YTD Net Result')}
@@ -1720,7 +1710,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: P&L breakdown */}
-                <CardContent className="p-4 pt-3 flex-1">
+                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                   <div className="space-y-2.5">
                     {/* Gross Profit */}
                     <div className="flex items-center justify-between text-xs">
@@ -1793,17 +1783,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['cash-position'] ?? 999 }} className={getWidgetSpanClass('cash-position')}>
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
-                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-                        <Wallet className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                      <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                        <Wallet className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Likviditetsoversigt' : 'Cash Position'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">
                           {dateRange
                             ? (language === 'da' ? 'Resultat for periode' : 'Result for Period')
                             : (language === 'da' ? 'Egenkapital (Aktiver − Gæld)' : 'Equity (Assets − Liabilities)')}
@@ -1825,7 +1815,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: balance sheet breakdown */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 sm:p-5 pt-3">
                   {balanceSheet.assets.totalAssets > 0 ? (
                     <div className="space-y-2.5">
                       {/* Equity Ratio */}
@@ -1868,35 +1858,35 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
                       {/* Balance Sheet Summary */}
                       <div className="grid grid-cols-2 gap-2 pt-1">
-                        <div className="rounded-lg bg-[#e6f7f3]/50 dark:bg-[#1a2e2b]/50 p-2">
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <div className="rounded-lg bg-[#0d9488]/5 dark:bg-[#2dd4bf]/10 p-2.5 text-center">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                             {language === 'da' ? 'Aktiver' : 'Assets'}
                           </p>
-                          <p className="text-xs font-semibold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums">
+                          <p className="text-sm font-bold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums mt-0.5">
                             {tc(balanceSheet.assets.totalAssets)}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-red-50/50 dark:bg-red-900/10 p-2">
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 p-2.5 text-center">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                             {language === 'da' ? 'Gæld' : 'Liabilities'}
                           </p>
-                          <p className="text-xs font-semibold text-red-600 dark:text-red-400 tabular-nums">
+                          <p className="text-sm font-bold text-red-600 dark:text-red-400 tabular-nums mt-0.5">
                             {tc(balanceSheet.liabilities.totalLiabilities)}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-green-50/50 dark:bg-green-900/10 p-2">
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <div className="rounded-lg bg-green-50 dark:bg-green-900/20 p-2.5 text-center">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                             {language === 'da' ? 'Egenkapital' : 'Equity'}
                           </p>
-                          <p className={`text-xs font-semibold tabular-nums ${balanceSheet.equity.totalEquity >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <p className={`text-sm font-bold tabular-nums mt-0.5 ${balanceSheet.equity.totalEquity >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {tc(balanceSheet.equity.totalEquity)}
                           </p>
                         </div>
-                        <div className="rounded-lg bg-gray-50/50 dark:bg-gray-800/30 p-2">
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2.5 text-center">
+                          <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                             {language === 'da' ? 'Årets resultat' : 'YTD Result'}
                           </p>
-                          <p className={`text-xs font-semibold tabular-nums ${balanceSheet.equity.currentYearResult >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <p className={`text-sm font-bold tabular-nums mt-0.5 ${balanceSheet.equity.currentYearResult >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {tc(balanceSheet.equity.currentYearResult)}
                           </p>
                         </div>
@@ -1915,10 +1905,10 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
           <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={`${getWidgetSpanClass('financial-health-score')} flex`}>
-            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto flex-1 flex flex-col">
-                <CardContent className="p-4 sm:p-5 flex-1">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
+            <Card className="stat-card overflow-hidden flex-1 flex flex-col">
+                <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
                       <Gauge className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                     </div>
                     <div>
@@ -1930,6 +1920,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                       </p>
                     </div>
                   </div>
+                </div>
+                <CardContent className="p-4 sm:p-5 pt-0 flex-1">
 
                   {/* SVG Circular Progress Ring */}
                   <div className="flex items-center justify-center mb-4">
@@ -2002,21 +1994,28 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Comparison: Revenue Change ────────────────────── */}
           {isWidgetVisible('comparison-revenue') && monthlyComparison && (
           <div style={{ order: widgetOrderMap['comparison-revenue'] ?? 999 }} className={getWidgetSpanClass('comparison-revenue')}>
-            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#edf5ef] dark:from-gray-900 dark:to-[#242e26]">
-              <CardContent className="p-4">
+            <Card className="stat-card overflow-hidden">
+              <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === 'da' ? 'Omsætningsændring' : 'Revenue Change'}
-                  </p>
-                  <div className={`h-7 w-7 rounded-full flex items-center justify-center ${
-                    monthlyComparison.revenueChange >= 0
-                      ? 'bg-green-100 dark:bg-green-900/40'
-                      : 'bg-red-100 dark:bg-red-900/40'
-                  }`}>
-                    {monthlyComparison.revenueChange >= 0
-                      ? <ArrowUp className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-                      : <ArrowDown className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-                    }
+                  <div className="flex items-center gap-2.5">
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                      monthlyComparison.revenueChange >= 0
+                        ? 'bg-green-500/10'
+                        : 'bg-red-500/10'
+                    }`}>
+                      {monthlyComparison.revenueChange >= 0
+                        ? <ArrowUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        : <ArrowDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      }
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Omsætningsændring' : 'Revenue Change'}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                        vs {monthlyComparison.previousMonth}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <p className={`text-xl font-bold tabular-nums ${
@@ -2046,21 +2045,28 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Comparison: Expense Change ────────────────────── */}
           {isWidgetVisible('comparison-expenses') && monthlyComparison && (
           <div style={{ order: widgetOrderMap['comparison-expenses'] ?? 999 }} className={getWidgetSpanClass('comparison-expenses')}>
-            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#faf5ee] dark:from-gray-900 dark:to-[#302a22]">
-              <CardContent className="p-4">
+            <Card className="stat-card overflow-hidden">
+              <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === 'da' ? 'Omkostningsændring' : 'Expense Change'}
-                  </p>
-                  <div className={`h-7 w-7 rounded-full flex items-center justify-center ${
-                    monthlyComparison.expenseChange <= 0
-                      ? 'bg-green-100 dark:bg-green-900/40'
-                      : 'bg-amber-100 dark:bg-amber-900/40'
-                  }`}>
-                    {monthlyComparison.expenseChange <= 0
-                      ? <ArrowDown className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-                      : <ArrowUp className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                    }
+                  <div className="flex items-center gap-2.5">
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                      monthlyComparison.expenseChange <= 0
+                        ? 'bg-green-500/10'
+                        : 'bg-amber-500/10'
+                    }`}>
+                      {monthlyComparison.expenseChange <= 0
+                        ? <ArrowDown className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        : <ArrowUp className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      }
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Omkostningsændring' : 'Expense Change'}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                        vs {monthlyComparison.previousMonth}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <p className={`text-xl font-bold tabular-nums ${
@@ -2090,25 +2096,28 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Comparison: Net Profit Change ────────────────────── */}
           {isWidgetVisible('comparison-net') && monthlyComparison && (
           <div style={{ order: widgetOrderMap['comparison-net'] ?? 999 }} className={getWidgetSpanClass('comparison-net')}>
-            <Card className={`hover-lift overflow-hidden border-0 bg-gradient-to-br ${
-                  monthlyComparison.netProfitChange >= 0
-                    ? 'from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]'
-                    : 'from-white to-[#fef2f2] dark:from-gray-900 dark:to-[#2e2024]'
-                }`}>
-              <CardContent className="p-4">
+            <Card className="stat-card overflow-hidden">
+              <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === 'da' ? 'Nettoresultat ændring' : 'Net Profit Change'}
-                  </p>
-                  <div className={`h-7 w-7 rounded-full flex items-center justify-center ${
-                    monthlyComparison.netProfitChange >= 0
-                      ? 'bg-green-100 dark:bg-green-900/40'
-                      : 'bg-red-100 dark:bg-red-900/40'
-                  }`}>
-                    {monthlyComparison.netProfitChange >= 0
-                      ? <TrendingUp className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-                      : <TrendingDown className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-                    }
+                  <div className="flex items-center gap-2.5">
+                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${
+                      monthlyComparison.netProfitChange >= 0
+                        ? 'bg-green-500/10'
+                        : 'bg-red-500/10'
+                    }`}>
+                      {monthlyComparison.netProfitChange >= 0
+                        ? <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        : <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
+                      }
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Nettoresultat ændring' : 'Net Profit Change'}
+                      </h3>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                        vs {monthlyComparison.previousMonth}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <p className={`text-xl font-bold tabular-nums ${
@@ -2142,38 +2151,38 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {isWidgetVisible('cash-flow-trend') && dailyRevenueChart.length > 0 && (
           <div style={{ order: widgetOrderMap['cash-flow-trend'] ?? 999 }} className={getWidgetSpanClass('cash-flow-trend')}>
             <Card className="stat-card overflow-hidden">
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
-                      <BarChart3 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                        {language === 'da' ? 'Indtægter vs Omkostninger' : 'Revenue vs Expenses'}
-                      </p>
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                        {language === 'da' ? 'Månedlig udvikling' : 'Monthly development'} · 6m
-                      </p>
-                    </div>
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
+                    <BarChart3 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                   </div>
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-[#7c9a82] dark:bg-[#8cc492]" />
-                      <span className="text-gray-500 dark:text-gray-400">{language === 'da' ? 'Indtægt' : 'Rev.'}</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-[#c9928f] dark:bg-[#d4a5a2]" />
-                      <span className="text-gray-500 dark:text-gray-400">{language === 'da' ? 'Omkost.' : 'Exp.'}</span>
-                    </span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {language === 'da' ? 'Indtægter vs Omkostninger' : 'Revenue vs Expenses'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {language === 'da' ? 'Månedlig udvikling' : 'Monthly development'} · 6m
+                    </p>
                   </div>
                 </div>
+                <div className="flex items-center gap-3 text-[10px]">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-[#7c9a82] dark:bg-[#8cc492]" />
+                    <span className="text-gray-500 dark:text-gray-400">{language === 'da' ? 'Indtægt' : 'Rev.'}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-[#c9928f] dark:bg-[#d4a5a2]" />
+                    <span className="text-gray-500 dark:text-gray-400">{language === 'da' ? 'Omkost.' : 'Exp.'}</span>
+                  </span>
+                </div>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 <div className="h-28 sm:h-32">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={dailyRevenueChart} barGap={3} barCategoryGap="25%">
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.08)" vertical={false} />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} height={45} interval="preserveStartEnd" />
-                      <YAxis stroke="#b0a89e" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={36} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} height={45} interval="preserveStartEnd" />
+                      <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Legend
                         formatter={(value) => {
@@ -2181,7 +2190,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                           if (value === 'expenses') return language === 'da' ? 'Omkost.' : 'Expenses';
                           return value;
                         }}
-                        wrapperStyle={{ fontSize: '11px', color: '#b0a89e' }}
+                        wrapperStyle={{ fontSize: '11px', color: 'var(--muted-foreground)' }}
                       />
                       <Bar dataKey="revenue" fill="#7c9a82" radius={[3, 3, 0, 0]} name="revenue" />
                       <Bar dataKey="expenses" fill="#c9928f" radius={[3, 3, 0, 0]} name="expenses" />
@@ -2197,13 +2206,22 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {isWidgetVisible('quick-actions') && (
           <div style={{ order: widgetOrderMap['quick-actions'] ?? 999 }} className={getWidgetSpanClass('quick-actions')}>
           <Card className="stat-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                <Zap className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
-                {language === 'da' ? 'Hurtige handlinger' : 'Quick Actions'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
+            <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                  <Zap className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                    {language === 'da' ? 'Hurtige handlinger' : 'Quick Actions'}
+                  </p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                    {language === 'da' ? 'Hurtige genveje' : 'Quick shortcuts'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <CardContent className="p-4 sm:p-5 pt-0">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {quickActions.map((action) => {
                   const ActionIcon = action.icon;
@@ -2250,17 +2268,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['saft-export'] ?? 999 }} className={getWidgetSpanClass('saft-export')}>
           <Card className="stat-card card-hover-lift overflow-hidden cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
             {/* Header */}
-            <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+            <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-                    <Shield className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                    <Shield className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                       {t('saftExport')}
                     </h3>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
                       {language === 'da'
                         ? 'Skattestyrelsen-kompatibel revisionsfil'
                         : 'Danish Tax Authority compliant audit file'}
@@ -2273,7 +2291,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
             </div>
             {/* Body */}
-            <CardContent className="p-4 pt-3">
+            <CardContent className="p-4 sm:p-5 pt-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   {language === 'da'
@@ -2295,17 +2313,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={`${getWidgetSpanClass('invoice-overview')} flex`}>
             <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
               {/* Header */}
-              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-                      <FileText className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                         {language === 'da' ? 'Fakturaoversigt' : 'Invoice Overview'}
                       </h3>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
                         {language === 'da' ? 'Faktura status oversigt' : 'Invoice status overview'}
                       </p>
                     </div>
@@ -2317,7 +2335,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
 
               {/* Body: invoice stats */}
-              <CardContent className="p-4 pt-3 flex-1">
+              <CardContent className="p-4 sm:p-5 pt-3 flex-1">
                 <div className="grid grid-cols-2 gap-3 h-full content-start">
                   {/* Outstanding */}
                   <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 p-3">
@@ -2396,17 +2414,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['vat-output'] ?? 999 }} className={getWidgetSpanClass('vat-output')}>
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
-                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+                <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-                        <ArrowUpCircle className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                      <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                        <ArrowUpCircle className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Udgående moms' : 'Output VAT'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('salesVATCollected')}</p>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('salesVATCollected')}</p>
                       </div>
                     </div>
                     <Badge className="status-badge status-badge-sent text-[10px]">
@@ -2419,7 +2437,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 sm:p-5 pt-3">
                   {outputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
                       <div className="w-full sm:w-[150px] shrink-0">
@@ -2488,17 +2506,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['vat-input'] ?? 999 }} className={getWidgetSpanClass('vat-input')}>
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
-                <div className="bg-gradient-to-r from-amber-500/8 to-transparent dark:from-amber-500/15 px-4 pt-4 pb-3">
+                <div className="bg-gradient-to-r from-amber-500/8 to-transparent dark:from-amber-500/15 px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="h-9 w-9 rounded-xl bg-amber-500/10 flex items-center justify-center">
-                        <ArrowDownCircle className="h-4.5 w-4.5 text-amber-600 dark:text-amber-400" />
+                      <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                        <ArrowDownCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                       </div>
                       <div>
-                        <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                           {language === 'da' ? 'Indgående moms' : 'Input VAT'}
                         </h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">{t('purchaseVATDeductible')}</p>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500">{t('purchaseVATDeductible')}</p>
                       </div>
                     </div>
                     <Badge className="status-badge status-badge-overdue text-[10px]">
@@ -2511,7 +2529,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 sm:p-5 pt-3">
                   {inputPieData.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-3">
                       <div className="w-full sm:w-[150px] shrink-0">
@@ -2578,26 +2596,30 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
           {isWidgetVisible('revenue-expenses-chart') && (
           <div style={{ order: widgetOrderMap['revenue-expenses-chart'] ?? 999 }} className={getWidgetSpanClass('revenue-expenses-chart')}>
-            <Card className="stat-card">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-[#0d9488]" />
-                    {language === 'da' ? 'Omsætning vs Omkostninger' : 'Revenue vs Expenses'}
-                  </CardTitle>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                    {dailyRevenueChart.length > 0 ? `${dailyRevenueChart[0]?.label}–${dailyRevenueChart[dailyRevenueChart.length - 1]?.label}` : ''}
-                  </span>
+            <Card className="stat-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                    <TrendingUp className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {language === 'da' ? 'Omsætning vs Omkostninger' : 'Revenue vs Expenses'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {dailyRevenueChart.length > 0 ? `${dailyRevenueChart[0]?.label}–${dailyRevenueChart[dailyRevenueChart.length - 1]?.label}` : ''}
+                    </p>
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 {dailyRevenueChart.length > 0 ? (
                   <div className="h-64 min-h-[200px] sm:min-h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={dailyRevenueChart} barGap={2} barCategoryGap="20%">
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                        <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} interval="preserveStartEnd" height={45} />
-                        <YAxis stroke="#b0a89e" fontSize={11} tickFormatter={(v) => `${v / 1000}k`} width={40} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                        <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" height={45} />
+                        <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                         <RechartsTooltip content={<CustomTooltip />} />
                         <Legend
                           formatter={(value) => {
@@ -2605,7 +2627,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                             if (value === 'expenses') return language === 'da' ? 'Omkostninger' : 'Expenses';
                             return value;
                           }}
-                          wrapperStyle={{ fontSize: '12px', color: '#b0a89e' }}
+                          wrapperStyle={{ fontSize: '11px', color: 'var(--muted-foreground)' }}
                         />
                         <Bar dataKey="revenue" fill="#7c9a82" radius={[4, 4, 0, 0]} name="revenue" />
                         <Bar dataKey="expenses" fill="#c9928f" radius={[4, 4, 0, 0]} name="expenses" />
@@ -2635,32 +2657,34 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Net Revenue Area Chart ─────────────────────────── */}
           {isWidgetVisible('net-result-chart') && dailyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
           <div style={{ order: widgetOrderMap['net-result-chart'] ?? 999 }} className={getWidgetSpanClass('net-result-chart')}>
-            <Card className="stat-card">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5 text-[#0d9488]" />
-                    {language === 'da' ? 'Netto resultat pr. måned' : 'Net Result by Month'}
-                  </CardTitle>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full">
-                    6m
-                  </span>
+            <Card className="stat-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                    <BarChart3 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {language === 'da' ? 'Netto resultat pr. måned' : 'Net Result by Month'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">6m</p>
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 <div className="h-56 min-h-[200px] sm:min-h-[250px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={dailyRevenueChart}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(168, 124, 86, 0.1)" />
-                      <XAxis dataKey="label" stroke="#b0a89e" fontSize={10} interval="preserveStartEnd" height={45} />
-                      <YAxis stroke="#b0a89e" fontSize={11} tickFormatter={(v) => `${v / 1000}k`} width={40} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" height={45} />
+                      <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
                       <RechartsTooltip content={<CustomTooltip />} />
                       <Legend
                         formatter={(value) => {
                           if (value === 'net') return language === 'da' ? 'Netto resultat' : 'Net Result';
                           return value;
                         }}
-                        wrapperStyle={{ fontSize: '12px', color: '#b0a89e' }}
+                        wrapperStyle={{ fontSize: '11px', color: 'var(--muted-foreground)' }}
                       />
                       <defs>
                         <linearGradient id="netGradient" x1="0" y1="0" x2="0" y2="1">
@@ -2724,33 +2748,33 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── AI Categorization Suggestions ──────────────────── */}
           {isWidgetVisible('ai-categorization') && transactions.length > 0 && (
           <div style={{ order: widgetOrderMap['ai-categorization'] ?? 999 }} className={getWidgetSpanClass('ai-categorization')}>
-            <Card className="stat-card">
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-[#edf4f7] dark:bg-[#242c30] flex items-center justify-center">
-                      <Wand2 className="h-4 w-4 text-[#7dabb5] dark:text-[#80c0cc]" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-                        {language === 'da' ? 'AI-kategorisering' : 'AI Categorization'}
-                        <Sparkles className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
-                      </p>
-                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                        {language === 'da' ? 'Automatisk forslag til konti' : 'Automatic account suggestions'}
-                      </p>
-                    </div>
+            <Card className="stat-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
+                    <Wand2 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10"
-                    onClick={() => onNavigate?.('transactions')}
-                  >
-                    {language === 'da' ? 'Vis alle' : 'View all'}
-                    <ArrowRight className="ml-1 h-3 w-3" />
-                  </Button>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+                      {language === 'da' ? 'AI-kategorisering' : 'AI Categorization'}
+                      <Sparkles className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {language === 'da' ? 'Automatisk forslag til konti' : 'Automatic account suggestions'}
+                    </p>
+                  </div>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10"
+                  onClick={() => onNavigate?.('transactions')}
+                >
+                  {language === 'da' ? 'Vis alle' : 'View all'}
+                  <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 <CategorizationSuggestionsList
                   descriptions={transactions.slice(0, 10).map(t => t.description).filter(Boolean)}
                 />
@@ -2762,25 +2786,32 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Recent Journal Entries ────────────────────────────── */}
           {isWidgetVisible('recent-journal') && (
           <div style={{ order: widgetOrderMap['recent-journal'] ?? 999 }} className={getWidgetSpanClass('recent-journal')}>
-            <Card className="stat-card">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <PenLine className="h-5 w-5 text-[#0d9488]" />
-                    {language === 'da' ? 'Seneste journalposter' : 'Recent Journal Entries'}
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10"
-                    onClick={() => onNavigate?.('journal')}
-                  >
-                    {language === 'da' ? 'Vis alle' : 'View all'}
-                    <ArrowRight className="ml-1 h-3 w-3" />
-                  </Button>
+            <Card className="stat-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                    <PenLine className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      {language === 'da' ? 'Seneste journalposter' : 'Recent Journal Entries'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                      {language === 'da' ? 'Seneste bogførte poster' : 'Latest posted entries'}
+                    </p>
+                  </div>
                 </div>
-              </CardHeader>
-              <CardContent>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10"
+                  onClick={() => onNavigate?.('journal')}
+                >
+                  {language === 'da' ? 'Vis alle' : 'View all'}
+                  <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 {journalEntries.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 gap-3">
                     <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
@@ -2848,20 +2879,23 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           {/* ─── Activity Feed ────────────────────────────────────── */}
           {isWidgetVisible('activity-feed') && (
           <div style={{ order: widgetOrderMap['activity-feed'] ?? 999 }} className={getWidgetSpanClass('activity-feed')}>
-            <Card className="stat-card">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex items-center justify-between mb-4">
+            <Card className="stat-card overflow-hidden">
+              <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                    <Activity className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                  </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
                       {language === 'da' ? 'Seneste aktivitet' : 'Recent Activity'}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    </p>
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">
                       {language === 'da' ? 'Posteringer og journalposter' : 'Transactions and journal entries'}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
+                </div>
+                <Button
+                  variant="ghost"
                     size="sm"
                     onClick={() => onNavigate?.('journal')}
                     className="gap-1.5 text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#f0fdf9] dark:hover:bg-[#1a2e2b]"
@@ -2869,8 +2903,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                     {language === 'da' ? 'Vis alle' : 'View All'}
                     <ChevronRight className="h-3.5 w-3.5" />
                   </Button>
-                </div>
-
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0">
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {/* Journal entries in activity feed */}
                   {journalEntries.slice(0, 5).map((entry) => {
@@ -2992,17 +3026,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           <div style={{ order: widgetOrderMap['active-accounts'] ?? 999 }} className={getWidgetSpanClass('active-accounts')}>
             <Card className="stat-card card-hover-lift overflow-hidden">
               {/* Header */}
-              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
+              <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="h-9 w-9 rounded-xl bg-[#0d9488]/10 flex items-center justify-center">
-                      <BarChart3 className="h-4.5 w-4.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                    <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 flex items-center justify-center">
+                      <BarChart3 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
                     </div>
                     <div>
-                      <h3 className="text-xs font-semibold text-gray-900 dark:text-white">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
                         {language === 'da' ? 'Mest aktive konti' : 'Most Active Accounts'}
                       </h3>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                      <p className="text-[10px] text-gray-400 dark:text-gray-500">
                         {language === 'da' ? 'Top konti efter aktivitet' : 'Top accounts by activity'}
                       </p>
                     </div>
@@ -3014,7 +3048,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
 
               {/* Body: table */}
-              <CardContent className="p-4 pt-3">
+              <CardContent className="p-4 sm:p-5 pt-3">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200">

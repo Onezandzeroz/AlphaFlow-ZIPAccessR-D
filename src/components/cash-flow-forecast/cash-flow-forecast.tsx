@@ -168,48 +168,48 @@ export function CashFlowForecast({ dateRange: _dateRange }: CashFlowForecastProp
 
   return (
     <Card className="stat-card overflow-hidden">
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-[#edf4f7] dark:bg-[#242c30] flex items-center justify-center">
-              <BarChart3 className="h-4 w-4 text-[#7dabb5] dark:text-[#80c0cc]" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
-                {language === 'da' ? 'Likviditetsprognose' : 'Cash Flow Forecast'}
-                <Sparkles className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
-              </p>
-              <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                {language === 'da' ? 'Projektion baseret på historik' : 'Projection based on historical patterns'}
-              </p>
-            </div>
+      <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
+            <BarChart3 className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
           </div>
-          <div className="flex items-center gap-2">
-            <Badge className={`${confidence.bgClass} text-[9px] px-1.5 py-0.5`}>
-              {confidence.label}
-            </Badge>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-[250px]">
-                  <p className="text-xs">
-                    {language === 'da'
-                      ? `Prognosen er baseret på gennemsnittet af de seneste ${summary.dataPoints} måneder med trendjustering.`
-                      : `The forecast is based on the average of the last ${summary.dataPoints} months with trend adjustment.`}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-1.5">
+              {language === 'da' ? 'Likviditetsprognose' : 'Cash Flow Forecast'}
+              <Sparkles className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
+            </h3>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+              {language === 'da' ? 'Projektion baseret på historik' : 'Projection based on historical patterns'}
+            </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <Badge className={`${confidence.bgClass} text-[9px] px-1.5 py-0.5`}>
+            {confidence.label}
+          </Badge>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[250px]">
+                <p className="text-xs">
+                  {language === 'da'
+                    ? `Prognosen er baseret på gennemsnittet af de seneste ${summary.dataPoints} måneder med trendjustering.`
+                    : `The forecast is based on the average of the last ${summary.dataPoints} months with trend adjustment.`}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      </div>
+      <div className="px-4 sm:px-5 pb-4 sm:pb-5">
 
         {/* Projected Summary Cards */}
         <div className="grid grid-cols-3 gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-[#f0fdf9] dark:bg-[#1a2e2b] border border-[#0d9488]/10 dark:border-[#2dd4bf]/10">
+          <div className="p-2.5 rounded-lg bg-[#0d9488]/5 dark:bg-[#2dd4bf]/10">
             <div className="flex items-center gap-1 mb-1">
               <ArrowUpRight className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
               <span className="text-[10px] uppercase tracking-wider font-medium text-[#0d9488] dark:text-[#2dd4bf]">
@@ -221,10 +221,10 @@ export function CashFlowForecast({ dateRange: _dateRange }: CashFlowForecastProp
             </p>
           </div>
 
-          <div className="p-3 rounded-xl bg-[#faf5ee] dark:bg-[#302a22] border border-[#d4915c]/10 dark:border-[#e0a476]/10">
+          <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20">
             <div className="flex items-center gap-1 mb-1">
-              <ArrowDownRight className="h-3 w-3 text-[#d4915c] dark:text-[#e0a476]" />
-              <span className="text-[10px] uppercase tracking-wider font-medium text-[#d4915c] dark:text-[#e0a476]">
+              <ArrowDownRight className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+              <span className="text-[10px] uppercase tracking-wider font-medium text-amber-600 dark:text-amber-400">
                 {language === 'da' ? 'Proj. udgift' : 'Proj. Expense'}
               </span>
             </div>
@@ -233,26 +233,26 @@ export function CashFlowForecast({ dateRange: _dateRange }: CashFlowForecastProp
             </p>
           </div>
 
-          <div className={`p-3 rounded-xl border ${
+          <div className={`p-2.5 rounded-lg ${
             projected.net >= 0
-              ? 'bg-[#edf5ef] dark:bg-[#242e26] border-[#7c9a82]/10 dark:border-[#8cc492]/10'
-              : 'bg-[#fef2f2] dark:bg-[#2e2024] border-red-200 dark:border-red-800/20'
+              ? 'bg-[#0d9488]/5 dark:bg-[#2dd4bf]/10'
+              : 'bg-red-50 dark:bg-red-900/20'
           }`}>
             <div className="flex items-center gap-1 mb-1">
               {projected.net >= 0
-                ? <TrendingUp className="h-3 w-3 text-[#7c9a82] dark:text-[#8cc492]" />
+                ? <TrendingUp className="h-3 w-3 text-[#0d9488] dark:text-[#2dd4bf]" />
                 : <TrendingDown className="h-3 w-3 text-red-500 dark:text-red-400" />
               }
               <span className={`text-[10px] uppercase tracking-wider font-medium ${
                 projected.net >= 0
-                  ? 'text-[#7c9a82] dark:text-[#8cc492]'
+                  ? 'text-[#0d9488] dark:text-[#2dd4bf]'
                   : 'text-red-600 dark:text-red-400'
               }`}>
                 {language === 'da' ? 'Proj. netto' : 'Proj. Net'}
               </span>
             </div>
             <p className={`text-sm font-bold tabular-nums ${
-              projected.net >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'
+              projected.net >= 0 ? 'text-gray-900 dark:text-white' : 'text-red-600 dark:text-red-400'
             }`}>
               {tc(projected.net)}
             </p>
@@ -267,14 +267,14 @@ export function CashFlowForecast({ dateRange: _dateRange }: CashFlowForecastProp
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
+                  fontSize={10}
+                  tick={{ fill: 'var(--muted-foreground)' }}
                   tickLine={false}
                   axisLine={false}
                 />
                 <YAxis
-                  stroke="var(--muted-foreground)"
-                  fontSize={11}
+                  fontSize={10}
+                  tick={{ fill: 'var(--muted-foreground)' }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `${v / 1000}k`}
@@ -338,7 +338,7 @@ export function CashFlowForecast({ dateRange: _dateRange }: CashFlowForecastProp
             </span>
           )}
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }

@@ -73,18 +73,21 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
   // Empty state
   if (data.length === 0) {
     return (
-      <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
+      <Card className="stat-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
               <PieChart className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
             </div>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">
-              {language === 'da' ? 'Budget vs. Faktisk' : 'Budget vs. Actual'}
-            </p>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Budget vs. Faktisk' : 'Budget vs. Actual'}</h3>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Afvigelse pr. kontokategori' : 'Variance by account category'}</p>
+            </div>
           </div>
+        </div>
+        <div className="px-4 sm:px-5 pb-4 sm:pb-5">
           <div className="empty-state-container flex flex-col items-center py-8 text-center">
-            <div className="empty-state-illustration h-14 w-14 rounded-full bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center mb-3">
+            <div className="empty-state-illustration h-14 w-14 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center mb-3">
               <PieChart className="h-7 w-7 text-[#0d9488] dark:text-[#2dd4bf]" />
             </div>
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -96,7 +99,7 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
                 : 'Create a budget to compare budgeted amounts to actual spending per account category.'}
             </p>
           </div>
-        </CardContent>
+        </div>
       </Card>
     );
   }
@@ -149,40 +152,43 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
   }
 
   return (
-    <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]">
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
+    <Card className="stat-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
             <PieChart className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
           </div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
-            {language === 'da' ? 'Budget vs. Faktisk' : 'Budget vs. Actual'}
-          </p>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Budget vs. Faktisk' : 'Budget vs. Actual'}</h3>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Afvigelse pr. kontokategori' : 'Variance by account category'}</p>
+          </div>
         </div>
+      </div>
+      <div className="px-4 sm:px-5 pb-4 sm:pb-5">
 
         {/* Summary row */}
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="text-center p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
+            <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               {language === 'da' ? 'Budget' : 'Budget'}
             </p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums mt-0.5">
               {tc(totalBudget)}
             </p>
           </div>
           <div className="text-center p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
+            <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               {language === 'da' ? 'Faktisk' : 'Actual'}
             </p>
-            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums">
+            <p className="text-sm font-bold text-gray-900 dark:text-white tabular-nums mt-0.5">
               {tc(totalActual)}
             </p>
           </div>
           <div className="text-center p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/50">
-            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-0.5">
+            <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               {language === 'da' ? 'Afvigelse' : 'Variance'}
             </p>
-            <p className={`text-sm font-bold tabular-nums ${getVarianceColor(totalVariance)}`}>
+            <p className={`text-sm font-bold tabular-nums mt-0.5 ${getVarianceColor(totalVariance)}`}>
               {totalVariance >= 0 ? '+' : ''}{tc(totalVariance)}
             </p>
           </div>
@@ -252,7 +258,7 @@ export function BudgetVsActualWidget({ user: _user }: BudgetVsActualWidgetProps)
               : 'Green variance = under budget · Red variance = over budget'}
           </p>
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }

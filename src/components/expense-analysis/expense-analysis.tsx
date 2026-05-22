@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '@/lib/use-translation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   PieChart, Pie, Cell, ResponsiveContainer,
@@ -139,14 +139,19 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       {/* Expense Breakdown Pie Chart */}
-      <Card className="stat-card hover-lift">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <PieChartIcon className="h-4 w-4 text-[#0d9488]" />
-            {language === 'da' ? 'Udgiftskategorier' : 'Expense Categories'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 pt-0">
+      <Card className="stat-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
+              <PieChartIcon className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Udgiftskategorier' : 'Expense Categories'}</h3>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Fordeling pr. kategori' : 'Distribution by category'}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 sm:px-5 pb-4 sm:pb-5">
           <div className="flex items-start gap-4">
             <div className="w-44 h-44 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
@@ -225,31 +230,41 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
               </div>
             );
           })()}
-        </CardContent>
+        </div>
       </Card>
 
       {/* Monthly Expense Trend */}
-      <Card className="stat-card hover-lift">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <TrendingDown className="h-4 w-4 text-[#d4915c]" />
-            {language === 'da' ? 'Månedlig udgiftstrend' : 'Monthly Expense Trend'}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 pt-0">
+      <Card className="stat-card overflow-hidden">
+        <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-amber-500/10 dark:bg-amber-500/15 flex items-center justify-center">
+              <TrendingDown className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Månedlig udgiftstrend' : 'Monthly Expense Trend'}</h3>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Udvikling over tid' : 'Development over time'}</p>
+            </div>
+          </div>
+        </div>
+        <div className="px-4 sm:px-5 pb-4 sm:pb-5">
           {barData.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={barData} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.5} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                  axisLine={{ stroke: 'var(--border)' }}
+                  fontSize={10}
+                  tick={{ fill: 'var(--muted-foreground)' }}
+                  tickLine={false}
+                  axisLine={false}
                 />
                 <YAxis
-                  tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                  axisLine={{ stroke: 'var(--border)' }}
-                  tickFormatter={(val: number) => `${(val / 1000).toFixed(0)}k`}
+                  fontSize={10}
+                  tick={{ fill: 'var(--muted-foreground)' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${v / 1000}k`}
+                  width={40}
                 />
                 <RechartsTooltip content={<CustomTooltip />} />
                 {barKeys.map((key, i) => (
@@ -268,7 +283,7 @@ export function ExpenseAnalysis({ dateRange }: ExpenseAnalysisProps) {
               {language === 'da' ? 'Ingen udgiftsdata' : 'No expense data'}
             </div>
           )}
-        </CardContent>
+        </div>
       </Card>
     </div>
   );

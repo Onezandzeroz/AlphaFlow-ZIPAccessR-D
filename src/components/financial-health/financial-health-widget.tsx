@@ -133,16 +133,19 @@ export function FinancialHealthWidget({ dateRange }: FinancialHealthWidgetProps)
   ];
 
   return (
-    <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b]">
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
+    <Card className="stat-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
             <Droplets className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
           </div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
-            {language === 'da' ? 'Økonomisk Sundhed' : 'Financial Health'}
-          </p>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Økonomisk Sundhed' : 'Financial Health'}</h3>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Samlet score 0-100' : 'Overall score 0-100'}</p>
+          </div>
         </div>
+      </div>
+      <div className="px-4 sm:px-5 pb-4 sm:pb-5">
 
         {/* 3 Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -153,7 +156,7 @@ export function FinancialHealthWidget({ dateRange }: FinancialHealthWidgetProps)
             return (
               <div
                 key={metric.key}
-                className={`p-4 rounded-xl border ${colors.border} ${colors.bg}/40 transition-all duration-200 hover:scale-[1.02]`}
+                className={`p-3 rounded-lg border ${colors.border} ${colors.bg}/40 transition-all duration-200 hover:scale-[1.02]`}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <div className={`h-8 w-8 rounded-lg ${metric.iconBg} flex items-center justify-center shrink-0`}>
@@ -180,7 +183,7 @@ export function FinancialHealthWidget({ dateRange }: FinancialHealthWidgetProps)
             );
           })}
         </div>
-      </CardContent>
+      </div>
     </Card>
   );
 }

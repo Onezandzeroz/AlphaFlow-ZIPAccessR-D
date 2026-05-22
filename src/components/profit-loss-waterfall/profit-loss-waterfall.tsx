@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '@/lib/use-translation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
@@ -138,41 +138,44 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
   }
 
   return (
-    <Card className="stat-card hover-lift">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-[#0d9488]" />
-            {language === 'da' ? 'Resultatopgørelse (Waterfall)' : 'Profit & Loss Waterfall'}
-          </CardTitle>
-          {summary && (
-            <Badge
-              className={`text-xs font-semibold ${
-                summary.netResult >= 0
-                  ? 'bg-[#edf5ef] text-[#3d7a4a] dark:bg-[#152e1e] dark:text-[#86efac] border-[#bbf7d0] dark:border-[#224830]'
-                  : 'bg-[#fef2f2] text-[#dc4a45] dark:bg-[#2e1a1a] dark:text-[#fca5a5] border-[#fee2e2] dark:border-[#402020]'
-              }`}
-            >
-              {summary.netResult >= 0 ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
-              {tc(summary.netResult)}
-            </Badge>
-          )}
+    <Card className="stat-card overflow-hidden">
+      <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-lg bg-[#0d9488]/10 dark:bg-[#2dd4bf]/15 flex items-center justify-center">
+            <TrendingUp className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">{language === 'da' ? 'Resultatopgørelse' : 'Profit & Loss'}</h3>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">{language === 'da' ? 'Vandfaldsdiagram' : 'Waterfall chart'}</p>
+          </div>
         </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-0">
+        {summary && (
+          <Badge
+            className={`text-xs font-semibold ${
+              summary.netResult >= 0
+                ? 'bg-[#edf5ef] text-[#3d7a4a] dark:bg-[#152e1e] dark:text-[#86efac] border-[#bbf7d0] dark:border-[#224830]'
+                : 'bg-[#fef2f2] text-[#dc4a45] dark:bg-[#2e1a1a] dark:text-[#fca5a5] border-[#fee2e2] dark:border-[#402020]'
+            }`}
+          >
+            {summary.netResult >= 0 ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
+            {tc(summary.netResult)}
+          </Badge>
+        )}
+      </div>
+      <div className="px-4 sm:px-5 pb-4 sm:pb-5">
         {/* Summary Stats */}
         {summary && (
           <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="rounded-lg bg-[#e6f7f3] dark:bg-[#1a2e2b] p-2.5 text-center">
-              <p className="text-[10px] font-medium text-[#0d9488] dark:text-[#2dd4bf] uppercase tracking-wide">
+            <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2.5 text-center">
+              <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 {language === 'da' ? 'Indtægter' : 'Revenue'}
               </p>
               <p className="text-sm font-bold text-[#0d9488] dark:text-[#2dd4bf] tabular-nums mt-0.5">
                 {tc(summary.totalRevenue)}
               </p>
             </div>
-            <div className="rounded-lg bg-[#fef2f2] dark:bg-[#2e1a1a] p-2.5 text-center">
-              <p className="text-[10px] font-medium text-[#dc4a45] dark:text-[#f87171] uppercase tracking-wide">
+            <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-2.5 text-center">
+              <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 {language === 'da' ? 'Omkostninger' : 'Expenses'}
               </p>
               <p className="text-sm font-bold text-[#dc4a45] dark:text-[#f87171] tabular-nums mt-0.5">
@@ -194,21 +197,26 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
         {chartData.length > 0 && (
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.3} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 9, fill: 'var(--muted-foreground)' }}
-                axisLine={{ stroke: 'var(--border)' }}
+                fontSize={10}
+                tick={{ fill: 'var(--muted-foreground)' }}
+                tickLine={false}
+                axisLine={false}
                 interval={0}
                 angle={-25}
                 textAnchor="end"
                 height={55}
               />
               <YAxis
-                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                axisLine={{ stroke: 'var(--border)' }}
+                fontSize={10}
+                tick={{ fill: 'var(--muted-foreground)' }}
+                tickLine={false}
+                axisLine={false}
                 domain={[0, maxVal * 1.1]}
-                tickFormatter={(val: number) => `${(val / 1000).toFixed(0)}k`}
+                tickFormatter={(v) => `${v / 1000}k`}
+                width={40}
               />
               <RechartsTooltip content={<CustomTooltip />} />
               <Bar dataKey="base" stackId="waterfall" fill="transparent" />
@@ -229,7 +237,7 @@ export function ProfitLossWaterfall({ dateRange }: ProfitLossWaterfallProps) {
             </BarChart>
           </ResponsiveContainer>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
