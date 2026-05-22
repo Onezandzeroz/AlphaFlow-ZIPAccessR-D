@@ -1369,7 +1369,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 items-start" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
@@ -1436,8 +1436,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Revenue (Omsætning) ─────────────────────────── */}
           {isWidgetVisible('kpi-revenue') && (
-          <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={`${getWidgetSpanClass('kpi-revenue')} flex`}>
-              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
+          <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={getWidgetSpanClass('kpi-revenue')}>
+              <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center justify-between">
@@ -1472,23 +1472,19 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: bar chart showing monthly revenue */}
-                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
+                {/* Body: sparkline showing monthly revenue trend */}
+                <CardContent className="p-4 sm:p-5 pt-2">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
-                    <div className="h-[120px] sm:h-[170px]">
+                    <div className="h-[50px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyRevenueChart.slice(-6)} barGap={2} barCategoryGap="25%">
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                          <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} />
-                          <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
-                          <RechartsTooltip content={<CustomTooltip />} />
-                          <Bar dataKey="revenue" fill="#7c9a82" radius={[3, 3, 0, 0]} name="revenue" />
-                        </BarChart>
+                        <AreaChart data={monthlyRevenueChart.slice(-6)}>
+                          <Area type="linear" dataKey="revenue" stroke="#7c9a82" fill="#7c9a82" fillOpacity={0.15} strokeWidth={2} dot={false} />
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
-                      {language === 'da' ? 'Ingen omsætningsdata i perioden' : 'No revenue data in period'}
+                    <div className="h-12 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen omsætningsdata' : 'No revenue data'}
                     </div>
                   )}
                 </CardContent>
@@ -1498,8 +1494,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── KPI Operating Result (Driftsresultat) ──────────────── */}
           {isWidgetVisible('kpi-operating-result') && (
-          <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={`${getWidgetSpanClass('kpi-operating-result')} flex`}>
-              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
+          <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={getWidgetSpanClass('kpi-operating-result')}>
+              <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
@@ -1532,27 +1528,19 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </p>
                 </div>
 
-                {/* Body: bar chart showing monthly net result (positive & negative) */}
-                <CardContent className="p-4 sm:p-5 pt-3 flex-1">
+                {/* Body: sparkline showing monthly net result trend */}
+                <CardContent className="p-4 sm:p-5 pt-2">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
-                    <div className="h-[120px] sm:h-[170px]">
+                    <div className="h-[50px]">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyRevenueChart.slice(-6)} barGap={2} barCategoryGap="25%">
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                          <XAxis dataKey="label" fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} />
-                          <YAxis fontSize={10} tick={{ fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(v) => `${v / 1000}k`} width={40} />
-                          <RechartsTooltip content={<CustomTooltip />} />
-                          <Bar dataKey="net" radius={[3, 3, 0, 0]} name="net">
-                            {monthlyRevenueChart.slice(-6).map((m, i) => (
-                              <Cell key={`op-res-${i}`} fill={m.net >= 0 ? '#0d9488' : '#dc4a45'} />
-                            ))}
-                          </Bar>
-                        </BarChart>
+                        <AreaChart data={monthlyRevenueChart.slice(-6)}>
+                          <Area type="linear" dataKey="net" stroke={incomeStatement && incomeStatement.operatingResult >= 0 ? '#0d9488' : '#dc4a45'} fill={incomeStatement && incomeStatement.operatingResult >= 0 ? '#0d9488' : '#dc4a45'} fillOpacity={0.15} strokeWidth={2} dot={false} />
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <div className="h-24 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
-                      {language === 'da' ? 'Ingen resultdata i perioden' : 'No result data in period'}
+                    <div className="h-12 flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs">
+                      {language === 'da' ? 'Ingen resultdata' : 'No result data'}
                     </div>
                   )}
                 </CardContent>

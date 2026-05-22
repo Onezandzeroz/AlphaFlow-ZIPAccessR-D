@@ -15,11 +15,14 @@ export interface DashboardWidget {
 }
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
+  // ── TOP ROW: Activity + VAT (user-configured default order) ──
+  { id: 'activity-feed',        labelDa: 'Seneste Aktivitet',        labelEn: 'Activity Feed',          icon: 'Activity',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
+  { id: 'vat-output',           labelDa: 'Udgående moms',           labelEn: 'Output VAT',             icon: 'ArrowUpCircle', defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
+  { id: 'vat-input',            labelDa: 'Indgående moms',          labelEn: 'Input VAT',              icon: 'ArrowDownCircle',defaultVisible: true, defaultSize: 'quarter', section: 'indicators' },
+
   // ── INDICATORS ──────────────────────────────────────────────
   { id: 'kpi-revenue',          labelDa: 'Omsætning',              labelEn: 'Revenue',                icon: 'TrendingUp',    defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
   { id: 'kpi-operating-result', labelDa: 'Driftsresultat',         labelEn: 'Operating Result',       icon: 'Scale',         defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
-  { id: 'vat-output',           labelDa: 'Udgående moms',           labelEn: 'Output VAT',             icon: 'ArrowUpCircle', defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
-  { id: 'vat-input',            labelDa: 'Indgående moms',          labelEn: 'Input VAT',              icon: 'ArrowDownCircle',defaultVisible: true, defaultSize: 'quarter', section: 'indicators' },
   { id: 'pnl-result',           labelDa: 'Resultat & Likviditet',   labelEn: 'P&L Result',             icon: 'Wallet',        defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
   { id: 'cash-position',        labelDa: 'Likviditetsoversigt',     labelEn: 'Cash Position',          icon: 'Wallet',        defaultVisible: true,  defaultSize: 'third',   section: 'indicators' },
   { id: 'comparison-revenue',   labelDa: 'Omsætningsændring',       labelEn: 'Revenue Change',         icon: 'ArrowUpRight',  defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
@@ -40,7 +43,6 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'budget-vs-actual',     labelDa: 'Budget vs Faktisk',        labelEn: 'Budget vs Actual',       icon: 'Scale',         defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'invoice-overview',     labelDa: 'Fakturaoversigt',          labelEn: 'Invoice Overview',       icon: 'FileText',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'recent-journal',       labelDa: 'Seneste Journalposter',    labelEn: 'Recent Journal Entries', icon: 'BookOpen',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
-  { id: 'activity-feed',        labelDa: 'Seneste Aktivitet',        labelEn: 'Activity Feed',          icon: 'Activity',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'active-accounts',      labelDa: 'Mest Aktive Konti',        labelEn: 'Most Active Accounts',   icon: 'BookOpen',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'saft-export',          labelDa: 'SAF-T Eksport',            labelEn: 'SAF-T Export',           icon: 'Shield',        defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'ai-categorization',    labelDa: 'AI-Kategorisering',        labelEn: 'AI Categorization',      icon: 'Sparkles',      defaultVisible: false, defaultSize: 'half',    section: 'details' },

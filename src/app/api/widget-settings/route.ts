@@ -9,7 +9,7 @@ import { auditUpdate, requestMetadata } from '@/lib/audit';
 // ── Helpers ────────────────────────────────────────────────────────
 
 const VALID_WIDGET_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-const VALID_SIZES: WidgetSize[] = ['full', 'half', 'third'];
+const VALID_SIZES: WidgetSize[] = ['full', 'half', 'third', 'quarter'];
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
 
@@ -167,7 +167,7 @@ export async function PUT(request: NextRequest) {
       }
       if (!VALID_SIZES.includes(size)) {
         return NextResponse.json(
-          { error: `Invalid size for "${id}": must be "full", "half", or "third"` },
+          { error: `Invalid size for "${id}": must be "full", "half", "third", or "quarter"` },
           { status: 400 },
         );
       }

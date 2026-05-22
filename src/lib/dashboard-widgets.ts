@@ -44,6 +44,14 @@ function writeLocalVisibilityMap(map: Record<string, boolean>): void {
 function readLocalWidgetOrder(): string[] {
   if (typeof window === 'undefined') return [...DEFAULT_ORDER];
   try {
+    // Run order migration if needed — clears stale stored order so new defaults take effect
+    const orderMigrationVersion = parseInt(localStorage.getItem(ORDER_MIGRATION_KEY) || '0', 10);
+    if (orderMigrationVersion < CURRENT_ORDER_MIGRATION) {
+      localStorage.removeItem(ORDER_STORAGE_KEY);
+      localStorage.setItem(ORDER_MIGRATION_KEY, String(CURRENT_ORDER_MIGRATION));
+      return [...DEFAULT_ORDER];
+    }
+
     const raw = localStorage.getItem(ORDER_STORAGE_KEY);
     if (raw === null) return [...DEFAULT_ORDER];
     const parsed = JSON.parse(raw) as string[];
@@ -67,7 +75,11 @@ function writeLocalWidgetOrder(order: string[]): void {
 
 // Migration: reset specific widget sizes when defaults change
 const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
-const CURRENT_SIZES_MIGRATION = 3; // bump when changing default sizes
+const CURRENT_SIZES_MIGRATION = 4; // bump when changing default sizes
+
+// Migration: reset stored widget order when default order changes
+const ORDER_MIGRATION_KEY = 'alphaflow-dashboard-widget-order-migration';
+const CURRENT_ORDER_MIGRATION = 2; // bump when changing default order
 
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
@@ -75,19 +87,8 @@ function readLocalWidgetSizes(): Record<string, WidgetSize> {
     // Run migration if needed
     const migrationVersion = parseInt(localStorage.getItem(SIZES_MIGRATION_KEY) || '0', 10);
     if (migrationVersion < CURRENT_SIZES_MIGRATION) {
-      const raw = localStorage.getItem(SIZES_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Record<string, WidgetSize>;
-        // Remove stored sizes that should fall back to new defaults
-        delete parsed['profit-loss-waterfall'];
-        delete parsed['cash-flow-forecast'];
-        // v3: Omsætning, Driftsresultat, Udgående moms, Indgående moms changed from third → quarter
-        delete parsed['kpi-revenue'];
-        delete parsed['kpi-operating-result'];
-        delete parsed['vat-output'];
-        delete parsed['vat-input'];
-        localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(parsed));
-      }
+      // v4: clear all stored sizes so new defaults take effect
+      localStorage.removeItem(SIZES_STORAGE_KEY);
       localStorage.setItem(SIZES_MIGRATION_KEY, String(CURRENT_SIZES_MIGRATION));
     }
 
@@ -167,23 +168,32 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       const defaults = getDefaultVisibilityMap();
       const merged = { ...defaults, ...serverWidgets };
 
-      // Order
+      // Order — on first load with new default order, ignore server order and use defaults
       const serverOrder = data.order as string[] | undefined;
       let order: string[];
       if (serverOrder && serverOrder.length > 0) {
-        const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-        const filtered = serverOrder.filter((id) => validIds.has(id));
-        const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
-        order = [...filtered, ...missing];
+        // Check if the server order starts with the expected top widgets (activity-feed, vat-output, vat-input)
+        // If not, it's a stale order from before the default change — reset to defaults
+        const expectedTopIds = ['activity-feed', 'vat-output', 'vat-input'];
+        const serverTop3 = serverOrder.slice(0, 3);
+        const isStaleOrder = !expectedTopIds.every((id, i) => serverTop3[i] === id);
+        if (isStaleOrder) {
+          order = [...DEFAULT_ORDER];
+        } else {
+          const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
+          const filtered = serverOrder.filter((id) => validIds.has(id));
+          const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
+          order = [...filtered, ...missing];
+        }
       } else {
         order = readLocalWidgetOrder();
       }
 
-      // Sizes
+      // Sizes — use server sizes but override with defaults for any that changed
       const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
       let sizes: Record<string, WidgetSize>;
       if (serverSizes) {
-        // Migration: clear stale overrides for widgets whose defaults changed
+        // Remove stale overrides for widgets whose defaults changed
         delete serverSizes['profit-loss-waterfall'];
         delete serverSizes['cash-flow-forecast'];
         delete serverSizes['kpi-revenue'];
