@@ -1355,7 +1355,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 lg:gap-4 lg:auto-rows-fr" id="dashboard-grid" style={{ gridAutoFlow: 'dense' }}>
 
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
@@ -1422,8 +1422,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Revenue (Omsætning) ─────────────────────────── */}
           {isWidgetVisible('kpi-revenue') && (
-          <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={getWidgetSpanClass('kpi-revenue')}>
-              <Card className="stat-card card-hover-lift overflow-hidden">
+          <div style={{ order: widgetOrderMap['kpi-revenue'] ?? 999 }} className={`${getWidgetSpanClass('kpi-revenue')} flex`}>
+              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 pt-4 pb-3">
                   <div className="flex items-center justify-between">
@@ -1459,9 +1459,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.revenue !== 0) ? (
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3 h-full">
                       <div className="w-full sm:w-[140px] shrink-0">
                         <div className="h-[120px] sm:h-[140px]">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1542,8 +1542,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── KPI Operating Result (Driftsresultat) ──────────────── */}
           {isWidgetVisible('kpi-operating-result') && (
-          <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={getWidgetSpanClass('kpi-operating-result')}>
-              <Card className="stat-card card-hover-lift overflow-hidden">
+          <div style={{ order: widgetOrderMap['kpi-operating-result'] ?? 999 }} className={`${getWidgetSpanClass('kpi-operating-result')} flex`}>
+              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
@@ -1577,9 +1577,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: chart + table */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 pt-3 flex-1">
                   {monthlyRevenueChart.length > 0 && monthlyRevenueChart.some(m => m.net !== 0) ? (
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    <div className="flex flex-col sm:flex-row gap-3 h-full">
                       <div className="w-full sm:w-[140px] shrink-0">
                         <div className="h-[120px] sm:h-[140px]">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1680,8 +1680,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
-          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={getWidgetSpanClass('pnl-result')}>
-              <Card className="stat-card card-hover-lift overflow-hidden">
+          <div style={{ order: widgetOrderMap['pnl-result'] ?? 999 }} className={`${getWidgetSpanClass('pnl-result')} flex`}>
+              <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 pt-4 pb-3`}>
                   <div className="flex items-center justify-between">
@@ -1716,7 +1716,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
 
                 {/* Body: profit margin */}
-                <CardContent className="p-4 pt-3">
+                <CardContent className="p-4 pt-3 flex-1">
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="text-gray-500 dark:text-gray-400">
                       {language === 'da' ? 'Overskudsgrad' : 'Profit Margin'}
@@ -1905,9 +1905,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={getWidgetSpanClass('financial-health-score')}>
-            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto">
-                <CardContent className="p-4 sm:p-5">
+          <div style={{ order: widgetOrderMap['financial-health-score'] ?? 999 }} className={`${getWidgetSpanClass('financial-health-score')} flex`}>
+            <Card className="hover-lift overflow-hidden border-0 bg-gradient-to-br from-white to-[#f0fdf9] dark:from-gray-900 dark:to-[#1a2e2b] lg:max-w-lg lg:mx-auto flex-1 flex flex-col">
+                <CardContent className="p-4 sm:p-5 flex-1">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center">
                       <Gauge className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
@@ -2283,8 +2283,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
-          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={getWidgetSpanClass('invoice-overview')}>
-            <Card className="stat-card card-hover-lift overflow-hidden">
+          <div style={{ order: widgetOrderMap['invoice-overview'] ?? 999 }} className={`${getWidgetSpanClass('invoice-overview')} flex`}>
+            <Card className="stat-card card-hover-lift overflow-hidden flex-1 flex flex-col">
               {/* Header */}
               <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 pt-4 pb-3">
                 <div className="flex items-center justify-between">
@@ -2308,8 +2308,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
 
               {/* Body: invoice stats */}
-              <CardContent className="p-4 pt-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <CardContent className="p-4 pt-3 flex-1">
+                <div className="grid grid-cols-2 gap-3 h-full content-start">
                   {/* Outstanding */}
                   <div className="rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 p-3">
                     <div className="flex items-center gap-1.5 mb-1">
@@ -3075,3 +3075,4 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
     </div>
   );
 }
+
