@@ -1406,47 +1406,118 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
           ═══════════════════════════════════════════════════════════ */}
-          {/* ─── KPI Stat Cards ──────────────────────────────── */}
+          {/* ─── KPI Indicator Cards ────────────────────────────── */}
           {isWidgetVisible('kpi-cards') && (
           <div style={{ order: widgetOrderMap['kpi-cards'] ?? 999 }} className={getWidgetSpanClass('kpi-cards')}>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 stagger-children">
-            <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
-              <StatsCard
-                icon={TrendingUp}
-                label={language === 'da' ? 'Omsætning' : 'Revenue'}
-                value={incomeStatement?.grossProfit.revenue || 0}
-                variant="green"
-                sparklineData={monthlyRevenueChart.slice(-6).map(m => m.revenue)}
-              />
-            </div>
-            <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
-              <StatsCard
-                icon={Scale}
-                label={language === 'da' ? 'Driftsresultat' : 'Operating Result'}
-                value={incomeStatement?.operatingResult || 0}
-                variant={incomeStatement && incomeStatement.operatingResult >= 0 ? 'primary' : 'red'}
-                trend={incomeStatement ? { direction: incomeStatement.operatingResult >= 0 ? 'up' : 'down', value: incomeStatement.grossProfit.revenue > 0 ? Math.abs(Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100)) : 0 } : undefined}
-                sparklineData={monthlyRevenueChart.slice(-6).map(m => m.net)}
-              />
-            </div>
-            <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
-              <StatsCard
-                icon={ArrowUpRight}
-                label={t('outputVAT')}
-                value={outputVAT}
-                variant="turquoise"
-                sparklineData={monthlyRevenueChart.slice(-6).map(m => m.revenue * 0.25)}
-              />
-            </div>
-            <div className="transition-all duration-300 hover:scale-[1.02] hover:shadow-lg">
-              <StatsCard
-                icon={ArrowDownRight}
-                label={t('inputVAT')}
-                value={inputVAT}
-                variant="purple"
-                sparklineData={monthlyRevenueChart.slice(-6).map(m => m.expenses * 0.25)}
-              />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 stagger-children">
+
+            {/* ── Revenue (Omsætning) ── */}
+            <Card className="stat-card card-hover-lift overflow-hidden">
+              <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-10 w-10 rounded-xl bg-green-500/10 flex items-center justify-center">
+                      <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Omsætning' : 'Revenue'}
+                      </h3>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        {dateRange
+                          ? (language === 'da' ? 'Omsætning for periode' : 'Revenue for period')
+                          : (language === 'da' ? 'Årets omsætning' : 'YTD Revenue')}
+                      </p>
+                    </div>
+                  </div>
+                  {incomeStatement && incomeStatement.grossProfit.revenue > 0 && monthlyRevenueChart.length >= 2 && (
+                    <div className="flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400">
+                      <TrendingUp className="h-3.5 w-3.5" />
+                      {monthlyRevenueChart.length >= 2 ? (
+                        (() => {
+                          const curr = monthlyRevenueChart[monthlyRevenueChart.length - 1]?.revenue ?? 0;
+                          const prev = monthlyRevenueChart[monthlyRevenueChart.length - 2]?.revenue ?? 0;
+                          const pct = prev !== 0 ? Math.round(((curr - prev) / Math.abs(prev)) * 100) : 0;
+                          return `${pct >= 0 ? '+' : ''}${pct}%`;
+                        })()
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+                <p className="text-2xl sm:text-3xl font-bold text-green-600 dark:text-green-400 mt-2 tabular-nums">
+                  {tc(incomeStatement?.grossProfit.revenue || 0)}
+                </p>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0 sm:pt-0">
+                <div className="flex items-end gap-[3px] h-8">
+                  {monthlyRevenueChart.slice(-6).map((m, i) => {
+                    const maxVal = Math.max(...monthlyRevenueChart.slice(-6).map(x => x.revenue), 1);
+                    const heightPercent = Math.max((m.revenue / maxVal) * 100, 4);
+                    return (
+                      <div
+                        key={i}
+                        className="flex-1 min-w-[4px] rounded-sm bg-green-500/60 dark:bg-green-400/60 transition-all duration-500"
+                        style={{ height: `${heightPercent}%`, transitionDelay: `${i * 50}ms` }}
+                      />
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Operating Result (Driftsresultat) ── */}
+            <Card className="stat-card card-hover-lift overflow-hidden">
+              <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 sm:pt-5 pb-3`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'bg-[#0d9488]/10' : 'bg-red-500/10'}`}>
+                      {incomeStatement && incomeStatement.operatingResult >= 0
+                        ? <Scale className="h-5 w-5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                        : <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
+                      }
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {language === 'da' ? 'Driftsresultat' : 'Operating Result'}
+                      </h3>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        {dateRange
+                          ? (language === 'da' ? 'Resultat for periode' : 'Result for period')
+                          : (language === 'da' ? 'Årets driftsresultat' : 'YTD Operating Result')}
+                      </p>
+                    </div>
+                  </div>
+                  {incomeStatement && incomeStatement.grossProfit.revenue > 0 && (
+                    <div className={`flex items-center gap-1 text-xs font-medium ${incomeStatement.operatingResult >= 0 ? 'text-[#0d9488] dark:text-[#2dd4bf]' : 'text-red-600 dark:text-red-400'}`}>
+                      {incomeStatement.operatingResult >= 0
+                        ? <TrendingUp className="h-3.5 w-3.5" />
+                        : <TrendingDown className="h-3.5 w-3.5" />
+                      }
+                      {Math.abs(Math.round((incomeStatement.operatingResult / incomeStatement.grossProfit.revenue) * 100))}%
+                    </div>
+                  )}
+                </div>
+                <p className={`text-2xl sm:text-3xl font-bold mt-2 tabular-nums ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'text-[#0d9488] dark:text-[#2dd4bf]' : 'text-red-600 dark:text-red-400'}`}>
+                  {tc(incomeStatement?.operatingResult || 0)}
+                </p>
+              </div>
+              <CardContent className="p-4 sm:p-5 pt-0 sm:pt-0">
+                <div className="flex items-end gap-[3px] h-8">
+                  {monthlyRevenueChart.slice(-6).map((m, i) => {
+                    const netValues = monthlyRevenueChart.slice(-6).map(x => x.net);
+                    const maxVal = Math.max(...netValues.map(Math.abs), 1);
+                    const heightPercent = Math.max((Math.abs(m.net) / maxVal) * 100, 4);
+                    return (
+                      <div
+                        key={i}
+                        className={`flex-1 min-w-[4px] rounded-sm transition-all duration-500 ${m.net >= 0 ? 'bg-[#0d9488]/60 dark:bg-[#2dd4bf]/60' : 'bg-red-500/60 dark:bg-red-400/60'}`}
+                        style={{ height: `${heightPercent}%`, transitionDelay: `${i * 50}ms` }}
+                      />
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           </div>
           </div>
           )}

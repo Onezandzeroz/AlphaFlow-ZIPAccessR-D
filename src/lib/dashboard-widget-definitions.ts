@@ -16,7 +16,7 @@ export interface DashboardWidget {
 
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // ── Full-width widgets (span entire row) ──
-  { id: 'kpi-cards', labelDa: 'Nøgletal', labelEn: 'KPI Cards', icon: 'TrendingUp', defaultVisible: true, defaultSize: 'full', section: 'indicators' },
+  { id: 'kpi-cards', labelDa: 'Nøgletal', labelEn: 'KPI Cards', icon: 'TrendingUp', defaultVisible: true, defaultSize: 'half', section: 'indicators' },
   { id: 'cash-flow-trend', labelDa: 'Indtægter vs Omkostninger', labelEn: 'Revenue vs Expenses', icon: 'BarChart3', defaultVisible: true, defaultSize: 'full', section: 'charts' },
   { id: 'quick-actions', labelDa: 'Hurtige Handlinger', labelEn: 'Quick Actions', icon: 'Zap', defaultVisible: true, defaultSize: 'full', section: 'indicators' },
   { id: 'net-result-chart', labelDa: 'Netto Resultat pr. Måned', labelEn: 'Net Result by Month', icon: 'Activity', defaultVisible: true, defaultSize: 'full', section: 'charts' },
