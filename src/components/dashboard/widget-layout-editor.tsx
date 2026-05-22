@@ -32,6 +32,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
+import { getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
 import { useTranslation } from '@/lib/use-translation';
 
 // ─── Icon lookup ─────────────────────────────────────────────────
@@ -51,30 +52,41 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   BookOpen,
 };
 
-// ─── Widget visual sizes (proportional heights in mini preview) ─
-const WIDGET_SIZES: Record<string, { w: number; h: number; label: string }> = {
-  'kpi-cards':         { w: 2, h: 1.2, label: '4x KPI' },
-  'pnl-cash':          { w: 1, h: 1.8, label: 'P&L + Cash' },
-  'financial-health-score': { w: 1, h: 2.0, label: 'Health Score' },
-  'monthly-comparison':{ w: 1, h: 2.0, label: 'Monthly Comp.' },
-  'cash-flow-trend':   { w: 2, h: 2.4, label: 'Rev. vs Exp.' },
-  'quick-actions':     { w: 1, h: 1.4, label: 'Quick Actions' },
-  'invoice-overview':  { w: 1, h: 2.0, label: 'Invoices' },
-  'vat-charts':        { w: 1, h: 2.4, label: 'VAT Charts' },
-  'net-result-chart':  { w: 2, h: 2.4, label: 'Net Result' },
-  'expense-analysis':  { w: 1, h: 2.4, label: 'Exp. Analysis' },
-  'profit-loss-waterfall': { w: 2, h: 2.6, label: 'P&L Waterfall' },
-  'financial-health-detail': { w: 1, h: 2.6, label: 'Health Detail' },
-  'cash-flow-forecast':{ w: 2, h: 2.6, label: 'Cash Forecast' },
-  'budget-vs-actual':  { w: 1, h: 2.4, label: 'Budget vs Act.' },
-  'ai-categorization': { w: 1, h: 2.0, label: 'AI Categorize' },
-  'recent-activity':   { w: 1, h: 2.6, label: 'Recent Activity' },
-  'active-accounts':   { w: 1, h: 2.0, label: 'Active Accounts' },
-  'saft-export':       { w: 1, h: 1.4, label: 'SAF-T Export' },
+// ─── Widget visual sizes ─────────────────────────────────────────
+// gridSpan: 6 = full width, 3 = half width (2 per row), 2 = third width (3 per row)
+// The gridSpan in the dialog preview corresponds to the proportional width
+// of the actual widget on the dashboard.
+const WIDGET_SIZES: Record<string, { w: number; h: number; label: string; gridSpan: 2 | 3 | 6 }> = {
+  // ── Full-width widgets (span entire row) ──
+  'kpi-cards':             { w: 2, h: 1.2, label: '4x KPI', gridSpan: 6 },
+  'cash-flow-trend':       { w: 2, h: 2.4, label: 'Rev. vs Exp.', gridSpan: 6 },
+  'quick-actions':         { w: 2, h: 1.4, label: 'Quick Actions', gridSpan: 6 },
+  'net-result-chart':      { w: 2, h: 2.4, label: 'Net Result', gridSpan: 6 },
+  'profit-loss-waterfall': { w: 2, h: 2.6, label: 'P&L Waterfall', gridSpan: 6 },
+  'cash-flow-forecast':    { w: 2, h: 2.6, label: 'Cash Forecast', gridSpan: 6 },
+
+  // ── Half-width widgets (2 per row) ──
+  'pnl-cash':              { w: 1, h: 1.8, label: 'P&L + Cash', gridSpan: 3 },
+  'monthly-comparison':    { w: 1, h: 2.0, label: 'Monthly Comp.', gridSpan: 3 },
+  'invoice-overview':      { w: 1, h: 2.0, label: 'Invoices', gridSpan: 3 },
+  'vat-charts':            { w: 1, h: 2.4, label: 'VAT Charts', gridSpan: 3 },
+  'expense-analysis':      { w: 1, h: 2.4, label: 'Exp. Analysis', gridSpan: 3 },
+  'budget-vs-actual':      { w: 1, h: 2.4, label: 'Budget vs Act.', gridSpan: 3 },
+  'ai-categorization':     { w: 1, h: 2.0, label: 'AI Categorize', gridSpan: 3 },
+  'recent-activity':       { w: 1, h: 2.6, label: 'Recent Activity', gridSpan: 3 },
+  'active-accounts':       { w: 1, h: 2.0, label: 'Active Accounts', gridSpan: 3 },
+  'saft-export':           { w: 1, h: 1.4, label: 'SAF-T Export', gridSpan: 3 },
+
+  // ── Third-width widgets (3 per row) ──
+  'financial-health-score':   { w: 1, h: 2.0, label: 'Health Score', gridSpan: 2 },
+  'financial-health-detail': { w: 1, h: 2.6, label: 'Health Detail', gridSpan: 2 },
 };
 
 function getWidgetSize(id: string) {
-  return WIDGET_SIZES[id] || { w: 1, h: 1.5, label: id };
+  const local = WIDGET_SIZES[id];
+  const gridSpan = getWidgetGridSpan(id) as 2 | 3 | 6;
+  if (local) return { ...local, gridSpan };
+  return { w: 1, h: 1.5, label: id, gridSpan };
 }
 
 // ─── Widget color palette (muted pastels) ───────────────────────
@@ -101,6 +113,13 @@ const WIDGET_COLORS: Record<string, { bg: string; border: string; activeBg: stri
 
 function getWidgetColor(id: string) {
   return WIDGET_COLORS[id] || { bg: 'bg-gray-50 dark:bg-gray-950/40', border: 'border-gray-200 dark:border-gray-800/50', activeBg: 'bg-gray-100 dark:bg-gray-900/50' };
+}
+
+// ─── Size label helper ──────────────────────────────────────────
+function getSizeLabel(gridSpan: number, language: string) {
+  if (gridSpan === 6) return language === 'da' ? 'Fuld bredde' : 'Full width';
+  if (gridSpan === 3) return language === 'da' ? 'Halv bredde' : 'Half width';
+  return language === 'da' ? '1/3 bredde' : '1/3 width';
 }
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -277,8 +296,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
               {language === 'da' ? 'Miniature forhåndsvisning' : 'Miniature Preview'}
             </div>
 
-            {/* Widget blocks */}
-            <div className="flex flex-col gap-2 mt-1">
+            {/* Widget blocks — 6-column grid layout */}
+            <div className="grid grid-cols-6 gap-2 mt-1">
               {sortedWidgets.map((widget, idx) => {
                 const size = getWidgetSize(widget.id);
                 const color = getWidgetColor(widget.id);
@@ -286,6 +305,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                 const isDragging = dragId === widget.id;
                 const isDropTarget = dropTargetId === widget.id;
                 const IconComp = ICON_MAP[widget.icon];
+                const isThird = size.gridSpan === 2;
+                const isHalf = size.gridSpan === 3;
 
                 return (
                   <div
@@ -304,25 +325,29 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     `}
                     style={{
-                      height: `${Math.max(size.h, 1) * 48}px`,
+                      gridColumn: `span ${size.gridSpan} / span ${size.gridSpan}`,
+                      minHeight: `${Math.max(size.h, 1) * 44}px`,
                     }}
                   >
                     {/* Inner content */}
                     <div className={`
-                      absolute inset-0 rounded-md flex items-center gap-2.5 px-3 overflow-hidden
+                      absolute inset-0 rounded-md flex overflow-hidden
                       ${visible ? color.bg : 'bg-gray-100/50 dark:bg-gray-800/30'}
+                      ${isThird ? 'flex-col items-center justify-center gap-1 px-2 py-2' : 'flex-row items-center gap-2 px-3'}
                     `}>
                       {/* Drag handle */}
                       <div className={`
-                        shrink-0 flex flex-col items-center gap-0.5 py-1
+                        shrink-0 flex items-center justify-center
                         ${visible ? 'text-gray-400 dark:text-gray-500' : 'text-gray-300 dark:text-gray-700'}
+                        ${isThird ? 'absolute top-1.5 left-1.5' : ''}
                       `}>
-                        <GripVertical className="h-4 w-4" />
+                        <GripVertical className={isThird ? 'h-3 w-3' : 'h-4 w-4'} />
                       </div>
 
                       {/* Icon */}
                       <div className={`
-                        shrink-0 h-8 w-8 rounded-lg flex items-center justify-center
+                        shrink-0 rounded-lg flex items-center justify-center
+                        ${isThird ? 'h-7 w-7' : 'h-8 w-8'}
                         ${visible ? color.activeBg : 'bg-gray-200/50 dark:bg-gray-700/50'}
                       `}>
                         {IconComp ? (
@@ -333,21 +358,25 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       </div>
 
                       {/* Widget info */}
-                      <div className="flex-1 min-w-0">
+                      <div className={`flex-1 min-w-0 ${isThird ? 'text-center' : ''}`}>
                         <p className={`
-                          text-xs font-semibold truncate
+                          font-semibold truncate
+                          ${isThird ? 'text-[10px] leading-tight' : 'text-xs'}
                           ${visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600 line-through'}
                         `}>
                           {language === 'da' ? widget.labelDa : widget.labelEn}
                         </p>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                          {size.label}
-                          {size.w > 1 && ` · ${language === 'da' ? 'Fuld bredde' : 'Full width'}`}
-                        </p>
+                        {/* Size sublabel — only for half and full blocks */}
+                        {!isThird && (
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                            {size.label}
+                            <span className="opacity-60"> · {getSizeLabel(size.gridSpan, language)}</span>
+                          </p>
+                        )}
                       </div>
 
-                      {/* Position badge */}
-                      {visible && (
+                      {/* Position badge — only for full-width blocks */}
+                      {!isHalf && !isThird && visible && (
                         <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-600 bg-white/60 dark:bg-gray-800/60 px-1.5 py-0.5 rounded">
                           #{idx + 1}
                         </span>
@@ -358,7 +387,8 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleToggleLocal(widget.id); }}
                         className={`
-                          shrink-0 h-7 w-7 rounded-md flex items-center justify-center transition-all
+                          shrink-0 rounded-md flex items-center justify-center transition-all
+                          ${isThird ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
                           ${visible
                             ? 'text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
                             : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -369,7 +399,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                           : (language === 'da' ? 'Vis widget' : 'Show widget')
                         }
                       >
-                        {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                        {visible ? <Eye className={isThird ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isThird ? 'h-3 w-3' : 'h-4 w-4'} />}
                       </button>
                     </div>
 

@@ -3,11 +3,13 @@ import { requireTokenPayAccess } from '@/lib/tokenpay';
 import { getAuthContext } from '@/lib/session';
 import { db } from '@/lib/db';
 import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap } from '@/lib/dashboard-widget-definitions';
+import { WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { auditUpdate, requestMetadata } from '@/lib/audit';
 
 // ── Helpers ────────────────────────────────────────────────────────
 
 const VALID_WIDGET_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
+const VALID_SIZES: WidgetSize[] = ['full', 'half', 'third'];
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
 
@@ -23,10 +25,10 @@ interface WidgetSettingsV2 {
   v: 2;
   visibility: Record<string, boolean>;
   order: string[];
-  sizes?: Record<string, 'full' | 'half'>;
+  sizes?: Record<string, WidgetSize>;
 }
 
-function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, 'full' | 'half'> } {
+function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, WidgetSize> } {
   const parsed = raw;
 
   // v1 format — plain { widgetId: boolean }
@@ -70,7 +72,7 @@ export async function GET(request: NextRequest) {
 
   let visibility: Record<string, boolean>;
   let order: string[];
-  let sizes: Record<string, 'full' | 'half'>;
+  let sizes: Record<string, WidgetSize>;
 
   if (company?.dashboardWidgets) {
     const normalized = normalizeSettings(company.dashboardWidgets);
@@ -121,7 +123,7 @@ export async function PUT(request: NextRequest) {
   const { widgets, order, sizes } = body as {
     widgets: Record<string, boolean>;
     order: string[];
-    sizes?: Record<string, 'full' | 'half'>;
+    sizes?: Record<string, WidgetSize>;
   };
 
   if (!widgets || typeof widgets !== 'object') {
@@ -163,9 +165,9 @@ export async function PUT(request: NextRequest) {
           { status: 400 },
         );
       }
-      if (size !== 'full' && size !== 'half') {
+      if (!VALID_SIZES.includes(size)) {
         return NextResponse.json(
-          { error: `Invalid size for "${id}": must be "full" or "half"` },
+          { error: `Invalid size for "${id}": must be "full", "half", or "third"` },
           { status: 400 },
         );
       }
