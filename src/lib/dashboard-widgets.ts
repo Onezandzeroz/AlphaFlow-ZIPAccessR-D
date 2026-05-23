@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { useEffect, useRef } from 'react';
-import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap, WidgetSize } from '@/lib/dashboard-widget-definitions';
+import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap, WidgetSize, WIDGET_DEFAULTS_VERSION } from '@/lib/dashboard-widget-definitions';
 
 // Re-export so existing imports from this module still work
 export { DASHBOARD_WIDGETS, getDefaultVisibilityMap } from '@/lib/dashboard-widget-definitions';
@@ -17,8 +17,44 @@ const STORAGE_KEY = 'alphaflow-dashboard-widgets';
 const ORDER_STORAGE_KEY = 'alphaflow-dashboard-widget-order';
 const SIZES_STORAGE_KEY = 'alphaflow-dashboard-widget-sizes';
 const POSITIONS_STORAGE_KEY = 'alphaflow-dashboard-widget-positions';
+const VERSION_STORAGE_KEY = 'alphaflow-dashboard-widget-defaults-ver';
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
+
+// ---------------------------------------------------------------------------
+// Defaults version check — invalidates localStorage cache when code defaults
+// change (visibility, order, column layout). Ensures users see new defaults
+// without needing to manually clear browser storage.
+// ---------------------------------------------------------------------------
+
+function isLocalCacheStale(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const stored = localStorage.getItem(VERSION_STORAGE_KEY);
+    if (stored === null) return true; // no version stored = stale
+    return parseInt(stored, 10) !== WIDGET_DEFAULTS_VERSION;
+  } catch {
+    return true;
+  }
+}
+
+function clearLocalCache(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(ORDER_STORAGE_KEY);
+    localStorage.removeItem(SIZES_STORAGE_KEY);
+    localStorage.removeItem(POSITIONS_STORAGE_KEY);
+    localStorage.setItem(VERSION_STORAGE_KEY, String(WIDGET_DEFAULTS_VERSION));
+  } catch { /* ignore */ }
+}
+
+function stampLocalCacheVersion(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(VERSION_STORAGE_KEY, String(WIDGET_DEFAULTS_VERSION));
+  } catch { /* ignore */ }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,14 +216,33 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
 
   // ─── Data loading ──────────────────────────────────────────
   //
-  // Strategy: ALWAYS prefer server data. The server API handles
-  // new-tenant defaults by falling back to the AlphaAi company's
-  // saved layout. localStorage is only a cache for instant render.
+  // Strategy:
+  //   1. If localStorage cache version doesn't match code defaults version,
+  //      clear all cached widget data (visibility, order, sizes, positions).
+  //   2. Always prefer server data. The server API handles new-tenant
+  //      defaults by falling back to the AlphaAi company's saved layout.
+  //   3. localStorage is a fast-read cache (for instant render before API).
   //
   _loadFromServer: async () => {
+    // Invalidate stale localStorage cache BEFORE any reads
+    if (isLocalCacheStale()) {
+      clearLocalCache();
+    }
+
     try {
       const res = await fetch('/api/widget-settings');
-      if (!res.ok) return;
+      if (!res.ok) {
+        // API failed (e.g. 401) — use code defaults (localStorage was already cleared if stale)
+        set({
+          visibilityMap: getDefaultVisibilityMap(),
+          widgetOrder: [...DEFAULT_ORDER],
+          widgetSizes: { ...DEFAULT_SIZES },
+          widgetPositions: {},
+          isLoaded: true,
+        });
+        stampLocalCacheVersion();
+        return;
+      }
       const data = await res.json();
 
       const defaults = getDefaultVisibilityMap();
@@ -226,15 +281,17 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       writeLocalWidgetOrder(order);
       writeLocalWidgetSizes(sizes);
       writeLocalWidgetPositions(positions);
+      stampLocalCacheVersion();
     } catch {
-      // API failed — fall back to localStorage cache
+      // Network error — fall back to fresh code defaults (cache was cleared if stale)
       set({
-        visibilityMap: readLocalVisibilityMap(),
-        widgetOrder: readLocalWidgetOrder(),
-        widgetSizes: readLocalWidgetSizes(),
-        widgetPositions: readLocalWidgetPositions(),
+        visibilityMap: getDefaultVisibilityMap(),
+        widgetOrder: [...DEFAULT_ORDER],
+        widgetSizes: { ...DEFAULT_SIZES },
+        widgetPositions: {},
         isLoaded: true,
       });
+      stampLocalCacheVersion();
     }
   },
 
@@ -364,10 +421,7 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       widgetSizes: { ...DEFAULT_SIZES },
       widgetPositions: {},
     });
-    writeLocalVisibilityMap(defaults);
-    writeLocalWidgetOrder(DEFAULT_ORDER);
-    writeLocalWidgetSizes(DEFAULT_SIZES);
-    writeLocalWidgetPositions({});
+    clearLocalCache();
     setTimeout(() => get()._persistToServer(), 0);
   },
 

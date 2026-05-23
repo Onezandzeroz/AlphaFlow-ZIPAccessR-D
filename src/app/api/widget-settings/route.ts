@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
 import { getAuthContext } from '@/lib/session';
 import { db } from '@/lib/db';
-import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap } from '@/lib/dashboard-widget-definitions';
+import { DASHBOARD_WIDGETS, getDefaultVisibilityMap, getDefaultSizesMap, WIDGET_DEFAULTS_VERSION } from '@/lib/dashboard-widget-definitions';
 import { WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { auditUpdate, requestMetadata } from '@/lib/audit';
 
@@ -15,7 +15,10 @@ const DEFAULT_SIZES = getDefaultSizesMap();
 
 // ── Storage format ─────────────────────────────────────────────────
 // v1 (legacy): { widgetId: boolean }                — pure visibility map
-// v2 (current): { v: 2, visibility: {...}, order: [...], sizes: {...} }
+// v2 (current): { v: 2, dv: N, visibility: {...}, order: [...], sizes: {...}, positions: {...} }
+//   dv = defaults version at time of save — if it doesn't match
+//       WIDGET_DEFAULTS_VERSION, saved settings are treated as stale
+//       and fresh code defaults are returned on the next GET.
 
 interface WidgetSettingsV1 {
   [key: string]: boolean;
@@ -23,25 +26,34 @@ interface WidgetSettingsV1 {
 
 interface WidgetSettingsV2 {
   v: 2;
+  dv?: number; // defaults version
   visibility: Record<string, boolean>;
   order: string[];
   sizes?: Record<string, WidgetSize>;
   positions?: Record<string, { x: number; y: number; width: number }>;
 }
 
-function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, WidgetSize>; positions: Record<string, { x: number; y: number; width: number }> } {
+function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>; order: string[]; sizes: Record<string, WidgetSize>; positions: Record<string, { x: number; y: number; width: number }>; isStale: boolean } {
   const parsed = raw;
 
   // v1 format — plain { widgetId: boolean }
   if (parsed !== null && typeof parsed === 'object' && !('v' in parsed)) {
     const legacy = parsed as WidgetSettingsV1;
     const defaults = getDefaultVisibilityMap();
-    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {} };
+    return { visibility: { ...defaults, ...legacy }, order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {}, isStale: true };
   }
 
   // v2 format
   const v2 = parsed as WidgetSettingsV2;
   if (v2?.v === 2 && v2.visibility && Array.isArray(v2.order)) {
+    // Check if defaults version is stale
+    const isStale = (v2.dv ?? 0) !== WIDGET_DEFAULTS_VERSION;
+
+    // If stale, return fresh defaults (ignore saved data)
+    if (isStale) {
+      return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {}, isStale: true };
+    }
+
     const defaults = getDefaultVisibilityMap();
     const visibility = { ...defaults, ...v2.visibility };
     // Ensure order contains all known widgets (add missing ones at the end, remove unknown)
@@ -52,11 +64,11 @@ function normalizeSettings(raw: unknown): { visibility: Record<string, boolean>;
     // Merge sizes with defaults
     const sizes = { ...DEFAULT_SIZES, ...(v2.sizes || {}) };
     const positions = v2.positions || {};
-    return { visibility, order, sizes, positions };
+    return { visibility, order, sizes, positions, isStale: false };
   }
 
   // Fallback
-  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {} };
+  return { visibility: getDefaultVisibilityMap(), order: [...DEFAULT_ORDER], sizes: { ...DEFAULT_SIZES }, positions: {}, isStale: true };
 }
 
 // ── GET ────────────────────────────────────────────────────────────
@@ -83,6 +95,16 @@ export async function GET(request: NextRequest) {
     order = normalized.order;
     sizes = normalized.sizes;
     positions = normalized.positions;
+
+    // If saved settings are stale (defaults version mismatch),
+    // clear the DB record so fresh defaults are used going forward.
+    // This is a lazy migration — it happens automatically on first load.
+    if (normalized.isStale) {
+      await db.company.update({
+        where: { id: ctx.activeCompanyId },
+        data: { dashboardWidgets: null },
+      }).catch(() => {}); // ignore — non-critical
+    }
   } else {
     // No saved preferences — fall back to AppOwner's company (AlphaAi) or hardcoded defaults
     const appOwnerCompany = await db.company.findUnique({
@@ -186,6 +208,7 @@ export async function PUT(request: NextRequest) {
   const mergedSizes = { ...DEFAULT_SIZES, ...(sizes || {}) };
   const payload: WidgetSettingsV2 = {
     v: 2,
+    dv: WIDGET_DEFAULTS_VERSION,
     visibility: widgets,
     order: finalOrder,
     sizes: mergedSizes,

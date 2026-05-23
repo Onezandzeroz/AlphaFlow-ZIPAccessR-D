@@ -53,6 +53,11 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { id: 'financial-health-detail',labelDa: 'Økonomisk Sundhed Detail',labelEn: 'Health Detail',        icon: 'Droplets',      defaultVisible: false, defaultSize: 'third',   section: 'details' },
 ];
 
+// ─── Defaults version ──────────────────────────────────────────
+// Bump this when code-level defaults change (visibility, order, column layout).
+// The Zustand store compares this against localStorage to detect stale cache.
+export const WIDGET_DEFAULTS_VERSION = 2;
+
 export function getDefaultVisibilityMap(): Record<string, boolean> {
   const map: Record<string, boolean> = {};
   for (const w of DASHBOARD_WIDGETS) {
