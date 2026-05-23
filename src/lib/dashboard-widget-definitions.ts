@@ -88,29 +88,31 @@ export function getWidgetGridSpanById(widgetId: string, sizesMap?: Record<string
 
 // ─── Flex-wrap width helper ──────────────────────────────────────
 // Dynamic board layout: flex-wrap with percentage widths.
-// gap-3 (12px) on mobile, gap-4 (16px) on lg.
+// gap-3 (12px) consistently across all breakpoints.
 //
 // With N items per row and (N-1) gaps of G pixels:
 //   item_width = (100% - (N-1)*G) / N
 //
 // full    = 100%              (1 per row, 0 gaps)
-// half    = calc(50% - G/2)   (2 per row, 1 gap)
-// third   = calc(33.333% - 2G/3) (3 per row, 2 gaps)
-// quarter = calc(25% - 3G/4) (4 per row, 3 gaps)
+// half    = calc(50% - 6px)   (2 per row, 1 gap of 12px)
+// third   = calc(33.333% - 8px) (3 per row, 2 gaps of 12px)
+// quarter = calc(25% - 9px)   (4 per row, 3 gaps of 12px)
 
 export function getGridSpanClasses(size: WidgetSize): string {
   switch (size) {
     case 'full':
       return 'w-full shrink-0';
     case 'half':
-      // Mobile: full width | sm: 2-col (gap-3=12px) | lg: flexible (gap-4=16px)
-      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(50%-8px)] shrink-0';
+      // Mobile: full width | sm+: 2-col (gap-3=12px)
+      return 'w-full sm:w-[calc(50%-6px)] shrink-0';
     case 'third':
-      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-10.667px)] shrink-0';
+      // Mobile: full width | sm: 2-col | lg: 3-col
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)] shrink-0';
     case 'quarter':
-      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(25%-12px)] shrink-0';
+      // Mobile: full width | sm: 2-col | lg: 4-col
+      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(25%-9px)] shrink-0';
     default:
-      return 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(50%-8px)] shrink-0';
+      return 'w-full sm:w-[calc(50%-6px)] shrink-0';
   }
 }
 

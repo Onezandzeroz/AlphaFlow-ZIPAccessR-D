@@ -236,7 +236,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
             </div>
 
             {/* Widget blocks — same flex-wrap layout as the real MasonryLayout */}
-            <div className="flex flex-wrap gap-4">
+            <div className="flex flex-wrap gap-3">
               {sortedWidgets.map((widget) => {
                 const size = widgetSizes[widget.id] || widget.defaultSize;
                 const sizeClasses = getGridSpanClasses(size);

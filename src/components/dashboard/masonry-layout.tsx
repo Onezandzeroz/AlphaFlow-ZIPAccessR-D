@@ -144,7 +144,7 @@ export function MasonryLayout({
   return (
     <div
       ref={measureRef}
-      className={`w-full flex flex-wrap gap-4 p-4 ${className}`}
+      className={`w-full flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
       style={{ minHeight: minHeight > 0 ? minHeight : undefined }}
     >
       {effectiveItems.map((item) => {
@@ -192,8 +192,8 @@ export function getWidgetPixelWidth(size: WidgetSize, containerWidth: number): n
     third: 1 / 3,
     quarter: 0.25,
   };
-  const gap = 16; // gap-4 = 16px
-  const padding = 16; // p-4 = 16px
+  const gap = 12; // gap-3 = 12px
+  const padding = 16; // p-4 on sm+
   const available = containerWidth - 2 * padding;
   const fraction = fractions[size] ?? 0.5;
   if (size === 'full') return available;
