@@ -114,6 +114,7 @@ import { useWriteAccessGuard } from '@/hooks/use-write-access-guard';
 import { PageHeader } from '@/components/shared/page-header';
 import { StatsCard } from '@/components/shared/stats-card';
 import { MobileFilterDropdown } from '@/components/shared/mobile-filter-dropdown';
+import { SendInvoiceDialog } from '@/components/invoices/send-invoice-dialog';
 
 // Types
 interface CompanyInfo {
@@ -216,6 +217,9 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  const [sendDialogInvoice, setSendDialogInvoice] = useState<Invoice | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
 
@@ -504,10 +508,13 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/invoices', {
-        method: 'POST',
+      const isEditing = !!editingInvoiceId;
+      const url = isEditing ? `/api/invoices/${editingInvoiceId}` : '/api/invoices';
+      const response = await fetch(url, {
+        method: isEditing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(isEditing ? {} : {}),
           customerName: invoiceForm.customerName,
           customerAddress: invoiceForm.customerAddress || null,
           customerEmail: invoiceForm.customerEmail || null,
@@ -517,6 +524,8 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
           dueDate: invoiceForm.dueDate,
           lineItems: invoiceForm.lineItems.filter(item => item.description.trim()),
           notes: invoiceForm.notes || null,
+          // Only update status when editing a draft back to draft
+          ...(isEditing ? { status: 'DRAFT' } : {}),
         }),
       });
 
@@ -531,7 +540,13 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
       }
 
       const data = await response.json();
-      toast.success(t('invoiceCreated'), { description: data.invoice.invoiceNumber });
+      const savedInvoice = isEditing ? data.invoice : data.invoice;
+      toast.success(isEditing ? (language === 'da' ? 'Faktura opdateret' : 'Invoice updated') : t('invoiceCreated'), {
+        description: savedInvoice.invoiceNumber,
+      });
+
+      // Reset form and editing state
+      setEditingInvoiceId(null);
 
       // Reset form
       setInvoiceForm({
@@ -555,7 +570,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
     } finally {
       setIsSubmitting(false);
     }
-  }, [companyInfo, invoiceForm, t, language, fetchInvoices, fetchCompanyInfo, handleMutationError]);
+  }, [companyInfo, invoiceForm, editingInvoiceId, t, language, fetchInvoices, fetchCompanyInfo, handleMutationError]);
 
   // Delete invoice
   const handleDeleteInvoice = useCallback(async (id: string) => {
@@ -660,6 +675,66 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
     a.click();
     URL.revokeObjectURL(a.href);
   }, []);
+
+  // Edit draft invoice — populate form and switch to create view
+  const handleEditDraft = useCallback(async (invoice: Invoice) => {
+    setEditingInvoiceId(invoice.id);
+    setPreviewInvoice(null);
+    const items = invoice.lineItems as LineItem[];
+    setInvoiceForm({
+      customerName: invoice.customerName,
+      customerAddress: invoice.customerAddress || '',
+      customerEmail: invoice.customerEmail || '',
+      customerPhone: invoice.customerPhone || '',
+      customerCvr: invoice.customerCvr || '',
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      lineItems: items.length > 0 ? items : [{ description: '', quantity: 1, unitPrice: 0, vatPercent: 25, accountId: '' }],
+      notes: invoice.notes || '',
+    });
+    setCurrentView('create');
+  }, []);
+
+  // Send invoice via email
+  const handleSendInvoice = useCallback(async (invoice: Invoice, subject: string, message: string) => {
+    setIsSending(true);
+    try {
+      const response = await fetch(`/api/invoices/${invoice.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, message, language }),
+      });
+
+      if (!response.ok) {
+        const isAccess = await handleMutationError(
+          response,
+          language === 'da' ? 'Send faktura' : 'Send invoice'
+        );
+        if (isAccess) { setIsSending(false); return false; }
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to send invoice');
+      }
+
+      toast.success(
+        language === 'da' ? 'Faktura sendt' : 'Invoice sent',
+        {
+          description: language === 'da'
+            ? `${invoice.invoiceNumber} er sendt via e-mail`
+            : `${invoice.invoiceNumber} has been sent via email`,
+        }
+      );
+
+      fetchInvoices();
+      setPreviewInvoice(prev => prev?.id === invoice.id ? { ...prev, status: 'SENT' } : prev);
+      return true;
+    } catch (error) {
+      console.error('Failed to send invoice:', error);
+      toast.error(error instanceof Error ? error.message : (language === 'da' ? 'Kunne ikke sende faktura' : 'Failed to send invoice'));
+      return false;
+    } finally {
+      setIsSending(false);
+    }
+  }, [language, fetchInvoices, handleMutationError]);
 
   // Download PDF
   const handleDownloadPDF = useCallback(async (invoice: Invoice) => {
@@ -1314,14 +1389,36 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                 {previewInvoice.status !== 'PAID' && previewInvoice.status !== 'CANCELLED' && (
                   <>
                     {previewInvoice.status === 'DRAFT' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditDraft(previewInvoice)}
+                          className="gap-1.5 text-gray-600 dark:text-gray-300"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          {language === 'da' ? 'Rediger kladde' : 'Edit Draft'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => { setSendDialogInvoice(previewInvoice); }}
+                          className="gap-1.5 text-[#7dabb5] dark:text-[#80c0cc]"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          {language === 'da' ? 'Send' : 'Send'}
+                        </Button>
+                      </>
+                    )}
+                    {previewInvoice.status === 'SENT' && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleUpdateStatus(previewInvoice.id, 'SENT')}
+                        onClick={() => { setSendDialogInvoice(previewInvoice); }}
                         className="gap-1.5 text-[#7dabb5] dark:text-[#80c0cc]"
                       >
                         <Send className="h-3.5 w-3.5" />
-                        {t('markAsSent')}
+                        {language === 'da' ? 'Send igen' : 'Send Again'}
                       </Button>
                     )}
                     <Button
@@ -1560,10 +1657,12 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
       {/* ── Header Section ── */}
       <PageHeader
-        title={t('createInvoice')}
-        description={language === 'da'
-          ? 'Udfyld felterne for at oprette en ny faktura'
-          : 'Fill in the fields to create a new invoice'}
+        title={editingInvoiceId ? (language === 'da' ? 'Rediger kladde' : 'Edit Draft') : t('createInvoice')}
+        description={editingInvoiceId
+          ? (language === 'da' ? 'Redigér felterne for at opdatere fakturaen' : 'Edit the fields to update the invoice')
+          : (language === 'da'
+            ? 'Udfyld felterne for at oprette en ny faktura'
+            : 'Fill in the fields to create a new invoice')}
         action={
           <div className="flex items-center gap-2">
             <Badge className="text-xs gap-1 bg-[#0d9488]/10 text-[#0d9488] border border-[#0d9488]/20 lg:bg-white/15 lg:text-white lg:border-white/20">
@@ -2306,12 +2405,12 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                           {t('draft')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onClick={() => handleUpdateStatus(invoice.id, 'SENT')}
-                          disabled={invoice.status === 'SENT'}
+                          onClick={() => { setSendDialogInvoice(invoice); }}
+                          disabled={invoice.status === 'CANCELLED'}
                           className={invoice.status === 'SENT' ? 'font-semibold bg-[#e8f2f4] dark:bg-[#1e2e32]' : ''}
                         >
                           <Send className="h-4 w-4 mr-2 text-[#7dabb5]" />
-                          {t('sent')}
+                          {invoice.status === 'SENT' ? (language === 'da' ? 'Send igen' : 'Send Again') : (language === 'da' ? 'Send' : 'Send')}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => handleUpdateStatus(invoice.id, 'PAID')}
@@ -2375,6 +2474,28 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                     <Eye className="h-3.5 w-3.5" />
                     {language === 'da' ? 'Vis' : 'View'}
                   </Button>
+                  {invoice.status === 'DRAFT' && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditDraft(invoice)}
+                      className="h-7 px-2 text-xs text-gray-500 hover:text-[#0d9488] gap-1"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {language === 'da' ? 'Rediger' : 'Edit'}
+                    </Button>
+                  )}
+                  {(invoice.status === 'DRAFT' || invoice.status === 'SENT') && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSendDialogInvoice(invoice)}
+                      className="h-7 px-2 text-xs text-gray-500 hover:text-[#0d9488] gap-1"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      {invoice.status === 'DRAFT' ? (language === 'da' ? 'Send' : 'Send') : (language === 'da' ? 'Send igen' : 'Resend')}
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -2571,12 +2692,12 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                                   {t('draft')}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() => handleUpdateStatus(invoice.id, 'SENT')}
-                                  disabled={invoice.status === 'SENT'}
+                                  onClick={() => { setSendDialogInvoice(invoice); }}
+                                  disabled={invoice.status === 'CANCELLED'}
                                   className={invoice.status === 'SENT' ? 'font-semibold bg-[#e8f2f4] dark:bg-[#1e2e32]' : ''}
                                 >
                                   <Send className="h-4 w-4 mr-2 text-[#7dabb5]" />
-                                  {t('sent')}
+                                  {invoice.status === 'SENT' ? (language === 'da' ? 'Send igen' : 'Send Again') : (language === 'da' ? 'Send' : 'Send')}
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleUpdateStatus(invoice.id, 'PAID')}
@@ -2736,6 +2857,16 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Send Invoice Dialog */}
+      <SendInvoiceDialog
+        invoice={sendDialogInvoice}
+        companyName={companyInfo?.companyName || ''}
+        language={language}
+        isSending={isSending}
+        onSend={handleSendInvoice}
+        onClose={() => setSendDialogInvoice(null)}
+      />
     </>
   );
 }
