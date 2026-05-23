@@ -203,29 +203,36 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   y -= 20;
   const TL = ML, TR = RX, TW = TR - TL;
 
-  // Column widths
+  // Column widths (sum = 1.0)
   const cD = TW * 0.38;   // description
   const cQ = TW * 0.10;   // quantity
-  const cP = TW * 0.18;   // unit price
+  const cP = TW * 0.17;   // unit price
   const cV = TW * 0.10;   // vat %
-  const cT = TW * 0.24;   // line total
+  const cT = TW * 0.25;   // line total
+
+  // Column edge X positions
+  const xQ = TL + cD;           // start of quantity col
+  const xP = xQ + cQ;           // start of unit price col
+  const xV = xP + cP;           // start of vat col
+  const xT = xV + cV;           // start of amount col (end = TR)
 
   // Header row
-  pg.drawRectangle({ x: TL, y: y - 18, width: TW, height: 22, color: C.headerBg });
-  const hY = y - 4;
+  const hH = 24; // header row height
+  pg.drawRectangle({ x: TL, y: y - hH, width: TW, height: hH, color: C.headerBg });
+  const hY = y - hH / 2 - 3; // vertically center baseline (approximate)
   const hS = 8.5;
 
-  txt(pg, 'Beskrivelse', TL + 8, hY, fB, hS, C.textMid);
-  txt(pg, 'Antal', TL + cD + cQ - 4, hY, fB, hS, C.textMid, 'right');
-  txt(pg, 'Enhedspris', TL + cD + cQ + cP - 4, hY, fB, hS, C.textMid, 'right');
-  txt(pg, 'Moms %', TL + cD + cQ + cP + cV / 2, hY, fB, hS, C.textMid, 'center');
-  txt(pg, 'Beløb', TR - 4, hY, fB, hS, C.textMid, 'right');
+  txt(pg, 'Beskrivelse', TL + 10, hY, fB, hS, C.textMid);
+  txt(pg, 'Antal', xQ + cQ - 6, hY, fB, hS, C.textMid, 'right');
+  txt(pg, 'Enhedspris', xP + cP - 6, hY, fB, hS, C.textMid, 'right');
+  txt(pg, 'Moms %', xV + cV / 2, hY, fB, hS, C.textMid, 'center');
+  txt(pg, 'Beløb', TR - 6, hY, fB, hS, C.textMid, 'right');
 
-  pg.drawLine({ start: { x: TL, y: y - 18 }, end: { x: TR, y: y - 18 }, thickness: 1, color: C.border });
-  y -= 18;
+  pg.drawLine({ start: { x: TL, y: y - hH }, end: { x: TR, y: y - hH }, thickness: 1, color: C.border });
+  y -= hH;
 
   // Data rows
-  const RH = 20, iS = 9;
+  const RH = 22, iS = 9;
   for (let i = 0; i < items.length; i++) {
     if (y - RH < MB + 100) { pg = doc.addPage([PW, PH]); y = PH - MT; }
     const it = items[i];
@@ -233,12 +240,15 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
 
     if (i % 2 === 1) pg.drawRectangle({ x: TL, y: y - RH, width: TW, height: RH, color: C.borderLt });
 
-    const rY = y - 6;
-    txt(pg, it.description, TL + 8, rY, fR, iS, C.text, 'left', cD - 16);
-    txt(pg, fmtNum(it.quantity, 0), TL + cD + cQ - 4, rY, fR, iS, C.text, 'right');
-    txt(pg, `${fmtNum(it.unitPrice)} ${sym}`, TL + cD + cQ + cP - 4, rY, fR, iS, C.text, 'right');
-    txt(pg, `${it.vatPercent}%`, TL + cD + cQ + cP + cV / 2, rY, fR, iS, C.text, 'center');
-    txt(pg, `${fmtNum(lt)} ${sym}`, TR - 4, rY, fB, iS, C.text, 'right');
+    // Light bottom border for every row
+    pg.drawLine({ start: { x: TL, y: y - RH }, end: { x: TR, y: y - RH }, thickness: 0.5, color: C.borderLt });
+
+    const rY = y - RH / 2 - 3; // vertically center baseline
+    txt(pg, it.description, TL + 10, rY, fR, iS, C.text, 'left', cD - 20);
+    txt(pg, fmtNum(it.quantity, 0), xQ + cQ - 6, rY, fR, iS, C.text, 'right');
+    txt(pg, `${fmtNum(it.unitPrice)} ${sym}`, xP + cP - 6, rY, fR, iS, C.text, 'right');
+    txt(pg, `${it.vatPercent}%`, xV + cV / 2, rY, fR, iS, C.text, 'center');
+    txt(pg, `${fmtNum(lt)} ${sym}`, TR - 6, rY, fB, iS, C.text, 'right');
     y -= RH;
   }
 
@@ -249,37 +259,40 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   // ══════════════════════════════════════════════════════════
 
   y -= 24;
-  const tLbl = 140; // width reserved for labels on the left side of totals
+  const tBlockW = 220;  // total block width
+  const tLabelX = TR - tBlockW; // left edge of label column
+  const tValX = TR - 6;         // right edge of value column
 
   // Subtotal
-  txt(pg, 'Subtotal (excl. moms)', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
-  txt(pg, `${fmtNum(inv.subtotal)} ${sym}`, TR - 4, y, fR, 10, C.text, 'right');
-  y -= 16;
-
-  // Moms
-  txt(pg, 'Moms', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
-  txt(pg, `${fmtNum(inv.vatTotal)} ${sym}`, TR - 4, y, fR, 10, C.text, 'right');
-  y -= 14;
-
-  pg.drawLine({ start: { x: TR - tLbl - 8, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
+  txt(pg, 'Subtotal (excl. moms)', tLabelX, y, fR, 10, C.textMid);
+  txt(pg, `${fmtNum(inv.subtotal)} ${sym}`, tValX, y, fR, 10, C.text, 'right');
   y -= 18;
 
-  // TOTAL (big)
-  txt(pg, 'TOTAL', TR - tLbl - 8, y, fB, 18, C.teal, 'right');
-  txt(pg, `${fmtNum(inv.total)} ${sym}`, TR - 4, y, fB, 18, C.teal, 'right');
+  // Moms
+  txt(pg, 'Moms', tLabelX, y, fR, 10, C.textMid);
+  txt(pg, `${fmtNum(inv.vatTotal)} ${sym}`, tValX, y, fR, 10, C.text, 'right');
   y -= 14;
 
-  pg.drawLine({ start: { x: TR - tLbl - 8, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
+  pg.drawLine({ start: { x: tLabelX, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
+  y -= 16;
+
+  // TOTAL (big)
+  txt(pg, 'TOTAL', tLabelX, y, fB, 16, C.teal);
+  txt(pg, `${fmtNum(inv.total)} ${sym}`, tValX, y, fB, 16, C.teal, 'right');
+  y -= 18;
+
+  pg.drawLine({ start: { x: tLabelX, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
   y -= 14;
 
   // Due date
-  txt(pg, 'Forfaldsdato', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
-  txt(pg, fmtDate(inv.dueDate), TR - 4, y, fR, 10, C.text, 'right');
+  txt(pg, 'Forfaldsdato', tLabelX, y, fR, 10, C.textMid);
+  txt(pg, fmtDate(inv.dueDate), tValX, y, fR, 10, C.text, 'right');
 
   // DKK equivalent
   if (inv.exchangeRate && inv.currency !== 'DKK') {
+    y -= 8;
     const dkk = Number(inv.total) * Number(inv.exchangeRate);
-    txt(pg, `Tilsvarende i DKK: ${fmtNum(dkk)} kr. (kurs: ${inv.exchangeRate.toFixed(4)})`, ML, y - 16, fI, 8, C.textMid);
+    txt(pg, `Tilsvarende i DKK: ${fmtNum(dkk)} kr. (kurs: ${inv.exchangeRate.toFixed(4)})`, ML, y, fI, 8, C.textMid);
   }
 
   // ══════════════════════════════════════════════════════════
