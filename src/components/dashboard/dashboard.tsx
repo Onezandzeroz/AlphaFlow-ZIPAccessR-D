@@ -1219,7 +1219,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="w-full px-3 lg:px-6">
+    <div className="p-3 lg:p-6 space-y-4 lg:space-y-6">
       {/* ── Mobile completion overlay (animated teal + checkmark) ── */}
       <OnboardingCompleteOverlay
         visible={showCompletionOverlay}
@@ -1426,7 +1426,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       <>
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
-      <div className="w-full">
       <PageHeader
         title={t('dashboard')}
         description={language === 'da'
@@ -1457,7 +1456,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </div>
         )}
       />
-      </div>
       )}
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
@@ -1499,7 +1497,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           positions={widgetPositions}
           onPositionChange={handlePositionChange}
           onReorder={handleReorder}
-          className="mt-4 -mx-3 lg:-mx-6 w-[calc(100%+1.5rem)] lg:w-[calc(100%+3rem)]"
+          className="-mx-3 lg:-mx-6 w-[calc(100%+1.5rem)] lg:w-[calc(100%+3rem)]"
         >
           {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
