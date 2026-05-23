@@ -8,7 +8,7 @@ import { WidgetSize } from '@/lib/dashboard-widget-definitions';
 export interface MasonryItem {
   id: string;
   size: WidgetSize;
-  element?: ReactNode; // Optional when using children-based rendering
+  element?: ReactNode;
 }
 
 export interface WidgetPosition {
@@ -34,130 +34,108 @@ const SIZE_WIDTH_FRACTION: Record<WidgetSize, number> = {
   quarter: 0.25,
 };
 
-const SNAP_THRESHOLD = 10; // px — snap when within this distance
-const GAP = 16; // consistent margin between widgets
-const PADDING = 16; // margin from container edges (all sides)
+const SNAP_THRESHOLD = 12;
+const GAP = 16;
+const PADDING = 16;
 
-// ─── Skyline bin-packing algorithm ────────────────────────────────
-// Works in a virtual coordinate system (0,0) → (availableWidth, ∞)
-// The final positions are offset by PADDING to create edge margins.
+// ─── Widget width calculation ─────────────────────────────────────
 
-interface SkylineSegment {
-  x: number;
+function getItemWidth(size: WidgetSize, containerWidth: number): number {
+  const availableWidth = containerWidth - 2 * PADDING;
+  const fraction = SIZE_WIDTH_FRACTION[size] ?? 0.5;
+  if (size === 'full') return availableWidth;
+  const itemsPerRow = Math.round(1 / fraction);
+  const totalGaps = (itemsPerRow - 1) * GAP;
+  return Math.floor((availableWidth - totalGaps) / itemsPerRow);
+}
+
+// ─── Row-based flow layout ────────────────────────────────────────
+// Places widgets left-to-right in rows, wrapping to the next row
+// when they don't fit. Like desktop icons in "auto-arrange" mode.
+// Each row's height is the max height of its widgets.
+// Returns positions in real coords (PADDING-offset).
+
+interface Row {
+  widgets: Array<{ id: string; width: number }>;
   y: number;
-  width: number;
+  height: number;
 }
 
-function placeRectangle(
-  skyline: SkylineSegment[],
-  rectWidth: number,
-  availableWidth: number,
-  gap: number,
-): { x: number; y: number } {
-  if (skyline.length === 0) {
-    return { x: 0, y: 0 };
+function calculateFlowLayout(
+  items: Array<{ id: string; size: WidgetSize }>,
+  containerWidth: number,
+  itemHeights: Record<string, number>,
+): Record<string, WidgetPosition> {
+  if (containerWidth === 0) return {};
+
+  const availableWidth = containerWidth - 2 * PADDING;
+  const result: Record<string, WidgetPosition> = {};
+
+  // Build rows
+  const rows: Row[] = [];
+  let currentRow: Row = { widgets: [], y: PADDING, height: 0 };
+  let currentRowUsedWidth = 0;
+
+  for (const item of items) {
+    const width = getItemWidth(item.size, containerWidth);
+    const height = itemHeights[item.id] || 200;
+
+    // Can this widget fit in the current row?
+    const neededWidth = currentRow.widgets.length === 0
+      ? width
+      : GAP + width;
+
+    if (currentRowUsedWidth + neededWidth > availableWidth + 0.5 && currentRow.widgets.length > 0) {
+      // Finish current row
+      rows.push(currentRow);
+      // Start new row
+      const newRowY = currentRow.y + currentRow.height + GAP;
+      currentRow = { widgets: [], y: newRowY, height: 0 };
+      currentRowUsedWidth = 0;
+    }
+
+    // Add to current row
+    currentRow.widgets.push({ id: item.id, width });
+    currentRow.height = Math.max(currentRow.height, height);
+    currentRowUsedWidth += (currentRow.widgets.length === 1 ? 0 : GAP) + width;
   }
 
-  let bestX = 0;
-  let bestY = Infinity;
+  // Push the last row
+  if (currentRow.widgets.length > 0) {
+    rows.push(currentRow);
+  }
 
-  for (let i = 0; i < skyline.length; i++) {
-    const seg = skyline[i];
-    if (seg.x + rectWidth > availableWidth + 0.5) continue;
-    const yAtX = getYAtX(skyline, seg.x, seg.x + rectWidth);
-    if (yAtX < bestY) {
-      bestY = yAtX;
-      bestX = seg.x;
+  // Assign positions from rows
+  for (const row of rows) {
+    // Calculate total widget width in this row
+    const totalWidgetWidth = row.widgets.reduce((sum, w) => sum + w.width, 0);
+    const totalGapsInRow = (row.widgets.length - 1) * GAP;
+    const usedSpace = totalWidgetWidth + totalGapsInRow;
+    const remainingSpace = availableWidth - usedSpace;
+
+    // Left-align widgets (like desktop icons)
+    let x = PADDING;
+
+    for (const widget of row.widgets) {
+      result[widget.id] = {
+        x,
+        y: row.y,
+        width: widget.width,
+      };
+      x += widget.width + GAP;
     }
   }
 
-  for (let i = 0; i < skyline.length; i++) {
-    const seg = skyline[i];
-    const tryX = seg.x + seg.width + gap;
-    if (tryX + rectWidth > availableWidth + 0.5) continue;
-    const yAtX = getYAtX(skyline, tryX, tryX + rectWidth);
-    if (yAtX < bestY) {
-      bestY = yAtX;
-      bestX = tryX;
-    }
-  }
-
-  if (bestY === Infinity) {
-    bestY = Math.max(...skyline.map(s => s.y));
-    bestX = 0;
-  }
-
-  return { x: bestX, y: bestY };
-}
-
-function getYAtX(skyline: SkylineSegment[], xStart: number, xEnd: number): number {
-  let maxY = 0;
-  for (const seg of skyline) {
-    const overlapStart = Math.max(seg.x, xStart);
-    const overlapEnd = Math.min(seg.x + seg.width, xEnd);
-    if (overlapStart < overlapEnd) {
-      maxY = Math.max(maxY, seg.y);
-    }
-  }
-  return maxY;
-}
-
-function addRectangleToSkyline(
-  skyline: SkylineSegment[],
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-): SkylineSegment[] {
-  const newTop = y + height + GAP;
-  const newSeg: SkylineSegment = { x, y: newTop, width };
-
-  const newSkyline: SkylineSegment[] = [];
-  for (const seg of skyline) {
-    const segEnd = seg.x + seg.width;
-    const newEnd = x + width;
-    const overlapStart = Math.max(seg.x, x);
-    const overlapEnd = Math.min(segEnd, newEnd);
-
-    if (overlapStart < overlapEnd) {
-      if (seg.y > newTop) {
-        if (seg.x < x) {
-          newSkyline.push({ x: seg.x, y: seg.y, width: x - seg.x });
-        }
-        if (segEnd > newEnd) {
-          newSkyline.push({ x: newEnd, y: seg.y, width: segEnd - newEnd });
-        }
-      }
-    } else {
-      newSkyline.push({ ...seg });
-    }
-  }
-
-  newSkyline.push(newSeg);
-  newSkyline.sort((a, b) => a.x - b.x);
-
-  const merged: SkylineSegment[] = [];
-  for (const seg of newSkyline) {
-    if (merged.length > 0) {
-      const last = merged[merged.length - 1];
-      if (last.y === seg.y && Math.abs((last.x + last.width) - seg.x) < 1) {
-        last.width += seg.width;
-        continue;
-      }
-    }
-    merged.push({ ...seg });
-  }
-
-  return merged;
+  return result;
 }
 
 // ─── Snap calculation ─────────────────────────────────────────────
 
 interface SnapLine {
   orientation: 'horizontal' | 'vertical';
-  position: number; // the x (vertical line) or y (horizontal line) value
-  start: number; // start of the line segment
-  end: number; // end of the line segment
+  position: number;
+  start: number;
+  end: number;
 }
 
 function calculateSnapPoints(
@@ -165,6 +143,7 @@ function calculateSnapPoints(
   draggedRect: { x: number; y: number; width: number; height: number },
   otherRects: PlacedRect[],
   containerWidth: number,
+  containerHeight: number,
 ): { snappedX: number; snappedY: number; snapLines: SnapLine[] } {
   let snappedX = draggedRect.x;
   let snappedY = draggedRect.y;
@@ -174,8 +153,6 @@ function calculateSnapPoints(
   const dRight = draggedRect.x + draggedRect.width;
   const dTop = draggedRect.y;
   const dBottom = draggedRect.y + draggedRect.height;
-  const dCenterX = draggedRect.x + draggedRect.width / 2;
-  const dCenterY = draggedRect.y + draggedRect.height / 2;
 
   // Check each other widget for snap alignment
   for (const other of otherRects) {
@@ -185,84 +162,69 @@ function calculateSnapPoints(
     const oRight = other.x + other.width;
     const oTop = other.y;
     const oBottom = other.y + other.height;
-    const oCenterX = other.x + other.width / 2;
-    const oCenterY = other.y + other.height / 2;
 
-    // ── Vertical snap lines (x-axis alignment) ──
-
-    // Left edge to left edge
+    // ── Vertical snap (x-axis) ──
     if (Math.abs(dLeft - oLeft) < SNAP_THRESHOLD) {
       snappedX = oLeft;
       snapLines.push({ orientation: 'vertical', position: oLeft, start: Math.min(dTop, oTop), end: Math.max(dBottom, oBottom) });
     }
-    // Left edge to right edge + gap
     if (Math.abs(dLeft - (oRight + GAP)) < SNAP_THRESHOLD) {
       snappedX = oRight + GAP;
       snapLines.push({ orientation: 'vertical', position: oRight + GAP, start: Math.min(dTop, oTop), end: Math.max(dBottom, oBottom) });
     }
-    // Right edge to right edge
     if (Math.abs(dRight - oRight) < SNAP_THRESHOLD) {
       snappedX = oRight - draggedRect.width;
       snapLines.push({ orientation: 'vertical', position: oRight, start: Math.min(dTop, oTop), end: Math.max(dBottom, oBottom) });
     }
-    // Right edge to left edge - gap
     if (Math.abs(dRight + GAP - oLeft) < SNAP_THRESHOLD) {
       snappedX = oLeft - GAP - draggedRect.width;
       snapLines.push({ orientation: 'vertical', position: oLeft, start: Math.min(dTop, oTop), end: Math.max(dBottom, oBottom) });
     }
-    // Center X alignment
-    if (Math.abs(dCenterX - oCenterX) < SNAP_THRESHOLD) {
-      snappedX = oCenterX - draggedRect.width / 2;
-      snapLines.push({ orientation: 'vertical', position: oCenterX, start: Math.min(dTop, oTop), end: Math.max(dBottom, oBottom) });
-    }
 
-    // ── Horizontal snap lines (y-axis alignment) ──
-
-    // Top edge to top edge
+    // ── Horizontal snap (y-axis) ──
     if (Math.abs(dTop - oTop) < SNAP_THRESHOLD) {
       snappedY = oTop;
       snapLines.push({ orientation: 'horizontal', position: oTop, start: Math.min(dLeft, oLeft), end: Math.max(dRight, oRight) });
     }
-    // Top edge to bottom edge + gap
     if (Math.abs(dTop - (oBottom + GAP)) < SNAP_THRESHOLD) {
       snappedY = oBottom + GAP;
       snapLines.push({ orientation: 'horizontal', position: oBottom + GAP, start: Math.min(dLeft, oLeft), end: Math.max(dRight, oRight) });
     }
-    // Bottom edge to bottom edge
     if (Math.abs(dBottom - oBottom) < SNAP_THRESHOLD) {
       snappedY = oBottom - draggedRect.height;
       snapLines.push({ orientation: 'horizontal', position: oBottom, start: Math.min(dLeft, oLeft), end: Math.max(dRight, oRight) });
     }
-    // Bottom edge to top edge - gap
     if (Math.abs(dBottom + GAP - oTop) < SNAP_THRESHOLD) {
       snappedY = oTop - GAP - draggedRect.height;
       snapLines.push({ orientation: 'horizontal', position: oTop, start: Math.min(dLeft, oLeft), end: Math.max(dRight, oRight) });
     }
-    // Center Y alignment
-    if (Math.abs(dCenterY - oCenterY) < SNAP_THRESHOLD) {
-      snappedY = oCenterY - draggedRect.height / 2;
-      snapLines.push({ orientation: 'horizontal', position: oCenterY, start: Math.min(dLeft, oLeft), end: Math.max(dRight, oRight) });
-    }
   }
 
-  // ── Container edge snaps (with PADDING offset) ──
-  // Left edge → snap to PADDING
+  // ── Container edge snaps ──
   if (Math.abs(dLeft - PADDING) < SNAP_THRESHOLD) {
     snappedX = PADDING;
     snapLines.push({ orientation: 'vertical', position: PADDING, start: dTop, end: dBottom });
   }
-  // Right edge → snap so right edge = containerWidth - PADDING
   if (Math.abs(dRight - (containerWidth - PADDING)) < SNAP_THRESHOLD) {
     snappedX = containerWidth - PADDING - draggedRect.width;
     snapLines.push({ orientation: 'vertical', position: containerWidth - PADDING, start: dTop, end: dBottom });
   }
-  // Top edge → snap to PADDING
   if (Math.abs(dTop - PADDING) < SNAP_THRESHOLD) {
     snappedY = PADDING;
     snapLines.push({ orientation: 'horizontal', position: PADDING, start: dLeft, end: dRight });
   }
 
-  // Deduplicate snap lines (keep unique positions)
+  // ── Clamp to container bounds (never off-screen) ──
+  // Left edge
+  if (snappedX < PADDING) snappedX = PADDING;
+  // Right edge
+  if (snappedX + draggedRect.width > containerWidth - PADDING) {
+    snappedX = containerWidth - PADDING - draggedRect.width;
+  }
+  // Top edge
+  if (snappedY < PADDING) snappedY = PADDING;
+
+  // Deduplicate snap lines
   const seen = new Set<string>();
   const uniqueLines = snapLines.filter(l => {
     const key = `${l.orientation}:${Math.round(l.position)}`;
@@ -274,35 +236,15 @@ function calculateSnapPoints(
   return { snappedX, snappedY, snapLines: uniqueLines };
 }
 
-// ─── Width calculation helper ─────────────────────────────────────
-// Computes widget width within the available area (between PADDING edges)
+// ─── MasonryLayout Component ──────────────────────────────────────
 
-function getItemWidth(size: WidgetSize, containerWidth: number): number {
-  const availableWidth = containerWidth - 2 * PADDING;
-  const fraction = SIZE_WIDTH_FRACTION[size] ?? 0.5;
-  if (size === 'full') return availableWidth;
-  // For N items per row (N = 1/fraction), there are (N-1) gaps between them
-  const itemsPerRow = Math.round(1 / fraction);
-  const totalGaps = (itemsPerRow - 1) * GAP;
-  return Math.floor((availableWidth - totalGaps) / itemsPerRow);
-}
-
-// ─── SnapCanvas Component ─────────────────────────────────────────
-
-interface SnapCanvasProps {
-  /** Layout items with id and size (element is optional when using children) */
+interface MasonryLayoutProps {
   items: MasonryItem[];
-  /** Children with data-widget-id attributes — content is extracted and rendered in positioned containers */
   children?: ReactNode;
-  /** Saved positions from persistence (id → {x, y, width}) */
   savedPositions?: Record<string, WidgetPosition>;
-  /** Called when a widget position changes (after drag) */
   onPositionChange?: (id: string, position: WidgetPosition) => void;
-  /** Whether drag mode is active */
   isDragMode: boolean;
-  /** Measured heights of rendered items (id → height in px) */
   itemHeights: Record<string, number>;
-  /** Called when an item's height changes */
   onItemHeightChange?: (id: string, height: number) => void;
   className?: string;
 }
@@ -316,7 +258,7 @@ export function MasonryLayout({
   itemHeights,
   onItemHeightChange,
   className = '',
-}: SnapCanvasProps) {
+}: MasonryLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -324,18 +266,13 @@ export function MasonryLayout({
   // Drag state
   const [dragState, setDragState] = useState<{
     id: string;
-    startX: number;
-    startY: number;
     offsetX: number;
     offsetY: number;
-    currentX: number;
-    currentY: number;
   } | null>(null);
 
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
-
-  // Computed positions for all items
-  const [positions, setPositions] = useState<Record<string, WidgetPosition>>({});
+  // Track which widgets have been manually positioned via drag (state so it triggers re-render)
+  const [manuallyPositionedIds, setManuallyPositionedIds] = useState<Set<string>>(new Set());
 
   // Build child content map from children with data-widget-id
   const childContentMap = useMemo(() => {
@@ -347,7 +284,6 @@ export function MasonryLayout({
         const props = child.props as Record<string, unknown>;
         const id = props['data-widget-id'] as string | undefined;
         if (id) {
-          // Use the child's children as content (unwrap the marker wrapper div)
           const childContent = (props as { children?: ReactNode }).children ?? child;
           map.set(id, childContent);
         }
@@ -395,44 +331,50 @@ export function MasonryLayout({
     return () => observer.disconnect();
   }, [effectiveItems.length, onItemHeightChange, itemHeights]);
 
-  // Derive a stable key from item IDs and sizes so that position recalculation
-  // only happens when the layout structure changes — not when element content changes.
+  // Stable key from items structure
   const itemsKey = effectiveItems.map(i => `${i.id}:${i.size}`).join(',');
 
-  // Calculate initial positions using skyline algorithm
-  // Works in virtual coords (0,0)→(availableWidth,∞), then offsets by PADDING
-  const initialPositions = useMemo(() => {
-    if (containerWidth === 0) return {};
+  // ── Flow layout: always recalculate from scratch ──
+  // This is the "desktop icon auto-arrange" — positions are always
+  // derived from the widget order and sizes, never from stale saved data.
+  const flowPositions = useMemo(() => {
+    return calculateFlowLayout(
+      effectiveItems.map(i => ({ id: i.id, size: i.size })),
+      containerWidth,
+      itemHeights,
+    );
+  }, [containerWidth, itemsKey, itemHeights, effectiveItems]);
 
-    const availableWidth = containerWidth - 2 * PADDING;
-    const result: Record<string, WidgetPosition> = {};
-    let skyline: SkylineSegment[] = [{ x: 0, y: 0, width: availableWidth }];
-
+  // Merge flow positions with any manually-positioned widgets.
+  // On initial load, ALL widgets use flow positions.
+  // After a user drags a widget, that widget uses its custom position
+  // until the layout is reset or the widget order changes.
+  // NOTE: itemsKey is included to automatically reset manual positioning
+  // when the widget order/visibility changes.
+  const basePositions = useMemo(() => {
+    const merged: Record<string, WidgetPosition> = {};
     for (const item of effectiveItems) {
-      const width = getItemWidth(item.size, containerWidth);
-
-      // If we have a saved position with valid data, use it (offset by PADDING)
-      if (savedPositions && savedPositions[item.id]) {
+      if (manuallyPositionedIds.has(item.id) && savedPositions && savedPositions[item.id]) {
+        // Use saved custom position, but always use the current width
         const saved = savedPositions[item.id];
-        result[item.id] = { x: saved.x, y: saved.y, width };
+        const width = getItemWidth(item.size, containerWidth);
+        merged[item.id] = { x: saved.x, y: saved.y, width };
       } else {
-        // Calculate using skyline in virtual coords, then offset by PADDING
-        const height = itemHeights[item.id] || 200;
-        const pos = placeRectangle(skyline, width, availableWidth, GAP);
-        result[item.id] = { x: pos.x + PADDING, y: pos.y + PADDING, width };
-        skyline = addRectangleToSkyline(skyline, pos.x, pos.y, width, height);
+        // Use flow layout position
+        merged[item.id] = flowPositions[item.id];
       }
     }
+    return merged;
+  }, [flowPositions, savedPositions, containerWidth, effectiveItems, manuallyPositionedIds, itemsKey]);
 
-    return result;
-  }, [containerWidth, itemsKey, savedPositions, itemHeights, effectiveItems]);
+  // Active positions: base + any drag-in-progress overrides
+  const [dragOverrides, setDragOverrides] = useState<Record<string, WidgetPosition>>({});
+  const positions = useMemo(() => {
+    if (Object.keys(dragOverrides).length === 0) return basePositions;
+    return { ...basePositions, ...dragOverrides };
+  }, [basePositions, dragOverrides]);
 
-  // Merge initial positions with any drag-in-progress overrides
-  useEffect(() => {
-    setPositions(initialPositions);
-  }, [initialPositions]);
-
-  // Total container height (includes PADDING at top and bottom)
+  // Total container height
   const totalHeight = useMemo(() => {
     let maxBottom = 0;
     for (const item of effectiveItems) {
@@ -442,7 +384,6 @@ export function MasonryLayout({
         if (bottom > maxBottom) maxBottom = bottom;
       }
     }
-    // Add bottom PADDING
     return maxBottom > 0 ? maxBottom + PADDING : 0;
   }, [positions, effectiveItems, itemHeights]);
 
@@ -461,12 +402,8 @@ export function MasonryLayout({
 
     setDragState({
       id: itemId,
-      startX: e.clientX,
-      startY: e.clientY,
       offsetX: e.clientX - pos.x,
       offsetY: e.clientY - pos.y,
-      currentX: pos.x,
-      currentY: pos.y,
     });
   }, [isDragMode, positions]);
 
@@ -500,17 +437,17 @@ export function MasonryLayout({
       { x: newX, y: newY, width: draggedWidth, height: draggedHeight },
       otherRects,
       containerWidth,
+      totalHeight,
     );
 
     setSnapLines(newSnapLines);
-    setDragState(prev => prev ? { ...prev, currentX: snappedX, currentY: snappedY } : null);
 
-    // Update position in real-time
-    setPositions(prev => ({
+    // Update drag override in real-time
+    setDragOverrides(prev => ({
       ...prev,
-      [dragState.id]: { ...prev[dragState.id], x: snappedX, y: snappedY },
+      [dragState.id]: { ...prev[dragState.id], x: snappedX, y: snappedY, width: draggedWidth },
     }));
-  }, [dragState, effectiveItems, positions, itemHeights, containerWidth]);
+  }, [dragState, effectiveItems, positions, itemHeights, containerWidth, totalHeight]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState) return;
@@ -518,15 +455,20 @@ export function MasonryLayout({
     const el = itemRefs.current.get(dragState.id);
     if (el) el.releasePointerCapture(e.pointerId);
 
-    // Persist the final position
-    const finalPos = positions[dragState.id];
+    // Mark this widget as manually positioned
+    setManuallyPositionedIds(prev => new Set(prev).add(dragState.id));
+
+    // Get the final drag position
+    const finalPos = dragOverrides[dragState.id] || positions[dragState.id];
     if (finalPos) {
       onPositionChange?.(dragState.id, { x: finalPos.x, y: finalPos.y, width: finalPos.width });
     }
 
+    // Clear drag state and overrides (basePositions will pick up saved positions)
     setDragState(null);
     setSnapLines([]);
-  }, [dragState, positions, onPositionChange]);
+    setDragOverrides({});
+  }, [dragState, dragOverrides, positions, onPositionChange]);
 
   return (
     <div
@@ -582,7 +524,9 @@ export function MasonryLayout({
               left: pos.x,
               top: pos.y,
               width: pos.width,
-              ...(isDragging ? { transition: 'none' } : { transition: 'left 0.15s ease-out, top 0.15s ease-out, width 0.2s ease-out' }),
+              ...(isDragging
+                ? { transition: 'none' }
+                : { transition: 'left 0.15s ease-out, top 0.15s ease-out, width 0.2s ease-out' }),
             }}
             onPointerDown={isDragMode ? (e) => handlePointerDown(e, item.id) : undefined}
           >

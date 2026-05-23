@@ -88,6 +88,10 @@ const CURRENT_SIZES_MIGRATION = 4; // bump when changing default sizes
 const ORDER_MIGRATION_KEY = 'alphaflow-dashboard-widget-order-migration';
 const CURRENT_ORDER_MIGRATION = 2; // bump when changing default order
 
+// Migration: reset stored widget positions when layout algorithm changes
+const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
+const CURRENT_POSITIONS_MIGRATION = 2; // bump when layout algorithm changes
+
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
   try {
@@ -120,6 +124,14 @@ function writeLocalWidgetSizes(sizes: Record<string, WidgetSize>): void {
 function readLocalWidgetPositions(): Record<string, WidgetPosition> {
   if (typeof window === 'undefined') return {};
   try {
+    // Run migration if needed — clears stale positions from old layout algorithms
+    const migrationVersion = parseInt(localStorage.getItem(POSITIONS_MIGRATION_KEY) || '0', 10);
+    if (migrationVersion < CURRENT_POSITIONS_MIGRATION) {
+      localStorage.removeItem(POSITIONS_STORAGE_KEY);
+      localStorage.setItem(POSITIONS_MIGRATION_KEY, String(CURRENT_POSITIONS_MIGRATION));
+      return {};
+    }
+
     const raw = localStorage.getItem(POSITIONS_STORAGE_KEY);
     if (raw === null) return {};
     return JSON.parse(raw) as Record<string, WidgetPosition>;
@@ -238,9 +250,14 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
         sizes = readLocalWidgetSizes();
       }
 
-      // Positions — use server positions if available
+      // Positions — read through the migration-aware function which clears
+      // stale data from old layout algorithms
+      const localPositions = readLocalWidgetPositions();
+      // Only use server positions if the local migration didn't just clear them
       const serverPositions = data.positions as Record<string, WidgetPosition> | undefined;
-      const positions = serverPositions || readLocalWidgetPositions();
+      const positions = Object.keys(localPositions).length > 0
+        ? localPositions
+        : (serverPositions || localPositions);
 
       set({
         visibilityMap: merged,

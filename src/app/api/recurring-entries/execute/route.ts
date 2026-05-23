@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       const existingCount = await db.journalEntry.count({
         where: {
           ...tenantFilter(ctx),
-          reference: { startsWith: prefix, mode: 'insensitive' },
+          reference: { startsWith: prefix },
         },
       });
       sequenceNumber = existingCount + 1;
