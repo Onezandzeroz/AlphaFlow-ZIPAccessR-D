@@ -99,6 +99,39 @@ function statusColor(s: string) {
   return m[s] || m.DRAFT;
 }
 
+// ── Logo loader ──────────────────────────────────────────────────────────────
+
+async function loadLogoBytes(logoRef: string): Promise<Buffer | null> {
+  if (!logoRef) return null;
+
+  // 1) Base64 data URL
+  if (logoRef.startsWith('data:')) {
+    const comma = logoRef.indexOf(',');
+    if (comma === -1) return null;
+    const b64 = logoRef.slice(comma + 1);
+    return Buffer.from(b64, 'base64');
+  }
+
+  // 2) HTTP / HTTPS URL
+  if (logoRef.startsWith('http://') || logoRef.startsWith('https://')) {
+    try {
+      const res = await fetch(logoRef, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return null;
+      const buf = Buffer.from(await res.arrayBuffer());
+      return buf;
+    } catch (e) { logger.warn('[PDF] Logo fetch failed:', e); return null; }
+  }
+
+  // 3) Local file path
+  const lp = path.isAbsolute(logoRef) ? logoRef : path.join(process.cwd(), logoRef);
+  if (existsSync(lp)) {
+    return readFile(lp);
+  }
+
+  logger.warn(`[PDF] Logo not found at: ${lp}`);
+  return null;
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8Array> {
@@ -127,10 +160,11 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   let headerBottom = y;
   if (co?.logo) {
     try {
-      const lp = path.isAbsolute(co.logo) ? co.logo : path.join(process.cwd(), co.logo);
-      if (existsSync(lp)) {
-        const bytes = await readFile(lp);
-        const img = lp.toLowerCase().endsWith('.png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+      const logoBuf = await loadLogoBytes(co.logo);
+      if (logoBuf) {
+        const img = co.logo.includes('image/png') || co.logo.endsWith('.png')
+          ? await doc.embedPng(logoBuf)
+          : await doc.embedJpg(logoBuf);
         const d = img.scale(1);
         const s = Math.min(70 / d.height, 220 / d.width, 1);
         const w = d.width * s, h = d.height * s;
@@ -140,13 +174,13 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
     } catch (e) { logger.warn('[PDF] Logo embed failed:', e); }
   }
 
-  // Invoice date below logo
-  const dateLabel = co?.logo ? '' : (co?.companyName || '');
-  if (!co?.logo && dateLabel) {
-    txt(pg, dateLabel, ML, y - 16, fB, 20, C.text);
+  // Company name fallback (no logo)
+  if (!co?.logo && co?.companyName) {
+    txt(pg, co.companyName, ML, y - 16, fB, 20, C.text);
     headerBottom = y - 36;
   }
 
+  // Invoice date below logo/company name
   txt(pg, `Fakturadato: ${fmtDate(inv.issueDate)}`, ML, headerBottom - 10, fR, 9, C.textMid);
 
   // ── Right side: FAKTURA + number + status badge ──
@@ -303,70 +337,75 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   }
 
   // ══════════════════════════════════════════════════════════
-  //  BANK INFO (matches preview layout: full-width gray box)
+  //  BANK INFO (pinned to page bottom, above footer)
   // ══════════════════════════════════════════════════════════
 
-  y -= 24;
+  const FOOTER_ZONE = MB + 30; // top of footer area
+  const BK_PAD = 16;            // bank box inner padding
+  const BK_ROW_H = 16;          // bank box row height
   const hasBank = co && (co.bankName || co.bankRegistration || co.bankAccount || co.bankIban || co.bankStreet || co.bankCity || co.bankCountry || co.invoiceTerms);
 
+  // ── Calculate bank box height first (we need it for positioning) ──
+  let bankBoxH = 0;
+  const bankRows: [string, string][] = [];
+  let bankAddrLines: string[] = [];
+  let termsLines: string[] = [];
+  const hasBankAddr = co && (co.bankName || co.bankStreet || co.bankCity || co.bankCountry);
+  const hasTerms = !!co?.invoiceTerms;
+  const hasBottomRow = hasBankAddr || hasTerms;
+
   if (hasBank) {
-    // Build detail rows
-    const bankRows: [string, string][] = [];
     if (co.bankRegistration) bankRows.push(['Reg.nr.:', co.bankRegistration]);
     if (co.bankAccount) bankRows.push(['Kontonr.:', co.bankAccount]);
     if (co.bankIban) bankRows.push(['IBAN:', co.bankIban]);
 
-    const pad = 16;
-    const rowH = 16;
-    const detailsH = bankRows.length * rowH;
-
-    // ── Section 2: Bankadresse + Betingelser side by side ──
-    const hasBankAddr = co && (co.bankName || co.bankStreet || co.bankCity || co.bankCountry);
-    const hasTerms = !!co?.invoiceTerms;
-    const hasBottomRow = hasBankAddr || hasTerms;
-
-    let bottomH = 0;
-    let bankAddrLines: string[] = [];
-    let termsLines: string[] = [];
-
-    if (hasBottomRow) {
-      if (hasBankAddr) {
-        bankAddrLines = [co.bankName, co.bankStreet, co.bankCity, co.bankCountry].filter(Boolean) as string[];
-      }
-      if (hasTerms) {
-        termsLines = wrap(co.invoiceTerms!, fR, 9, HALF - pad);
-      }
-      const addrH = bankAddrLines.length * rowH;
-      const termH = termsLines.length * 13 + 6;
-      bottomH = Math.max(addrH, termH) + rowH; // +rowH for section title
+    if (hasBankAddr) {
+      bankAddrLines = [co.bankName, co.bankStreet, co.bankCity, co.bankCountry].filter(Boolean) as string[];
+    }
+    if (hasTerms) {
+      termsLines = wrap(co.invoiceTerms!, fR, 9, HALF - 16);
     }
 
-    // Calculate total box height
+    const detailsH = bankRows.length > 0 ? (14 + bankRows.length * BK_ROW_H) : 0; // title + rows
     const sectionGap = (bankRows.length > 0 && hasBottomRow) ? 10 : 0;
-    const headerH = bankRows.length > 0 ? 14 : 0; // space for BANKDETALJER title
-    const totalBoxH = headerH + detailsH + sectionGap + bottomH + pad * 2;
+    const addrH = bankAddrLines.length * BK_ROW_H;
+    const termH = termsLines.length * 13 + 6;
+    const bottomH = hasBottomRow ? (BK_ROW_H + Math.max(addrH, termH)) : 0; // title + content
+
+    bankBoxH = detailsH + sectionGap + bottomH + BK_PAD * 2;
+  }
+
+  // ── Position bank box: pin to bottom, just above footer ──
+  if (hasBank && bankBoxH > 0) {
+    const bankBoxTop = FOOTER_ZONE + bankBoxH; // top of the box
+    const bankBoxBot = FOOTER_ZONE;             // bottom of the box
+
+    // Make sure there's space between current content and bank box
+    if (y > bankBoxTop + 16) {
+      y = bankBoxTop + 16; // leave 16pt gap
+    }
 
     // Draw the full-width gray box
-    pg.drawRectangle({ x: ML, y: y - totalBoxH, width: CW, height: totalBoxH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
+    pg.drawRectangle({ x: ML, y: bankBoxBot, width: CW, height: bankBoxH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
 
-    let by = y - pad;
+    let by = bankBoxTop - BK_PAD;
 
-    // Section 1: Bankdetaljer (only if there are detail rows)
+    // Section 1: BANKDETALJER (top, full width)
     if (bankRows.length > 0) {
-      txt(pg, 'BANKDETALJER', ML + pad, by, fB, 9, C.textMid);
+      txt(pg, 'BANKDETALJER', ML + BK_PAD, by, fB, 9, C.textMid);
       by -= 14;
 
       for (const [label, value] of bankRows) {
         const lw = fR.widthOfTextAtSize(label, 9);
-        txt(pg, label, ML + pad, by, fR, 9, C.textMuted);
-        txt(pg, value, ML + pad + lw + 6, by, fR, 9, C.text);
-        by -= rowH;
+        txt(pg, label, ML + BK_PAD, by, fR, 9, C.textMuted);
+        txt(pg, value, ML + BK_PAD + lw + 6, by, fR, 9, C.text);
+        by -= BK_ROW_H;
       }
 
-      if (hasBottomRow) by -= sectionGap - 14; // adjust gap
+      if (hasBottomRow) by -= 10; // gap before bottom section
     }
 
-    // Section 2: Bankadresse (left) + Betingelser (right)
+    // Section 2: BANKADRESSE (left) + BETINGELSER (right)
     if (hasBottomRow) {
       if (hasBankAddr) {
         txt(pg, 'BANKADRESSE', C1, by, fB, 9, C.textMid);
@@ -374,19 +413,17 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
       if (hasTerms) {
         txt(pg, 'BETINGELSER', C2, by, fB, 9, C.textMid);
       }
-      by -= rowH;
+      by -= BK_ROW_H;
 
       // Bank address values (left column)
-      if (bankAddrLines.length > 0) {
-        for (const line of bankAddrLines) {
-          txt(pg, line, C1, by, fR, 9, C.text);
-          by -= rowH;
-        }
+      for (const line of bankAddrLines) {
+        txt(pg, line, C1, by, fR, 9, C.text);
+        by -= BK_ROW_H;
       }
 
-      // Invoice terms (right column)
+      // Invoice terms (right column, top-aligned with bank address)
       if (termsLines.length > 0) {
-        const tyStart = by + (bankAddrLines.length > 0 ? (bankAddrLines.length - 1) * rowH : 0);
+        const tyStart = by + ((bankAddrLines.length - 1) * BK_ROW_H);
         let ty = tyStart;
         for (const l of termsLines) {
           txt(pg, l, C2, ty, fR, 9, C.text);
@@ -395,23 +432,31 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
       }
     }
 
-    y = y - totalBoxH - 8;
+    y = bankBoxBot - 8; // update y to below the bank box
   }
 
   // ══════════════════════════════════════════════════════════
-  //  NOTES
+  //  NOTES (between totals and bank box)
   // ══════════════════════════════════════════════════════════
 
   if (inv.notes) {
-    y -= 12;
-    const lines = wrap(inv.notes, fR, 9, CW - 28);
-    const boxH = lines.length * 13 + 24;
+    // Calculate available space between current y and bank box
+    const notesY = hasBank ? y : FOOTER_ZONE;
+    if (notesY - FOOTER_ZONE > 60) { // only draw if there's room
+      const availableH = notesY - FOOTER_ZONE - 4;
+      const lines = wrap(inv.notes, fR, 9, CW - 28);
+      const neededH = lines.length * 13 + 24;
 
-    pg.drawRectangle({ x: ML, y: y - boxH, width: CW, height: boxH, color: C.notesBg, borderColor: rgb(0.95, 0.93, 0.80), borderWidth: 0.5 });
+      const boxH = Math.min(neededH, availableH);
+      pg.drawRectangle({ x: ML, y: notesY - boxH, width: CW, height: boxH, color: C.notesBg, borderColor: rgb(0.95, 0.93, 0.80), borderWidth: 0.5 });
 
-    let ny = y - boxH + 12;
-    txt(pg, 'Bemærkninger:', ML + 14, ny, fB, 9, C.text); ny -= 13;
-    for (const l of lines) { txt(pg, l, ML + 14, ny, fR, 9, C.text); ny -= 13; }
+      let ny = notesY - boxH + 12;
+      txt(pg, 'Bemærkninger:', ML + 14, ny, fB, 9, C.text); ny -= 13;
+      for (const l of lines) {
+        if (ny < FOOTER_ZONE + 4) break; // don't overflow
+        txt(pg, l, ML + 14, ny, fR, 9, C.text); ny -= 13;
+      }
+    }
   }
 
   // ══════════════════════════════════════════════════════════
