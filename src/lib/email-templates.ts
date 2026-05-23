@@ -247,3 +247,44 @@ export function ownerNotificationHtml(
 
   return wrapperHtml(content, language);
 }
+
+// ─── INVOICE EMAIL ──────────────────────────────────────────────
+
+export function invoiceEmailHtml(
+  language: Language,
+  companyName: string,
+  invoiceNumber: string,
+  message: string,
+): string {
+  const title = language === 'da' ? 'Ny faktura' : 'New Invoice';
+  const intro =
+    language === 'da'
+      ? `${companyName} har sendt dig en faktura. Se den vedhæftede PDF.`
+      : `${companyName} has sent you an invoice. Please see the attached PDF.`;
+
+  const formattedMessage = message.replace(/\n/g, '<br/>');
+
+  const content = `
+    <h2 style="margin:0 0 16px; color:${TEXT_DARK}; font-size:20px; font-weight:600;">${title}</h2>
+    <p style="margin:0 0 16px; font-size:14px; color:${TEXT_DARK}; line-height:1.6;">${intro}</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px; background-color:${BG_LIGHT}; border-radius:8px; border:1px solid #e2e8f0;">
+      <tr>
+        <td style="padding:16px 20px; font-size:13px; color:${TEXT_DARK};">
+          <strong style="display:block; margin-bottom:4px; color:${TEXT_MUTED}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">${language === 'da' ? 'Fakturanummer' : 'Invoice Number'}</strong>
+          ${invoiceNumber}
+        </td>
+        <td style="padding:16px 20px; font-size:13px; color:${TEXT_DARK};">
+          <strong style="display:block; margin-bottom:4px; color:${TEXT_MUTED}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">${language === 'da' ? 'Fra' : 'From'}</strong>
+          ${companyName}
+        </td>
+      </tr>
+    </table>
+    ${formattedMessage ? `
+    <div style="margin:16px 0; padding:16px 20px; background-color:#f9fafb; border-left:3px solid ${PRIMARY}; border-radius:0 8px 8px 0; font-size:14px; color:${TEXT_DARK}; line-height:1.6;">
+      ${formattedMessage}
+    </div>` : ''}
+    <p style="margin:16px 0 0; font-size:13px; color:${TEXT_MUTED};">${language === 'da' ? 'Fakturaen er vedhæftet som PDF.' : 'The invoice is attached as a PDF.'}</p>
+  `;
+
+  return wrapperHtml(content, language);
+}
