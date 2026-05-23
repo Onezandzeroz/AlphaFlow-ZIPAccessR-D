@@ -44,7 +44,7 @@ function wrapperHtml(bodyContent: string, language: Language, customFooter?: str
               <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;">
                 <tr>
                   <td style="vertical-align:middle; padding-right:14px;">
-                    <img src="${process.env.APP_URL || 'https://alphaai.dk'}/icon-512.png" alt="${APP_NAME}" width="36" height="36" style="display:block; width:36px; height:36px; border-radius:8px;" />
+                    <img src="${process.env.APP_URL || 'https://alphaai.dk'}/icon-512.png" alt="${APP_NAME}" width="72" height="72" style="display:block; width:72px; height:72px; border-radius:14px;" />
                   </td>
                   <td style="vertical-align:middle;">
                     <h1 style="margin:0; color:#ffffff; font-size:22px; font-weight:600; letter-spacing:-0.02em; white-space:nowrap;">${APP_NAME}</h1>
