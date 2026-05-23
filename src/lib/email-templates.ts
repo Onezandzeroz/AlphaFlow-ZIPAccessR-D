@@ -17,13 +17,14 @@ const TEXT_MUTED = '#6b7280';
 
 // ─── WRAPPER ──────────────────────────────────────────────────────
 
-function wrapperHtml(bodyContent: string, language: Language): string {
-  const footer =
+function wrapperHtml(bodyContent: string, language: Language, customFooter?: string): string {
+  const defaultFooter =
     language === 'da'
       ? `Du modtager denne e-mail, fordi du er registreret hos ${APP_NAME}.<br/>
          Hvis du ikke har anmodet om dette, kan du ignorere denne e-mail.`
       : `You are receiving this email because you are registered with ${APP_NAME}.<br/>
          If you did not request this, you can safely ignore this email.`;
+  const footer = customFooter || defaultFooter;
 
   return `<!DOCTYPE html>
 <html lang="${language}">
@@ -39,8 +40,17 @@ function wrapperHtml(bodyContent: string, language: Language): string {
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           <!-- Header -->
           <tr>
-            <td style="background-color:${PRIMARY}; padding:24px 32px; text-align:center;">
-              <h1 style="margin:0; color:#ffffff; font-size:22px; font-weight:600; letter-spacing:-0.02em;">${APP_NAME}</h1>
+            <td style="background-color:${PRIMARY}; padding:20px 32px; text-align:center;">
+              <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;">
+                <tr>
+                  <td style="vertical-align:middle; padding-right:14px;">
+                    <img src="${process.env.APP_URL || 'https://alphaai.dk'}/icon-512.png" alt="${APP_NAME}" width="36" height="36" style="display:block; width:36px; height:36px; border-radius:8px;" />
+                  </td>
+                  <td style="vertical-align:middle;">
+                    <h1 style="margin:0; color:#ffffff; font-size:22px; font-weight:600; letter-spacing:-0.02em; white-space:nowrap;">${APP_NAME}</h1>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <!-- Body -->
@@ -286,5 +296,8 @@ export function invoiceEmailHtml(
     <p style="margin:16px 0 0; font-size:13px; color:${TEXT_MUTED};">${language === 'da' ? 'Fakturaen er vedhæftet som PDF.' : 'The invoice is attached as a PDF.'}</p>
   `;
 
-  return wrapperHtml(content, language);
+  return wrapperHtml(content, language, language === 'da'
+    ? `Du/I modtager denne e-mail fra ${companyName}. Udarbejdet via ${APP_NAME} &copy; ${new Date().getFullYear()}.`
+    : `You are receiving this email from ${companyName}. Prepared via ${APP_NAME} &copy; ${new Date().getFullYear()}.`
+  );
 }
