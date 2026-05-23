@@ -1180,7 +1180,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   // ─── Render ─────────────────────────────────────────────────────
 
   return (
-    <div className="p-3 lg:p-6">
+    <div className="w-full px-3 lg:px-6">
       {/* ── Mobile completion overlay (animated teal + checkmark) ── */}
       <OnboardingCompleteOverlay
         visible={showCompletionOverlay}
@@ -1460,7 +1460,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           itemHeights={itemHeights}
           onItemHeightChange={onItemHeightChange}
           onReorder={handleReorder}
-          className="mt-4"
+          className="mt-4 -mx-3 lg:-mx-6 w-[calc(100%+1.5rem)] lg:w-[calc(100%+3rem)]"
         >
           {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard

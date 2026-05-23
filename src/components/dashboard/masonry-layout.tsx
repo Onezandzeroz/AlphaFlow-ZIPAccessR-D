@@ -215,8 +215,11 @@ export function MasonryLayout({
     );
   }, [containerWidth, effectiveItems, itemHeights]);
 
-  // Total container height
+  // Total container height: never collapse below 4× width
   const totalHeight = useMemo(() => {
+    // Minimum height = 4× the container width
+    const minHeight = containerWidth * 4;
+
     let maxBottom = 0;
     for (const item of effectiveItems) {
       const pos = flowPositions[item.id];
@@ -225,8 +228,9 @@ export function MasonryLayout({
         if (bottom > maxBottom) maxBottom = bottom;
       }
     }
-    return maxBottom > 0 ? maxBottom + PADDING : 0;
-  }, [flowPositions, effectiveItems, itemHeights]);
+    const contentHeight = maxBottom > 0 ? maxBottom + PADDING : 0;
+    return Math.max(contentHeight, minHeight);
+  }, [flowPositions, effectiveItems, itemHeights, containerWidth]);
 
   // ── Compute drop target index from pointer position ──
   const computeDropIndex = useCallback((
@@ -400,7 +404,7 @@ export function MasonryLayout({
   return (
     <div
       ref={containerRef}
-      className={`relative ${className}`}
+      className={`relative w-full ${className}`}
       style={{ height: totalHeight > 0 ? totalHeight : 'auto' }}
       onPointerMove={isDragMode ? handlePointerMove : undefined}
       onPointerUp={isDragMode ? handlePointerUp : undefined}
