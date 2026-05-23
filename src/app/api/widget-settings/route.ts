@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
 import { getAuthContext } from '@/lib/session';
 import { db } from '@/lib/db';
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     if (normalized.isStale) {
       await db.company.update({
         where: { id: ctx.activeCompanyId },
-        data: { dashboardWidgets: null },
+        data: { dashboardWidgets: Prisma.JsonNull },
       }).catch(() => {}); // ignore — non-critical
     }
   } else {
