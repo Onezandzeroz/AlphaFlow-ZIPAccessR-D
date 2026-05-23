@@ -25,6 +25,7 @@ import {
   passwordResetHtml,
   invitationEmailHtml,
   ownerNotificationHtml,
+  invoiceEmailHtml,
 } from '@/lib/email-templates';
 
 // ─── TYPES ────────────────────────────────────────────────────────
@@ -35,9 +36,14 @@ interface SendEmailOptions {
   to: string;
   subject: string;
   html: string;
-  template: 'verification' | 'password-reset' | 'invitation' | 'owner-notification';
+  template: 'verification' | 'password-reset' | 'invitation' | 'owner-notification' | 'invoice';
   companyId?: string;
   metadata?: Record<string, unknown>;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer | Uint8Array;
+    contentType?: string;
+  }>;
 }
 
 // ─── LAZY ENV VARS ────────────────────────────────────────────────
@@ -136,6 +142,10 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
+      attachments: opts.attachments?.map(a => ({
+        ...a,
+        content: Buffer.isBuffer(a.content) ? a.content : Buffer.from(a.content),
+      })),
       headers: {
         'X-Email-Log-Id': logId,
       },
@@ -293,5 +303,34 @@ export async function sendOwnerNotification(
     html: ownerNotificationHtml(language, subject, bodyHtml),
     template: 'owner-notification',
     metadata,
+  });
+}
+
+// ─── INVOICE EMAIL ─────────────────────────────────────────────
+
+export async function sendInvoiceEmail(
+  to: string,
+  subject: string,
+  message: string,
+  pdfBuffer: Buffer | Uint8Array,
+  invoiceNumber: string,
+  companyName: string,
+  language: Language = 'da',
+  companyId?: string,
+): Promise<{ success: boolean; logId: string }> {
+  return sendEmail({
+    to,
+    subject,
+    html: invoiceEmailHtml(language, companyName, invoiceNumber, message),
+    template: 'invoice',
+    companyId,
+    metadata: { invoiceNumber, companyName },
+    attachments: [
+      {
+        filename: `faktura-${invoiceNumber}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
   });
 }

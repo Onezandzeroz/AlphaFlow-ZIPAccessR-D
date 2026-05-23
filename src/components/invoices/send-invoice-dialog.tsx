@@ -19,9 +19,19 @@ interface Invoice {
   id: string;
   invoiceNumber: string;
   customerName: string;
+  customerAddress: string | null;
   customerEmail: string | null;
+  customerPhone: string | null;
+  customerCvr: string | null;
+  issueDate: string;
+  dueDate: string;
+  lineItems: any;
+  subtotal: number;
+  vatTotal: number;
   total: number;
-  status: string;
+  status: 'DRAFT' | 'SENT' | 'PAID' | 'CANCELLED';
+  notes: string | null;
+  createdAt: string;
 }
 
 interface SendInvoiceDialogProps {
