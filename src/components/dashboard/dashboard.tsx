@@ -258,8 +258,32 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
   const handleReorder = useCallback((draggedId: string, targetIndex: number) => {
     const currentOrder = useDashboardWidgets.getState().widgetOrder;
+    const visibility = useDashboardWidgets.getState().visibilityMap;
+
+    // targetIndex is relative to visible widgets only.
+    // Map it back to the full order index by finding the visible widget
+    // at that position and inserting before/after it.
+    const visibleWidgets = currentOrder.filter(id => visibility[id] !== false);
+    const insertAfterVisibleId = targetIndex < visibleWidgets.length
+      ? visibleWidgets[targetIndex]
+      : null;
+
+    // Remove dragged item from the full order
     const filtered = currentOrder.filter(id => id !== draggedId);
-    filtered.splice(targetIndex, 0, draggedId);
+
+    if (insertAfterVisibleId) {
+      // Find the index of the reference widget in the full order
+      const refIdx = filtered.indexOf(insertAfterVisibleId);
+      if (refIdx >= 0) {
+        filtered.splice(refIdx, 0, draggedId);
+      } else {
+        filtered.push(draggedId);
+      }
+    } else {
+      // Append at the end
+      filtered.push(draggedId);
+    }
+
     setWidgetOrderDirect(filtered);
     clearWidgetPositions();
   }, [setWidgetOrderDirect, clearWidgetPositions]);

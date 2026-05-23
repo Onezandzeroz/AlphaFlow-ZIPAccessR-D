@@ -17,21 +17,36 @@ export interface WidgetPosition {
   width: number;
 }
 
+// ─── Drop slot position relative to the target widget ─────────
+
+type DropPosition = 'before' | 'after';
+
+interface DropSlot {
+  // Index in the effectiveItems array where the dragged widget would be inserted.
+  // This accounts for the dragged item being removed from the list.
+  insertIndex: number;
+  // The size class of the dragged widget (for rendering the placeholder).
+  draggedSize: WidgetSize;
+}
+
 // ─── MasonryLayout Component ──────────────────────────────────────
 //
-// Flex-wrap flow layout: widgets are placed left-to-right in rows,
-// wrapping to the next row when they don't fit. Like desktop icons
-// in "auto-arrange" mode. CSS flex-wrap ensures:
-//   • Consistent gaps between widgets (never overlap)
-//   • Widgets never go off-screen
-//   • Natural flow — items snap to their grid position
-//   • Responsive — reflows when container resizes
+// Flex-wrap flow layout with drag-and-drop reordering.
+//
+// Features:
+//   • Drop placeholder: a dashed box sized to the dragged widget shows
+//     exactly where it will land, between other widgets.
+//   • Before/after detection: cursor on left/top half → insert before;
+//     right/bottom half → insert after the hovered widget.
+//   • Container drop: dropping on empty area at the end appends.
+//   • Smooth CSS transitions for rearranging widgets.
+//   • Never overlaps, never renders off-screen (flex-wrap guarantee).
 
 interface MasonryLayoutProps {
   items: MasonryItem[];
   children?: ReactNode;
   isDragMode: boolean;
-  itemHeights?: Record<string, number>; // optional — kept for backward compat, not used in flex-wrap layout
+  itemHeights?: Record<string, number>; // kept for backward compat
   onItemHeightChange?: (id: string, height: number) => void;
   className?: string;
   onReorder?: (draggedId: string, targetIndex: number) => void;
@@ -44,18 +59,12 @@ export function MasonryLayout({
   className = '',
   onReorder,
 }: MasonryLayoutProps) {
-  // Drag state for reordering
+  // ── Drag state ────────────────────────────────────────────────
   const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const dragOverRef = useRef<string | null>(null);
+  const [dropSlot, setDropSlot] = useState<DropSlot | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Build child content map from children with data-widget-id.
-  // This map is used purely for CONTENT LOOKUP — it does NOT gate
-  // whether a widget renders. The `items` array (already filtered
-  // to only visible widgets by the parent) is the single source of
-  // truth for what renders. If a child happens to be missing from
-  // the map (e.g. due to React scheduling), we simply render the
-  // item's .element fallback or an empty placeholder.
   const childContentMap = useMemo(() => {
     const map = new Map<string, ReactNode>();
     if (!children) return map;
@@ -73,61 +82,200 @@ export function MasonryLayout({
     return map;
   }, [children]);
 
-  // items are already pre-filtered to visible widgets by the parent
-  // (orderedVisibleWidgets). We use them directly — no childContentMap gate.
-  const effectiveItems = useMemo(() => {
-    return items;
-  }, [items]);
+  // Effective items = what's currently visible and ordered.
+  const effectiveItems = useMemo(() => items, [items]);
+
+  // ── Compute the visual order while a drag is in progress ────────
+  //
+  // When dragging, we remove the dragged item from the visual list and
+  // insert a placeholder at the computed drop index. This gives the user
+  // a live preview of the final arrangement.
+  const visualItems = useMemo(() => {
+    if (!draggedId || !dropSlot) return effectiveItems;
+
+    // Remove the dragged item
+    const withoutDragged = effectiveItems.filter(i => i.id !== draggedId);
+
+    // Clamp insert index to valid range
+    const idx = Math.min(Math.max(dropSlot.insertIndex, 0), withoutDragged.length);
+
+    // Insert a placeholder at the insertion point
+    const result = [...withoutDragged];
+    result.splice(idx, 0, {
+      id: '__drop_placeholder__',
+      size: dropSlot.draggedSize,
+    } as MasonryItem);
+
+    return result;
+  }, [effectiveItems, draggedId, dropSlot]);
+
+  // ── Determine insert index from a DragEvent over a widget ───────
+  const computeInsertIndex = useCallback((
+    e: React.DragEvent,
+    targetWidgetId: string,
+  ): number => {
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+
+    // Determine "before" or "after" based on cursor position:
+    //   - horizontal midpoint for left/right placement
+    //   - vertical midpoint for above/below (different rows)
+    const midX = rect.left + rect.width / 2;
+    const midY = rect.top + rect.height / 2;
+
+    const isLeftHalf = x < midX;
+    const isTopHalf = y < midY;
+
+    // Use horizontal position as primary signal (left = before, right = after).
+    // If the cursor is clearly above the widget (different row context), treat as "before".
+    const position: DropPosition = (isLeftHalf || isTopHalf) ? 'before' : 'after';
+
+    // Index in the list WITHOUT the dragged item
+    const withoutDragged = effectiveItems.filter(i => i.id !== draggedId);
+    const targetIdx = withoutDragged.findIndex(i => i.id === targetWidgetId);
+
+    if (targetIdx < 0) return withoutDragged.length;
+    return position === 'before' ? targetIdx : targetIdx + 1;
+  }, [effectiveItems, draggedId]);
 
   // ── HTML5 Drag-and-Drop handlers ────────────────────────────────
+
   const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', widgetId);
+
+    // Make the drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.4';
+    }
+
     setDraggedId(widgetId);
+    setDropSlot(null);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, widgetId: string) => {
+  const handleDragOverWidget = useCallback((e: React.DragEvent, widgetId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (dragOverRef.current !== widgetId) {
-      dragOverRef.current = widgetId;
-      setDropTargetId(widgetId);
-    }
-  }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+    if (!draggedId || widgetId === draggedId) return;
+
+    const insertIndex = computeInsertIndex(e, widgetId);
+
+    setDropSlot(prev => {
+      if (prev && prev.insertIndex === insertIndex) return prev;
+      return {
+        insertIndex,
+        draggedSize: effectiveItems.find(i => i.id === draggedId)?.size ?? 'half',
+      };
+    });
+  }, [draggedId, computeInsertIndex, effectiveItems]);
+
+  const handleDragOverContainer = useCallback((e: React.DragEvent) => {
+    // Only handle when dragging over the container itself (not a child)
+    if ((e.target as HTMLElement) !== containerRef.current) return;
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedId) return;
+
+    // Append to the end
+    const withoutDragged = effectiveItems.filter(i => i.id !== draggedId);
+    setDropSlot(prev => {
+      if (prev && prev.insertIndex === withoutDragged.length) return prev;
+      return {
+        insertIndex: withoutDragged.length,
+        draggedSize: effectiveItems.find(i => i.id === draggedId)?.size ?? 'half',
+      };
+    });
+  }, [draggedId, effectiveItems]);
+
+  const cleanup = useCallback(() => {
+    // Restore opacity on the dragged element
+    if (draggedId) {
+      const el = containerRef.current?.querySelector(
+        `[data-widget-id="${draggedId}"]`
+      );
+      if (el instanceof HTMLElement) {
+        el.style.opacity = '1';
+      }
+    }
+    setDraggedId(null);
+    setDropSlot(null);
+  }, [draggedId]);
+
+  const handleDropOnWidget = useCallback((e: React.DragEvent, widgetId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     const sourceId = e.dataTransfer.getData('text/plain');
-    if (!sourceId || sourceId === targetId || !onReorder) {
-      setDraggedId(null);
-      setDropTargetId(null);
-      dragOverRef.current = null;
+    if (!sourceId || !onReorder || !dropSlot) {
+      cleanup();
       return;
     }
 
-    // Find the target index in effectiveItems
-    const targetIdx = effectiveItems.findIndex(item => item.id === targetId);
-    if (targetIdx >= 0) {
-      onReorder(sourceId, targetIdx);
+    onReorder(sourceId, dropSlot.insertIndex);
+    cleanup();
+  }, [onReorder, dropSlot, cleanup]);
+
+  const handleDropOnContainer = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId || !onReorder || !dropSlot) {
+      cleanup();
+      return;
     }
 
-    setDraggedId(null);
-    setDropTargetId(null);
-    dragOverRef.current = null;
-  }, [effectiveItems, onReorder]);
+    onReorder(sourceId, dropSlot.insertIndex);
+    cleanup();
+  }, [onReorder, dropSlot, cleanup]);
 
   const handleDragEnd = useCallback(() => {
-    setDraggedId(null);
-    setDropTargetId(null);
-    dragOverRef.current = null;
-  }, []);
+    cleanup();
+  }, [cleanup]);
+
+  // ── Render ──────────────────────────────────────────────────────
+
+  const placeholderSizeClasses = dropSlot ? getGridSpanClasses(dropSlot.draggedSize) : '';
 
   return (
-    <div className={`w-full flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}>
-      {effectiveItems.map((item) => {
+    <div
+      ref={containerRef}
+      className={`w-full flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
+      onDragOver={isDragMode ? handleDragOverContainer : undefined}
+      onDrop={isDragMode ? handleDropOnContainer : undefined}
+    >
+      {visualItems.map((item) => {
+        // ── Placeholder slot ──
+        if (item.id === '__drop_placeholder__') {
+          return (
+            <div
+              key="__drop_placeholder__"
+              className={`
+                ${placeholderSizeClasses}
+                border-2 border-dashed border-[#0d9488]/50 rounded-xl
+                bg-[#0d9488]/5 dark:bg-[#0d9488]/10
+                flex items-center justify-center
+                transition-all duration-200 ease-out
+                min-h-[120px]
+                animate-pulse
+              `}
+            >
+              <div className="flex flex-col items-center gap-2 text-[#0d9488]/60 dark:text-[#2dd4bf]/60">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <span className="text-[10px] font-medium tracking-wide uppercase">
+                  Drop here
+                </span>
+              </div>
+            </div>
+          );
+        }
+
         const isDragging = draggedId === item.id;
-        const isDropTarget = dropTargetId === item.id && draggedId !== item.id;
-        // Look up content from children, fall back to item.element
         const content = childContentMap.get(item.id) ?? item.element;
         const sizeClasses = getGridSpanClasses(item.size);
 
@@ -137,21 +285,20 @@ export function MasonryLayout({
             data-widget-id={item.id}
             draggable={isDragMode}
             onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
-            onDragOver={isDragMode ? (e) => handleDragOver(e, item.id) : undefined}
-            onDrop={isDragMode ? (e) => handleDrop(e, item.id) : undefined}
+            onDragOver={isDragMode ? (e) => handleDragOverWidget(e, item.id) : undefined}
+            onDrop={isDragMode ? (e) => handleDropOnWidget(e, item.id) : undefined}
             onDragEnd={isDragMode ? handleDragEnd : undefined}
             className={`
               ${sizeClasses}
               ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
-              ${isDragging ? 'opacity-40 scale-95 transition-all duration-200' : 'transition-all duration-200'}
-              ${isDropTarget ? 'ring-2 ring-teal-400 ring-offset-2 rounded-xl' : ''}
+              ${isDragging
+                ? 'opacity-40 scale-[0.97] rounded-xl'
+                : 'transition-all duration-200 ease-out'
+              }
+              ${isDragging ? 'pointer-events-none' : ''}
               relative
             `}
           >
-            {/* Drop indicator line above */}
-            {isDropTarget && !isDragging && (
-              <div className="absolute -top-3 left-0 right-0 h-[3px] bg-teal-400 rounded-full shadow-[0_0_6px_rgba(13,148,136,0.5)] z-10" />
-            )}
             {content}
           </div>
         );

@@ -132,69 +132,135 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
   const clearWidgetPositions = useDashboardWidgets((s) => s.clearWidgetPositions);
   const isWidgetVisible = (id: string) => visibilityMap[id] ?? true;
 
-  // Drag state
+  // Drag state — tracks a drop insertion index rather than a single target ID
   const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const dragOverRef = useRef<string | null>(null);
+  const [dropInsertIndex, setDropInsertIndex] = useState<number | null>(null);
+  const dropIndexRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Build sorted widget list based on store order
+  const sortedWidgets = useMemo(() =>
+    [...DASHBOARD_WIDGETS].sort((a, b) => {
+      const aIdx = widgetOrder.indexOf(a.id);
+      const bIdx = widgetOrder.indexOf(b.id);
+      return (aIdx >= 0 ? aIdx : 999) - (bIdx >= 0 ? bIdx : 999);
+    })
+  , [widgetOrder]);
+
+  // Cleanup helper — restores opacity, clears drag state
+  const cleanupEditor = useCallback(() => {
+    if (dragId) {
+      const el = containerRef.current?.querySelector(
+        `[data-widget-editor-id="${dragId}"]`
+      );
+      if (el instanceof HTMLElement) el.style.opacity = '1';
+    }
+    setDragId(null);
+    setDropInsertIndex(null);
+    dropIndexRef.current = null;
+  }, [dragId]);
 
   const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', widgetId);
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.4';
+    }
     setDragId(widgetId);
+    setDropInsertIndex(null);
   }, []);
+
+  // Compute insert index based on cursor position relative to widget center
+  const computeEditorInsertIndex = useCallback((
+    e: React.DragEvent,
+    targetWidgetId: string,
+  ): number => {
+    const targetEl = e.currentTarget as HTMLElement;
+    const rect = targetEl.getBoundingClientRect();
+    const x = e.clientX;
+    const midX = rect.left + rect.width / 2;
+    const isLeftHalf = x < midX;
+    const position = isLeftHalf ? 'before' : 'after';
+
+    const targetIdx = sortedWidgets.findIndex(w => w.id === targetWidgetId);
+    if (targetIdx < 0) return sortedWidgets.length;
+    return position === 'before' ? targetIdx : targetIdx + 1;
+  }, [sortedWidgets]);
 
   const handleDragOver = useCallback((e: React.DragEvent, widgetId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    if (!dragId || widgetId === dragId) return;
 
-    if (dragOverRef.current !== widgetId) {
-      dragOverRef.current = widgetId;
-      setDropTargetId(widgetId);
+    const idx = computeEditorInsertIndex(e, widgetId);
+    if (dropIndexRef.current !== idx) {
+      dropIndexRef.current = idx;
+      setDropInsertIndex(idx);
     }
-  }, []);
+  }, [dragId, computeEditorInsertIndex]);
 
-  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+  const handleDrop = useCallback((e: React.DragEvent, widgetId: string) => {
     e.preventDefault();
+    e.stopPropagation();
     const sourceId = e.dataTransfer.getData('text/plain');
-    if (!sourceId || sourceId === targetId) {
-      setDragId(null);
-      setDropTargetId(null);
-      dragOverRef.current = null;
+    if (!sourceId || sourceId === widgetId) {
+      cleanupEditor();
       return;
     }
 
-    // Reorder: move sourceId to targetId's position — directly update store
-    const currentOrder = [...widgetOrder];
-    const sourceIdx = currentOrder.indexOf(sourceId);
-    const targetIdx = currentOrder.indexOf(targetId);
-    if (sourceIdx >= 0 && targetIdx >= 0) {
-      currentOrder.splice(sourceIdx, 1);
-      currentOrder.splice(targetIdx, 0, sourceId);
-      setWidgetOrderDirect(currentOrder);
-      clearWidgetPositions();
-    }
+    // Build new order: remove source, insert at computed index
+    const newOrder = sortedWidgets
+      .filter(w => w.id !== sourceId)
+      .map(w => w.id);
+    const insertIdx = dropIndexRef.current ?? newOrder.length;
+    const clampedIdx = Math.min(Math.max(insertIdx, 0), newOrder.length);
+    newOrder.splice(clampedIdx, 0, sourceId);
 
-    setDragId(null);
-    setDropTargetId(null);
-    dragOverRef.current = null;
-  }, [widgetOrder, setWidgetOrderDirect, clearWidgetPositions]);
+    setWidgetOrderDirect(newOrder);
+    clearWidgetPositions();
+    cleanupEditor();
+  }, [sortedWidgets, setWidgetOrderDirect, clearWidgetPositions, cleanupEditor]);
 
   const handleDragEnd = useCallback(() => {
-    setDragId(null);
-    setDropTargetId(null);
-    dragOverRef.current = null;
-  }, []);
+    cleanupEditor();
+  }, [cleanupEditor]);
+
+  // Container drop (empty area at the end)
+  const handleContainerDragOver = useCallback((e: React.DragEvent) => {
+    if ((e.target as HTMLElement) !== containerRef.current) return;
+    e.preventDefault();
+    if (!dragId) return;
+    const idx = sortedWidgets.length;
+    if (dropIndexRef.current !== idx) {
+      dropIndexRef.current = idx;
+      setDropInsertIndex(idx);
+    }
+  }, [dragId, sortedWidgets]);
+
+  const handleContainerDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData('text/plain');
+    if (!sourceId || !dragId) { cleanupEditor(); return; }
+    const newOrder = sortedWidgets.filter(w => w.id !== sourceId).map(w => w.id);
+    newOrder.push(sourceId);
+    setWidgetOrderDirect(newOrder);
+    clearWidgetPositions();
+    cleanupEditor();
+  }, [dragId, sortedWidgets, setWidgetOrderDirect, clearWidgetPositions, cleanupEditor]);
 
   const handleReset = useCallback(() => {
     resetWidgets();
   }, [resetWidgets]);
 
-  // Build sorted widget list based on store order
-  const sortedWidgets = [...DASHBOARD_WIDGETS].sort((a, b) => {
-    const aIdx = widgetOrder.indexOf(a.id);
-    const bIdx = widgetOrder.indexOf(b.id);
-    return (aIdx >= 0 ? aIdx : 999) - (bIdx >= 0 ? bIdx : 999);
-  });
+  // Build visual order with placeholder during drag
+  const visualEditorWidgets = useMemo(() => {
+    if (!dragId || dropInsertIndex === null) return sortedWidgets;
+    const withoutDrag = sortedWidgets.filter(w => w.id !== dragId);
+    const idx = Math.min(Math.max(dropInsertIndex, 0), withoutDrag.length);
+    const result = [...withoutDrag];
+    result.splice(idx, 0, { id: '__placeholder__', labelDa: '', labelEn: '', icon: '', defaultVisible: false, defaultSize: 'half', section: 'details' });
+    return result;
+  }, [sortedWidgets, dragId, dropInsertIndex]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -236,20 +302,39 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
             </div>
 
             {/* Widget blocks — same flex-wrap layout as the real MasonryLayout */}
-            <div className="flex flex-wrap gap-3">
-              {sortedWidgets.map((widget) => {
+            <div
+              ref={containerRef}
+              className="flex flex-wrap gap-3"
+              onDragOver={handleContainerDragOver}
+              onDrop={handleContainerDrop}
+            >
+              {visualEditorWidgets.map((widget) => {
+                // ── Drop placeholder ──
+                if (widget.id === '__placeholder__') {
+                  const draggedSize = sortedWidgets.find(w => w.id === dragId)?.defaultSize ?? 'half';
+                  return (
+                    <div
+                      key="__placeholder__"
+                      className={`${getGridSpanClasses(draggedSize)} border-2 border-dashed border-[#0d9488]/50 rounded-lg bg-[#0d9488]/5 dark:bg-[#0d9488]/10 flex items-center justify-center transition-all duration-200 animate-pulse`}
+                      style={{ minHeight: '48px' }}
+                    >
+                      <span className="text-[10px] text-[#0d9488]/60 dark:text-[#2dd4bf]/60 font-medium">Drop here</span>
+                    </div>
+                  );
+                }
+
                 const size = widgetSizes[widget.id] || widget.defaultSize;
                 const sizeClasses = getGridSpanClasses(size);
                 const color = getWidgetColor(widget.id);
                 const visible = isWidgetVisible(widget.id);
                 const isDragging = dragId === widget.id;
-                const isDropTarget = dropTargetId === widget.id && dragId !== widget.id;
                 const IconComp = ICON_MAP[widget.icon];
                 const isNarrow = size === 'third' || size === 'quarter';
 
                 return (
                   <div
                     key={widget.id}
+                    data-widget-editor-id={widget.id}
                     draggable={visible}
                     onDragStart={(e) => handleDragStart(e, widget.id)}
                     onDragOver={(e) => handleDragOver(e, widget.id)}
@@ -259,8 +344,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       ${sizeClasses}
                       relative rounded-lg border-2 transition-all duration-200 select-none
                       ${visible ? color.border : 'border-dashed border-gray-300 dark:border-gray-600'}
-                      ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
-                      ${isDropTarget ? 'ring-2 ring-[#0d9488] ring-offset-2 dark:ring-offset-gray-900 scale-[1.02] shadow-lg' : ''}
+                      ${isDragging ? 'opacity-40 scale-95 pointer-events-none' : 'opacity-100'}
                       ${!visible ? 'opacity-50' : ''}
                       ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     `}
@@ -329,11 +413,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         {visible ? <Eye className={isNarrow ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isNarrow ? 'h-3 w-3' : 'h-4 w-4'} />}
                       </button>
                     </div>
-
-                    {/* Drop indicator line */}
-                    {isDropTarget && (
-                      <div className="absolute -top-3 left-0 right-0 h-[3px] bg-[#0d9488] rounded-full shadow-[0_0_6px_rgba(13,148,136,0.5)] z-10" />
-                    )}
                   </div>
                 );
               })}
