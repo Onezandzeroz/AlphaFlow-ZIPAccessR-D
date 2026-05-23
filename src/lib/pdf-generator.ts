@@ -52,6 +52,9 @@ export interface InvoiceWithDetails {
     bankAccount: string;
     bankRegistration: string;
     bankIban?: string | null;
+    bankStreet?: string | null;
+    bankCity?: string | null;
+    bankCountry?: string | null;
     invoiceTerms?: string | null;
   } | null;
 }
@@ -296,58 +299,99 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   }
 
   // ══════════════════════════════════════════════════════════
-  //  BANK INFO
+  //  BANK INFO (matches preview layout: full-width gray box)
   // ══════════════════════════════════════════════════════════
 
-  y -= 28;
-  const hasBank = co && (co.bankName || co.bankRegistration || co.bankAccount || co.bankIban);
+  y -= 24;
+  const hasBank = co && (co.bankName || co.bankRegistration || co.bankAccount || co.bankIban || co.bankStreet || co.bankCity || co.bankCountry || co.invoiceTerms);
 
   if (hasBank) {
-    txt(pg, 'BETALINGSOPPLYSNINGER', ML, y, fB, 9, C.textMid);
-    y -= 8;
-
+    // Build detail rows
     const bankRows: [string, string][] = [];
-    if (co.bankName) bankRows.push(['Bank:', co.bankName]);
     if (co.bankRegistration) bankRows.push(['Reg.nr.:', co.bankRegistration]);
     if (co.bankAccount) bankRows.push(['Kontonr.:', co.bankAccount]);
     if (co.bankIban) bankRows.push(['IBAN:', co.bankIban]);
 
-    const pad = 12;
-    const rowH = 15;
-    const boxH = bankRows.length * rowH + pad * 2 + rowH; // +rowH for reference line
-    const boxW = HALF;
+    const pad = 16;
+    const rowH = 16;
+    const detailsH = bankRows.length * rowH;
 
-    pg.drawRectangle({ x: ML, y: y - boxH, width: boxW, height: boxH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
+    // ── Section 2: Bankadresse + Betingelser side by side ──
+    const hasBankAddr = co && (co.bankName || co.bankStreet || co.bankCity || co.bankCountry);
+    const hasTerms = !!co?.invoiceTerms;
+    const hasBottomRow = hasBankAddr || hasTerms;
+
+    let bottomH = 0;
+    let bankAddrLines: string[] = [];
+    let termsLines: string[] = [];
+
+    if (hasBottomRow) {
+      if (hasBankAddr) {
+        bankAddrLines = [co.bankName, co.bankStreet, co.bankCity, co.bankCountry].filter(Boolean) as string[];
+      }
+      if (hasTerms) {
+        termsLines = wrap(co.invoiceTerms!, fR, 9, HALF - pad);
+      }
+      const addrH = bankAddrLines.length * rowH;
+      const termH = termsLines.length * 13 + 6;
+      bottomH = Math.max(addrH, termH) + rowH; // +rowH for section title
+    }
+
+    // Calculate total box height
+    const sectionGap = (bankRows.length > 0 && hasBottomRow) ? 10 : 0;
+    const headerH = bankRows.length > 0 ? 14 : 0; // space for BANKDETALJER title
+    const totalBoxH = headerH + detailsH + sectionGap + bottomH + pad * 2;
+
+    // Draw the full-width gray box
+    pg.drawRectangle({ x: ML, y: y - totalBoxH, width: CW, height: totalBoxH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
 
     let by = y - pad;
-    for (const [label, value] of bankRows) {
-      const lw = fR.widthOfTextAtSize(label, 9);
-      txt(pg, label, ML + pad, by, fR, 9, C.textMuted);
-      txt(pg, value, ML + pad + lw + 4, by, fR, 9, C.text);
+
+    // Section 1: Bankdetaljer (only if there are detail rows)
+    if (bankRows.length > 0) {
+      txt(pg, 'BANKDETALJER', ML + pad, by, fB, 9, C.textMid);
+      by -= 14;
+
+      for (const [label, value] of bankRows) {
+        const lw = fR.widthOfTextAtSize(label, 9);
+        txt(pg, label, ML + pad, by, fR, 9, C.textMuted);
+        txt(pg, value, ML + pad + lw + 6, by, fR, 9, C.text);
+        by -= rowH;
+      }
+
+      if (hasBottomRow) by -= sectionGap - 14; // adjust gap
+    }
+
+    // Section 2: Bankadresse (left) + Betingelser (right)
+    if (hasBottomRow) {
+      if (hasBankAddr) {
+        txt(pg, 'BANKADRESSE', C1, by, fB, 9, C.textMid);
+      }
+      if (hasTerms) {
+        txt(pg, 'BETINGELSER', C2, by, fB, 9, C.textMid);
+      }
       by -= rowH;
+
+      // Bank address values (left column)
+      if (bankAddrLines.length > 0) {
+        for (const line of bankAddrLines) {
+          txt(pg, line, C1, by, fR, 9, C.text);
+          by -= rowH;
+        }
+      }
+
+      // Invoice terms (right column)
+      if (termsLines.length > 0) {
+        const tyStart = by + (bankAddrLines.length > 0 ? (bankAddrLines.length - 1) * rowH : 0);
+        let ty = tyStart;
+        for (const l of termsLines) {
+          txt(pg, l, C2, ty, fR, 9, C.text);
+          ty -= 13;
+        }
+      }
     }
 
-    // Reference line
-    const refLw = fB.widthOfTextAtSize('Reference: ', 9);
-    txt(pg, 'Reference:', ML + pad, by, fB, 9, C.textMuted);
-    txt(pg, inv.invoiceNumber, ML + pad + refLw, by, fB, 9, C.teal);
-    by -= rowH;
-
-    // Invoice terms (right side of bank info, same vertical area)
-    if (co.invoiceTerms) {
-      txt(pg, 'FAKTURABETINGELSER', C2, y, fB, 9, C.textMid);
-      const lines = wrap(co.invoiceTerms, fR, 8.5, HALF - pad * 2);
-      const tH = lines.length * 12 + pad * 2;
-
-      pg.drawRectangle({ x: C2, y: y - 8 - tH, width: HALF, height: tH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
-
-      let ty = y - 8 - tH + pad;
-      for (const l of lines) { txt(pg, l, C2 + pad, ty, fR, 8.5, C.text); ty -= 12; }
-
-      y = Math.min(by, y - 8 - tH) - 4;
-    } else {
-      y = by - 4;
-    }
+    y = y - totalBoxH - 8;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -355,10 +399,7 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   // ══════════════════════════════════════════════════════════
 
   if (inv.notes) {
-    y -= 16;
-    txt(pg, 'BEMÆRKNINGER', ML, y, fB, 9, C.textMid);
-    y -= 8;
-
+    y -= 12;
     const lines = wrap(inv.notes, fR, 9, CW - 28);
     const boxH = lines.length * 13 + 24;
 

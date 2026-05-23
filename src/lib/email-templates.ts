@@ -40,8 +40,8 @@ function wrapperHtml(bodyContent: string, language: Language, customFooter?: str
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%; background-color:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.1);">
           <!-- Header -->
           <tr>
-            <td style="background-color:${PRIMARY}; padding:20px 32px; text-align:center;">
-              <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:0 auto;">
+            <td style="background-color:${PRIMARY}; padding:16px 32px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="vertical-align:middle; padding-right:14px;">
                     <img src="${process.env.APP_URL || 'https://alphaai.dk'}/icon-512.png" alt="${APP_NAME}" width="72" height="72" style="display:block; width:72px; height:72px; border-radius:14px;" />
