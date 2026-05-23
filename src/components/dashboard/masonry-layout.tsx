@@ -52,7 +52,13 @@ export function MasonryLayout({
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const dragOverRef = useRef<string | null>(null);
 
-  // Build child content map from children with data-widget-id
+  // Build child content map from children with data-widget-id.
+  // This map is used purely for CONTENT LOOKUP — it does NOT gate
+  // whether a widget renders. The `items` array (already filtered
+  // to only visible widgets by the parent) is the single source of
+  // truth for what renders. If a child happens to be missing from
+  // the map (e.g. due to React scheduling), we simply render the
+  // item's .element fallback or an empty placeholder.
   const childContentMap = useMemo(() => {
     const map = new Map<string, ReactNode>();
     if (!children) return map;
@@ -70,10 +76,11 @@ export function MasonryLayout({
     return map;
   }, [children]);
 
-  // Effective items: only those with renderable content
+  // items are already pre-filtered to visible widgets by the parent
+  // (orderedVisibleWidgets). We use them directly — no childContentMap gate.
   const effectiveItems = useMemo(() => {
-    return items.filter(item => item.element != null || childContentMap.has(item.id));
-  }, [items, childContentMap]);
+    return items;
+  }, [items]);
 
   // Observe container width for min-height calculation
   const widthObserverRef = useRef<ResizeObserver | null>(null);
@@ -150,6 +157,7 @@ export function MasonryLayout({
       {effectiveItems.map((item) => {
         const isDragging = draggedId === item.id;
         const isDropTarget = dropTargetId === item.id && draggedId !== item.id;
+        // Look up content from children, fall back to item.element
         const content = childContentMap.get(item.id) ?? item.element;
         const sizeClasses = getGridSpanClasses(item.size);
 
