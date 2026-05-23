@@ -34,7 +34,7 @@ import {
   PieChart,
 } from 'lucide-react';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { getWidgetGridSpanById, type WidgetSize } from '@/lib/dashboard-widget-definitions';
+import { getGridSpanClasses, type WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { useTranslation } from '@/lib/use-translation';
 
 // ─── Icon lookup ─────────────────────────────────────────────────
@@ -101,12 +101,15 @@ function getSizeLabel(size: WidgetSize, language: string) {
   }
 }
 
-// ─── Height multiplier for dialog preview ────────────────────────
-function getHeightMultiplier(size: WidgetSize): number {
-  if (size === 'full') return 1.2;
-  if (size === 'half') return 1.8;
-  if (size === 'quarter') return 1.8;
-  return 2.0; // third
+// ─── Height for dialog preview blocks ────────────────────────────
+function getPreviewMinHeight(size: WidgetSize): string {
+  switch (size) {
+    case 'full':    return '48px';
+    case 'half':    return '64px';
+    case 'third':   return '64px';
+    case 'quarter': return '64px';
+    default:        return '64px';
+  }
 }
 
 // ─── Props ──────────────────────────────────────────────────────
@@ -168,8 +171,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
       currentOrder.splice(sourceIdx, 1);
       currentOrder.splice(targetIdx, 0, sourceId);
       setWidgetOrderDirect(currentOrder);
-      // Clear saved positions so the skyline algorithm recalculates
-      // layout based on the new order
       clearWidgetPositions();
     }
 
@@ -225,27 +226,26 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
           )}
         </div>
 
-        {/* Miniature dashboard preview — real-time synced */}
+        {/* Miniature dashboard preview — uses the same flex-wrap layout as the real dashboard */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {/* Dashboard frame */}
-          <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-3 min-h-[300px]">
+          <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 min-h-[300px]">
             {/* Frame label */}
             <div className="absolute -top-3 left-4 px-2 bg-white dark:bg-[#1a1f1e] text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
               {language === 'da' ? 'Live forhåndsvisning' : 'Live Preview'}
             </div>
 
-            {/* Widget blocks — 12-column grid layout */}
-            <div className="grid grid-cols-12 gap-2 mt-1">
-              {sortedWidgets.map((widget, idx) => {
+            {/* Widget blocks — same flex-wrap layout as the real MasonryLayout */}
+            <div className="flex flex-wrap gap-4">
+              {sortedWidgets.map((widget) => {
                 const size = widgetSizes[widget.id] || widget.defaultSize;
-                const gridSpan = getWidgetGridSpanById(widget.id, widgetSizes);
+                const sizeClasses = getGridSpanClasses(size);
                 const color = getWidgetColor(widget.id);
                 const visible = isWidgetVisible(widget.id);
                 const isDragging = dragId === widget.id;
-                const isDropTarget = dropTargetId === widget.id;
+                const isDropTarget = dropTargetId === widget.id && dragId !== widget.id;
                 const IconComp = ICON_MAP[widget.icon];
-                const isThird = size === 'third';
-                const isQuarter = size === 'quarter';
+                const isNarrow = size === 'third' || size === 'quarter';
 
                 return (
                   <div
@@ -256,37 +256,35 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                     onDrop={(e) => handleDrop(e, widget.id)}
                     onDragEnd={handleDragEnd}
                     className={`
+                      ${sizeClasses}
                       relative rounded-lg border-2 transition-all duration-200 select-none
                       ${visible ? color.border : 'border-dashed border-gray-300 dark:border-gray-600'}
                       ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}
-                      ${isDropTarget && visible ? 'ring-2 ring-[#0d9488] ring-offset-2 dark:ring-offset-[#1a1f1e] scale-[1.02] shadow-lg' : ''}
+                      ${isDropTarget ? 'ring-2 ring-[#0d9488] ring-offset-2 dark:ring-offset-gray-900 scale-[1.02] shadow-lg' : ''}
                       ${!visible ? 'opacity-50' : ''}
                       ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
                     `}
-                    style={{
-                      gridColumn: `span ${gridSpan} / span ${gridSpan}`,
-                      minHeight: `${Math.max(getHeightMultiplier(size), 1) * 40}px`,
-                    }}
+                    style={{ minHeight: getPreviewMinHeight(size) }}
                   >
                     {/* Inner content */}
                     <div className={`
                       absolute inset-0 rounded-md flex overflow-hidden
                       ${visible ? color.bg : 'bg-gray-100/50 dark:bg-gray-800/30'}
-                      ${isThird || isQuarter ? 'flex-col items-center justify-center gap-1 px-2 py-2' : 'flex-row items-center gap-2 px-3'}
+                      ${isNarrow ? 'flex-col items-center justify-center gap-1 px-2 py-2' : 'flex-row items-center gap-2 px-3'}
                     `}>
                       {/* Drag handle */}
                       <div className={`
                         shrink-0 flex items-center justify-center
                         ${visible ? 'text-gray-400 dark:text-gray-500' : 'text-gray-300 dark:text-gray-700'}
-                        ${isThird || isQuarter ? 'absolute top-1.5 left-1.5' : ''}
+                        ${isNarrow ? 'absolute top-1.5 left-1.5' : ''}
                       `}>
-                        <GripVertical className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} />
+                        <GripVertical className={isNarrow ? 'h-3 w-3' : 'h-4 w-4'} />
                       </div>
 
                       {/* Icon */}
                       <div className={`
                         shrink-0 rounded-lg flex items-center justify-center
-                        ${isThird || isQuarter ? 'h-7 w-7' : 'h-8 w-8'}
+                        ${isNarrow ? 'h-7 w-7' : 'h-8 w-8'}
                         ${visible ? color.activeBg : 'bg-gray-200/50 dark:bg-gray-700/50'}
                       `}>
                         {IconComp ? (
@@ -297,10 +295,10 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       </div>
 
                       {/* Widget info */}
-                      <div className={`flex-1 min-w-0 ${isThird || isQuarter ? 'text-center' : ''}`}>
+                      <div className={`flex-1 min-w-0 ${isNarrow ? 'text-center' : ''}`}>
                         <p className={`
                           font-semibold truncate
-                          ${isThird || isQuarter ? 'text-[10px] leading-tight' : 'text-xs'}
+                          ${isNarrow ? 'text-[10px] leading-tight' : 'text-xs'}
                           ${visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600 line-through'}
                         `}>
                           {language === 'da' ? widget.labelDa : widget.labelEn}
@@ -311,20 +309,13 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                         </p>
                       </div>
 
-                      {/* Position badge — only for full-width blocks */}
-                      {size === 'full' && visible && (
-                        <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-600 bg-white/60 dark:bg-gray-800/60 px-1.5 py-0.5 rounded">
-                          #{idx + 1}
-                        </span>
-                      )}
-
                       {/* Visibility toggle */}
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); toggleWidget(widget.id); clearWidgetPositions(); }}
                         className={`
                           shrink-0 rounded-md flex items-center justify-center transition-all
-                          ${isThird || isQuarter ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
+                          ${isNarrow ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}
                           ${visible
                             ? 'text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10'
                             : 'text-gray-300 dark:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -335,13 +326,13 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                           : (language === 'da' ? 'Vis widget' : 'Show widget')
                         }
                       >
-                        {visible ? <Eye className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isThird || isQuarter ? 'h-3 w-3' : 'h-4 w-4'} />}
+                        {visible ? <Eye className={isNarrow ? 'h-3 w-3' : 'h-4 w-4'} /> : <EyeOff className={isNarrow ? 'h-3 w-3' : 'h-4 w-4'} />}
                       </button>
                     </div>
 
                     {/* Drop indicator line */}
-                    {isDropTarget && dragId !== widget.id && (
-                      <div className="absolute -top-[5px] left-2 right-2 h-[2px] bg-[#0d9488] rounded-full shadow-[0_0_6px_rgba(13,148,136,0.5)]" />
+                    {isDropTarget && (
+                      <div className="absolute -top-3 left-0 right-0 h-[3px] bg-[#0d9488] rounded-full shadow-[0_0_6px_rgba(13,148,136,0.5)] z-10" />
                     )}
                   </div>
                 );
