@@ -10,7 +10,7 @@ export type { DashboardWidget, WidgetSize } from '@/lib/dashboard-widget-definit
 export { getGridSpanClasses, getWidgetGridSpanById, getWidgetGridSpan } from '@/lib/dashboard-widget-definitions';
 
 // ---------------------------------------------------------------------------
-// Local storage helpers
+// Constants
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY = 'alphaflow-dashboard-widgets';
@@ -20,44 +20,27 @@ const POSITIONS_STORAGE_KEY = 'alphaflow-dashboard-widget-positions';
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
 
-// Migration: reset stored widget visibility when default visibility changes
-const VISIBILITY_MIGRATION_KEY = 'alphaflow-dashboard-widget-visibility-migration';
-const CURRENT_VISIBILITY_MIGRATION = 4; // v4: fix vertical spacing + re-enforce 5 default visible widgets
-
-// Migration: reset specific widget sizes when defaults change
-const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
-const CURRENT_SIZES_MIGRATION = 6; // v6: bump alongside visibility migration
-
-// Migration: reset stored widget order when default order changes
-const ORDER_MIGRATION_KEY = 'alphaflow-dashboard-widget-order-migration';
-const CURRENT_ORDER_MIGRATION = 5; // v5: reset order to match new default layout
-
-// Migration: reset stored widget positions when layout algorithm changes
-const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
-const CURRENT_POSITIONS_MIGRATION = 9; // v9: switched to column-based masonry, clear stale grid positions
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export interface WidgetPosition {
-  x: number;
-  y: number;
-  width: number;
+  x: number;     // column index (0, 1, or 2)
+  y: number;     // unused — kept for store backwards-compat
+  width: number; // unused — kept for store backwards-compat
 }
+
+// ---------------------------------------------------------------------------
+// Local storage helpers (simple read/write, no migration clearing)
+// ---------------------------------------------------------------------------
 
 function readLocalVisibilityMap(): Record<string, boolean> {
   if (typeof window === 'undefined') return getDefaultVisibilityMap();
   try {
-    // Run visibility migration if needed — clears stale stored visibility
-    const migrationVersion = parseInt(localStorage.getItem(VISIBILITY_MIGRATION_KEY) || '0', 10);
-    if (migrationVersion < CURRENT_VISIBILITY_MIGRATION) {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.setItem(VISIBILITY_MIGRATION_KEY, String(CURRENT_VISIBILITY_MIGRATION));
-      return getDefaultVisibilityMap();
-    }
-
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) return getDefaultVisibilityMap();
     const parsed = JSON.parse(raw) as Record<string, boolean>;
-    const defaults = getDefaultVisibilityMap();
-    return { ...defaults, ...parsed };
+    return { ...getDefaultVisibilityMap(), ...parsed };
   } catch {
     return getDefaultVisibilityMap();
   }
@@ -65,24 +48,12 @@ function readLocalVisibilityMap(): Record<string, boolean> {
 
 function writeLocalVisibilityMap(map: Record<string, boolean>): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-  } catch {
-    // silently ignore
-  }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); } catch { /* ignore */ }
 }
 
 function readLocalWidgetOrder(): string[] {
   if (typeof window === 'undefined') return [...DEFAULT_ORDER];
   try {
-    // Run order migration if needed — clears stale stored order so new defaults take effect
-    const orderMigrationVersion = parseInt(localStorage.getItem(ORDER_MIGRATION_KEY) || '0', 10);
-    if (orderMigrationVersion < CURRENT_ORDER_MIGRATION) {
-      localStorage.removeItem(ORDER_STORAGE_KEY);
-      localStorage.setItem(ORDER_MIGRATION_KEY, String(CURRENT_ORDER_MIGRATION));
-      return [...DEFAULT_ORDER];
-    }
-
     const raw = localStorage.getItem(ORDER_STORAGE_KEY);
     if (raw === null) return [...DEFAULT_ORDER];
     const parsed = JSON.parse(raw) as string[];
@@ -97,23 +68,12 @@ function readLocalWidgetOrder(): string[] {
 
 function writeLocalWidgetOrder(order: string[]): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order));
-  } catch {
-    // silently ignore
-  }
+  try { localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order)); } catch { /* ignore */ }
 }
 
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
   try {
-    // Run migration if needed
-    const migrationVersion = parseInt(localStorage.getItem(SIZES_MIGRATION_KEY) || '0', 10);
-    if (migrationVersion < CURRENT_SIZES_MIGRATION) {
-      localStorage.removeItem(SIZES_STORAGE_KEY);
-      localStorage.setItem(SIZES_MIGRATION_KEY, String(CURRENT_SIZES_MIGRATION));
-    }
-
     const raw = localStorage.getItem(SIZES_STORAGE_KEY);
     if (raw === null) return { ...DEFAULT_SIZES };
     const parsed = JSON.parse(raw) as Record<string, WidgetSize>;
@@ -125,24 +85,12 @@ function readLocalWidgetSizes(): Record<string, WidgetSize> {
 
 function writeLocalWidgetSizes(sizes: Record<string, WidgetSize>): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(sizes));
-  } catch {
-    // silently ignore
-  }
+  try { localStorage.setItem(SIZES_STORAGE_KEY, JSON.stringify(sizes)); } catch { /* ignore */ }
 }
 
 function readLocalWidgetPositions(): Record<string, WidgetPosition> {
   if (typeof window === 'undefined') return {};
   try {
-    // Run migration if needed — clears stale positions from old layout algorithms
-    const migrationVersion = parseInt(localStorage.getItem(POSITIONS_MIGRATION_KEY) || '0', 10);
-    if (migrationVersion < CURRENT_POSITIONS_MIGRATION) {
-      localStorage.removeItem(POSITIONS_STORAGE_KEY);
-      localStorage.setItem(POSITIONS_MIGRATION_KEY, String(CURRENT_POSITIONS_MIGRATION));
-      return {};
-    }
-
     const raw = localStorage.getItem(POSITIONS_STORAGE_KEY);
     if (raw === null) return {};
     return JSON.parse(raw) as Record<string, WidgetPosition>;
@@ -153,15 +101,32 @@ function readLocalWidgetPositions(): Record<string, WidgetPosition> {
 
 function writeLocalWidgetPositions(positions: Record<string, WidgetPosition>): void {
   if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(positions));
-  } catch {
-    // silently ignore
-  }
+  try { localStorage.setItem(POSITIONS_STORAGE_KEY, JSON.stringify(positions)); } catch { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Valid widget ID set (for filtering)
+// ---------------------------------------------------------------------------
+
+const VALID_WIDGET_IDS = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
+
+function ensureValidOrder(order: string[]): string[] {
+  const filtered = order.filter((id) => VALID_WIDGET_IDS.has(id));
+  const missing = DEFAULT_ORDER.filter((id) => !order.includes(id));
+  return [...filtered, ...missing];
 }
 
 // ---------------------------------------------------------------------------
 // Zustand Store — single source of truth, shared across all components
+// ---------------------------------------------------------------------------
+//
+// Persistence model:
+//   1. Server (database) is the primary source of truth
+//   2. localStorage is a fast-read cache (for instant render before API)
+//   3. On load: server data ALWAYS wins over localStorage
+//   4. On change: persist to both localStorage (instant) and server (debounced)
+//   5. New tenants with no saved data inherit the app owner's (AlphaAi) layout
+//      — this is handled server-side in GET /api/widget-settings
 // ---------------------------------------------------------------------------
 
 interface DashboardWidgetState {
@@ -205,7 +170,7 @@ type DashboardWidgetStore = DashboardWidgetState & DashboardWidgetActions;
 let persistDebounce: ReturnType<typeof setTimeout> | null = null;
 
 export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
-  // ─── Initial state ─────────────────────────────────────────
+  // ─── Initial state (used for SSR and instant first render) ─
   visibilityMap: getDefaultVisibilityMap(),
   widgetOrder: [...DEFAULT_ORDER],
   widgetSizes: { ...DEFAULT_SIZES },
@@ -214,6 +179,11 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
   isLoaded: false,
 
   // ─── Data loading ──────────────────────────────────────────
+  //
+  // Strategy: ALWAYS prefer server data. The server API handles
+  // new-tenant defaults by falling back to the AlphaAi company's
+  // saved layout. localStorage is only a cache for instant render.
+  //
   _loadFromServer: async () => {
     try {
       const res = await fetch('/api/widget-settings');
@@ -222,76 +192,28 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
 
       const defaults = getDefaultVisibilityMap();
 
-      // ── Visibility migration ──
-      // Check if the visibility migration needs to run.
-      // If so, clear stored visibility from both localStorage and server data,
-      // using fresh defaults instead.
-      let visibilityNeedsMigration = false;
-      if (typeof window !== 'undefined') {
-        const migrationVersion = parseInt(localStorage.getItem(VISIBILITY_MIGRATION_KEY) || '0', 10);
-        if (migrationVersion < CURRENT_VISIBILITY_MIGRATION) {
-          visibilityNeedsMigration = true;
-          localStorage.removeItem(STORAGE_KEY);
-          localStorage.setItem(VISIBILITY_MIGRATION_KEY, String(CURRENT_VISIBILITY_MIGRATION));
-        }
-      }
+      // Visibility: merge defaults with server (server wins for known widgets)
+      const serverWidgets = data.widgets as Record<string, boolean> | undefined;
+      const visibility: Record<string, boolean> = serverWidgets
+        ? { ...defaults, ...serverWidgets }
+        : { ...defaults };
 
-      let merged: Record<string, boolean>;
-      if (visibilityNeedsMigration) {
-        // Use fresh defaults — ignore both localStorage and server data
-        merged = { ...defaults };
-      } else {
-        const serverWidgets = data.widgets as Record<string, boolean>;
-        merged = { ...defaults, ...serverWidgets };
-      }
+      // Order: prefer server order, merge in any new widgets
+      const serverOrder = data.order as string[] | undefined;
+      const order: string[] = (serverOrder && serverOrder.length > 0)
+        ? ensureValidOrder(serverOrder)
+        : [...DEFAULT_ORDER];
 
-      // ── Order migration ──
-      // Same pattern: if migration needs to run, ignore server order and use defaults
-      let orderNeedsMigration = false;
-      if (typeof window !== 'undefined') {
-        const orderMigrationVersion = parseInt(localStorage.getItem(ORDER_MIGRATION_KEY) || '0', 10);
-        if (orderMigrationVersion < CURRENT_ORDER_MIGRATION) {
-          orderNeedsMigration = true;
-          localStorage.removeItem(ORDER_STORAGE_KEY);
-          localStorage.setItem(ORDER_MIGRATION_KEY, String(CURRENT_ORDER_MIGRATION));
-        }
-      }
-
-      let order: string[];
-      if (orderNeedsMigration) {
-        // Use fresh default order — ignore both localStorage and server data
-        order = [...DEFAULT_ORDER];
-      } else {
-        const serverOrder = data.order as string[] | undefined;
-        if (serverOrder && serverOrder.length > 0) {
-          const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-          const filtered = serverOrder.filter((id) => validIds.has(id));
-          const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
-          order = [...filtered, ...missing];
-        } else {
-          order = readLocalWidgetOrder();
-        }
-      }
-
-      // ── Sizes migration ──
-      let sizes: Record<string, WidgetSize>;
+      // Sizes: prefer server sizes, merge with defaults
       const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
-      if (serverSizes) {
-        sizes = { ...DEFAULT_SIZES, ...serverSizes };
-      } else {
-        sizes = readLocalWidgetSizes();
-      }
+      const sizes: Record<string, WidgetSize> = { ...DEFAULT_SIZES, ...(serverSizes || {}) };
 
-      // ── Positions migration ──
-      // readLocalWidgetPositions handles migration internally
-      const localPositions = readLocalWidgetPositions();
+      // Positions: prefer server positions
       const serverPositions = data.positions as Record<string, WidgetPosition> | undefined;
-      const positions = Object.keys(localPositions).length > 0
-        ? localPositions
-        : (serverPositions || localPositions);
+      const positions: Record<string, WidgetPosition> = serverPositions || {};
 
       set({
-        visibilityMap: merged,
+        visibilityMap: visibility,
         widgetOrder: order,
         widgetSizes: sizes,
         widgetPositions: positions,
@@ -299,12 +221,13 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
         isLoaded: true,
       });
 
-      writeLocalVisibilityMap(merged);
+      // Update localStorage cache
+      writeLocalVisibilityMap(visibility);
       writeLocalWidgetOrder(order);
       writeLocalWidgetSizes(sizes);
       writeLocalWidgetPositions(positions);
     } catch {
-      // API failed — fall back to localStorage
+      // API failed — fall back to localStorage cache
       set({
         visibilityMap: readLocalVisibilityMap(),
         widgetOrder: readLocalWidgetOrder(),
@@ -319,23 +242,32 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
     const { visibilityMap, widgetOrder, widgetSizes, widgetPositions, isLoaded } = get();
     if (!isLoaded) return;
 
-    // Always keep localStorage in sync
+    // Immediately update localStorage cache (instant for next page load)
     writeLocalVisibilityMap(visibilityMap);
     writeLocalWidgetOrder(widgetOrder);
     writeLocalWidgetSizes(widgetSizes);
     writeLocalWidgetPositions(widgetPositions);
 
-    // Debounce API call
+    // Debounce server API call (500ms — coalesces rapid updates like drag-and-drop)
     if (persistDebounce) clearTimeout(persistDebounce);
     persistDebounce = setTimeout(async () => {
       try {
-        await fetch('/api/widget-settings', {
+        const res = await fetch('/api/widget-settings', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ widgets: visibilityMap, order: widgetOrder, sizes: widgetSizes, positions: widgetPositions }),
+          body: JSON.stringify({
+            widgets: visibilityMap,
+            order: widgetOrder,
+            sizes: widgetSizes,
+            positions: widgetPositions,
+          }),
         });
+        // 403 = read-only mode (e.g. demo company) — expected, no action needed
+        if (!res.ok && res.status !== 403) {
+          console.warn('Failed to persist widget settings:', res.status);
+        }
       } catch {
-        // Silently fail — data is cached locally
+        // Network error — data is cached locally, will retry on next change
       }
     }, 500);
   },
@@ -349,7 +281,6 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
     set((s) => ({
       visibilityMap: { ...s.visibilityMap, [id]: !s.visibilityMap[id] },
     }));
-    // Persist after state update (next tick)
     setTimeout(() => get()._persistToServer(), 0);
   },
 
@@ -362,10 +293,7 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
 
   // ─── Order ─────────────────────────────────────────────────
   setWidgetOrderDirect: (newOrder: string[]) => {
-    const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-    const filtered = newOrder.filter((id) => validIds.has(id));
-    const missing = DEFAULT_ORDER.filter((id) => !newOrder.includes(id));
-    set({ widgetOrder: [...filtered, ...missing] });
+    set({ widgetOrder: ensureValidOrder(newOrder) });
     setTimeout(() => get()._persistToServer(), 0);
   },
 
@@ -414,7 +342,6 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
     set((s) => ({
       widgetPositions: { ...s.widgetPositions, [id]: position },
     }));
-    // Debounced persist
     setTimeout(() => get()._persistToServer(), 0);
   },
 
@@ -430,12 +357,16 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
 
   // ─── Reset ─────────────────────────────────────────────────
   resetWidgets: () => {
+    const defaults = getDefaultVisibilityMap();
     set({
-      visibilityMap: getDefaultVisibilityMap(),
+      visibilityMap: defaults,
       widgetOrder: [...DEFAULT_ORDER],
       widgetSizes: { ...DEFAULT_SIZES },
       widgetPositions: {},
     });
+    writeLocalVisibilityMap(defaults);
+    writeLocalWidgetOrder(DEFAULT_ORDER);
+    writeLocalWidgetSizes(DEFAULT_SIZES);
     writeLocalWidgetPositions({});
     setTimeout(() => get()._persistToServer(), 0);
   },
