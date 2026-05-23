@@ -73,10 +73,8 @@ import {
   GripVertical,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { StatsCard } from '@/components/shared/stats-card';
 import { DateRangeFilter } from '@/components/shared/date-range-filter';
-import { useDashboardWidgets, useDashboardWidgetsInit, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { getGridSpanClasses, type WidgetSize } from '@/lib/dashboard-widget-definitions';
+import { useDashboardWidgets, useDashboardWidgetsInit, DASHBOARD_WIDGETS, type WidgetPosition } from '@/lib/dashboard-widgets';
 import { ExpenseAnalysis } from '@/components/expense-analysis/expense-analysis';
 import { ProfitLossWaterfall } from '@/components/profit-loss-waterfall/profit-loss-waterfall';
 import { FinancialHealthWidget } from '@/components/financial-health/financial-health-widget';
@@ -86,10 +84,7 @@ import { CategorizationSuggestionsList } from '@/components/transaction/categori
 import { OnboardingCompleteOverlay } from '@/components/dashboard/onboarding-complete-overlay';
 import { SubscriptionPlansWidget } from '@/components/dashboard/subscription-plans-widget';
 import { WidgetLayoutEditor } from '@/components/dashboard/widget-layout-editor';
-import { DraggableWidget } from '@/components/dashboard/draggable-widget';
-import { MasonryLayout, type MasonryItem } from '@/components/dashboard/masonry-layout';
-import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable';
+import { MasonryLayout } from '@/components/dashboard/masonry-layout';
 import { useAccessCacheStore } from '@/hooks/use-write-access-guard';
 import { hasAccess } from '@/lib/tokenpay';
 import { format, subMonths, startOfYear, startOfMonth, addMonths } from 'date-fns';
@@ -256,45 +251,20 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const accessIsOwner = useAccessCacheStore((s) => s.isOwner);
   const showSubscriptionWidget = accessResult !== null && !accessIsOwner && !hasAccess(accessResult);
 
-  const widgetOrderMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    widgetOrder.forEach((id, idx) => { map[id] = idx; });
-    return map;
-  }, [widgetOrder]);
 
-  // Helper to get dynamic grid span class for a widget
-  const getWidgetSpanClass = useCallback((widgetId: string): string => {
-    const size = getWidgetSize(widgetId);
-    return getGridSpanClasses(size);
-  }, [getWidgetSize]);
 
-  // ─── DnD setup ──────────────────────────────────────────────────────
+  // ─── Widget position persistence ──────────────────────────────────
+  const widgetPositions = useDashboardWidgets((s) => s.widgetPositions);
+  const setWidgetPosition = useDashboardWidgets((s) => s.setWidgetPosition);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    })
-  );
+  const handlePositionChange = useCallback((id: string, position: WidgetPosition) => {
+    setWidgetPosition(id, position);
+  }, [setWidgetPosition]);
 
-  // Ordered visible widget IDs for SortableContext
+  // Ordered visible widget IDs
   const orderedVisibleWidgets = useMemo(() => {
     return widgetOrder.filter(id => isWidgetVisible(id));
   }, [widgetOrder, isWidgetVisible]);
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = widgetOrder.indexOf(active.id as string);
-    const newIndex = widgetOrder.indexOf(over.id as string);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(widgetOrder, oldIndex, newIndex);
-      useDashboardWidgets.getState().setWidgetOrderDirect(newOrder);
-    }
-  }, [widgetOrder]);
 
   const onItemHeightChange = useCallback((id: string, height: number) => {
     setItemHeights(prev => {
@@ -302,15 +272,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       return { ...prev, [id]: height };
     });
   }, []);
-
-  // Build masonry items for MasonryLayout
-  const masonryItems = useMemo((): MasonryItem[] => {
-    return orderedVisibleWidgets.map(widgetId => ({
-      id: widgetId,
-      size: getWidgetSize(widgetId),
-      element: null as unknown as ReactNode, // placeholder, actual elements rendered via children
-    }));
-  }, [orderedVisibleWidgets, getWidgetSize]);
 
   // ─── Date helpers ───────────────────────────────────────────────────
 
@@ -1420,10 +1381,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       {/* ─── Main Dashboard (hidden during onboarding) ─── */}
       {!isEmptyState && (
       <>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={orderedVisibleWidgets} strategy={rectSortingStrategy}>
-        <div className="flex flex-wrap gap-3 lg:gap-4 items-start" id="dashboard-grid">
-
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
       <div className="w-full">
@@ -1493,12 +1450,21 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════
+      <MasonryLayout
+          items={orderedVisibleWidgets.map(id => ({ id, size: getWidgetSize(id) }))}
+          savedPositions={widgetPositions}
+          onPositionChange={handlePositionChange}
+          isDragMode={isDragMode}
+          itemHeights={itemHeights}
+          onItemHeightChange={onItemHeightChange}
+          className="mt-4"
+        >
+          {/* ═══════════════════════════════════════════════════════════
           MODE: Double-Entry Dashboard
           ═══════════════════════════════════════════════════════════ */}
           {/* ─── KPI Revenue (Omsætning) ─────────────────────────── */}
           {isWidgetVisible('kpi-revenue') && (
-          <DraggableWidget id="kpi-revenue" isDragMode={isDragMode} className={getWidgetSpanClass('kpi-revenue')} order={widgetOrderMap['kpi-revenue'] ?? 999}>
+          <div data-widget-id="kpi-revenue">
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-green-500/8 to-transparent dark:from-green-500/15 px-4 sm:px-5 pt-4 pb-3">
@@ -1551,12 +1517,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── KPI Operating Result (Driftsresultat) ──────────────── */}
           {isWidgetVisible('kpi-operating-result') && (
-          <DraggableWidget id="kpi-operating-result" isDragMode={isDragMode} className={getWidgetSpanClass('kpi-operating-result')} order={widgetOrderMap['kpi-operating-result'] ?? 999}>
+          <div data-widget-id="kpi-operating-result">
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement && incomeStatement.operatingResult >= 0 ? 'from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
@@ -1607,12 +1573,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── P&L Summary ──────────────────────────────────── */}
           {isWidgetVisible('pnl-result') && incomeStatement && (
-          <DraggableWidget id="pnl-result" isDragMode={isDragMode} className={getWidgetSpanClass('pnl-result')} order={widgetOrderMap['pnl-result'] ?? 999}>
+          <div data-widget-id="pnl-result">
               <Card className="stat-card card-hover-lift overflow-hidden flex flex-col">
                 {/* Header with total */}
                 <div className={`bg-gradient-to-r ${incomeStatement.netResult >= 0 ? 'from-green-500/8 to-transparent dark:from-green-500/15' : 'from-red-500/8 to-transparent dark:from-red-500/15'} px-4 sm:px-5 pt-4 pb-3`}>
@@ -1713,12 +1679,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </div>
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Cash Position ────────────────────────────────── */}
           {isWidgetVisible('cash-position') && balanceSheet && (
-          <DraggableWidget id="cash-position" isDragMode={isDragMode} className={getWidgetSpanClass('cash-position')} order={widgetOrderMap['cash-position'] ?? 999}>
+          <div data-widget-id="cash-position">
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
@@ -1837,12 +1803,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Financial Health Score ────────────────────── */}
           {isWidgetVisible('financial-health-score') && financialHealthScore && (
-          <DraggableWidget id="financial-health-score" isDragMode={isDragMode} className={getWidgetSpanClass('financial-health-score')} order={widgetOrderMap['financial-health-score'] ?? 999}>
+          <div data-widget-id="financial-health-score">
             <Card className="stat-card overflow-hidden flex flex-col">
                 <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                   <div className="flex items-center gap-2.5">
@@ -1926,12 +1892,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </div>
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Comparison: Revenue Change ────────────────────── */}
           {isWidgetVisible('comparison-revenue') && monthlyComparison && (
-          <DraggableWidget id="comparison-revenue" isDragMode={isDragMode} className={getWidgetSpanClass('comparison-revenue')} order={widgetOrderMap['comparison-revenue'] ?? 999}>
+          <div data-widget-id="comparison-revenue">
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
@@ -1977,12 +1943,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Comparison: Expense Change ────────────────────── */}
           {isWidgetVisible('comparison-expenses') && monthlyComparison && (
-          <DraggableWidget id="comparison-expenses" isDragMode={isDragMode} className={getWidgetSpanClass('comparison-expenses')} order={widgetOrderMap['comparison-expenses'] ?? 999}>
+          <div data-widget-id="comparison-expenses">
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
@@ -2028,12 +1994,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Comparison: Net Profit Change ────────────────────── */}
           {isWidgetVisible('comparison-net') && monthlyComparison && (
-          <DraggableWidget id="comparison-net" isDragMode={isDragMode} className={getWidgetSpanClass('comparison-net')} order={widgetOrderMap['comparison-net'] ?? 999}>
+          <div data-widget-id="comparison-net">
             <Card className="stat-card overflow-hidden">
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-2">
@@ -2082,12 +2048,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Cash Flow Trend Mini Chart ────────────────────────── */}
           {isWidgetVisible('cash-flow-trend') && dailyRevenueChart.length > 0 && (
-          <DraggableWidget id="cash-flow-trend" isDragMode={isDragMode} className={getWidgetSpanClass('cash-flow-trend')} order={widgetOrderMap['cash-flow-trend'] ?? 999}>
+          <div data-widget-id="cash-flow-trend">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2137,12 +2103,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Quick Actions Widget ──────────────────────────────── */}
           {isWidgetVisible('quick-actions') && (
-          <DraggableWidget id="quick-actions" isDragMode={isDragMode} className={getWidgetSpanClass('quick-actions')} order={widgetOrderMap['quick-actions'] ?? 999}>
+          <div data-widget-id="quick-actions">
           <Card className="stat-card">
             <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
               <div className="flex items-center gap-2.5">
@@ -2198,12 +2164,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
             </CardContent>
           </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── SAF-T Export Widget ────────────────────────────── */}
           {isWidgetVisible('saft-export') && (
-          <DraggableWidget id="saft-export" isDragMode={isDragMode} className={getWidgetSpanClass('saft-export')} order={widgetOrderMap['saft-export'] ?? 999}>
+          <div data-widget-id="saft-export">
           <Card className="stat-card card-hover-lift overflow-hidden cursor-pointer hover:shadow-lg transition-all" onClick={() => onNavigate?.('exports')}>
             {/* Header */}
             <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
@@ -2243,12 +2209,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
             </CardContent>
           </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Invoice Overview Widget ────────────────────────── */}
           {isWidgetVisible('invoice-overview') && invoices.length > 0 && (
-          <DraggableWidget id="invoice-overview" isDragMode={isDragMode} className={getWidgetSpanClass('invoice-overview')} order={widgetOrderMap['invoice-overview'] ?? 999}>
+          <div data-widget-id="invoice-overview">
             <Card className="stat-card card-hover-lift overflow-hidden flex flex-col">
               {/* Header */}
               <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
@@ -2344,12 +2310,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── VAT Output Card ────────────────────────────────── */}
           {isWidgetVisible('vat-output') && (
-          <DraggableWidget id="vat-output" isDragMode={isDragMode} className={getWidgetSpanClass('vat-output')} order={widgetOrderMap['vat-output'] ?? 999}>
+          <div data-widget-id="vat-output">
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
@@ -2436,12 +2402,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── VAT Input Card ─────────────────────────────────── */}
           {isWidgetVisible('vat-input') && (
-          <DraggableWidget id="vat-input" isDragMode={isDragMode} className={getWidgetSpanClass('vat-input')} order={widgetOrderMap['vat-input'] ?? 999}>
+          <div data-widget-id="vat-input">
               <Card className="stat-card card-hover-lift overflow-hidden">
                 {/* Header with total */}
                 <div className="bg-gradient-to-r from-amber-500/8 to-transparent dark:from-amber-500/15 px-4 sm:px-5 pt-4 pb-3">
@@ -2528,12 +2494,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   )}
                 </CardContent>
               </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Revenue vs Expenses Chart ─────────────────────────── */}
           {isWidgetVisible('revenue-expenses-chart') && (
-          <DraggableWidget id="revenue-expenses-chart" isDragMode={isDragMode} className={getWidgetSpanClass('revenue-expenses-chart')} order={widgetOrderMap['revenue-expenses-chart'] ?? 999}>
+          <div data-widget-id="revenue-expenses-chart">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2589,12 +2555,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Net Revenue Area Chart ─────────────────────────── */}
           {isWidgetVisible('net-result-chart') && dailyRevenueChart.some((m) => m.revenue !== 0 || m.expenses !== 0) && (
-          <DraggableWidget id="net-result-chart" isDragMode={isDragMode} className={getWidgetSpanClass('net-result-chart')} order={widgetOrderMap['net-result-chart'] ?? 999}>
+          <div data-widget-id="net-result-chart">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2645,47 +2611,47 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Expense Category Analysis ──────────────────────── */}
           {isWidgetVisible('expense-analysis') && (
-          <DraggableWidget id="expense-analysis" isDragMode={isDragMode} className={getWidgetSpanClass('expense-analysis')} order={widgetOrderMap['expense-analysis'] ?? 999}>
+          <div data-widget-id="expense-analysis">
             <ExpenseAnalysis dateRange={dateRange} />
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Profit & Loss Waterfall ────────────────────────── */}
           {isWidgetVisible('profit-loss-waterfall') && (
-          <DraggableWidget id="profit-loss-waterfall" isDragMode={isDragMode} className={getWidgetSpanClass('profit-loss-waterfall')} order={widgetOrderMap['profit-loss-waterfall'] ?? 999}>
+          <div data-widget-id="profit-loss-waterfall">
             <ProfitLossWaterfall dateRange={dateRange} />
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Financial Health Detail ────────────────────── */}
           {isWidgetVisible('financial-health-detail') && (
-          <DraggableWidget id="financial-health-detail" isDragMode={isDragMode} className={getWidgetSpanClass('financial-health-detail')} order={widgetOrderMap['financial-health-detail'] ?? 999}>
+          <div data-widget-id="financial-health-detail">
             <FinancialHealthWidget dateRange={dateRange} />
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Cash Flow Forecast ──────────────────────────────── */}
           {isWidgetVisible('cash-flow-forecast') && (
-          <DraggableWidget id="cash-flow-forecast" isDragMode={isDragMode} className={getWidgetSpanClass('cash-flow-forecast')} order={widgetOrderMap['cash-flow-forecast'] ?? 999}>
+          <div data-widget-id="cash-flow-forecast">
             <CashFlowForecast dateRange={dateRange} />
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Budget vs Actual ──────────────────────────────── */}
           {isWidgetVisible('budget-vs-actual') && (
-          <DraggableWidget id="budget-vs-actual" isDragMode={isDragMode} className={getWidgetSpanClass('budget-vs-actual')} order={widgetOrderMap['budget-vs-actual'] ?? 999}>
+          <div data-widget-id="budget-vs-actual">
             <BudgetVsActualWidget user={user} />
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── AI Categorization Suggestions ──────────────────── */}
           {isWidgetVisible('ai-categorization') && transactions.length > 0 && (
-          <DraggableWidget id="ai-categorization" isDragMode={isDragMode} className={getWidgetSpanClass('ai-categorization')} order={widgetOrderMap['ai-categorization'] ?? 999}>
+          <div data-widget-id="ai-categorization">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2718,12 +2684,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 />
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Recent Journal Entries ────────────────────────────── */}
           {isWidgetVisible('recent-journal') && (
-          <DraggableWidget id="recent-journal" isDragMode={isDragMode} className={getWidgetSpanClass('recent-journal')} order={widgetOrderMap['recent-journal'] ?? 999}>
+          <div data-widget-id="recent-journal">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2811,12 +2777,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 )}
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Activity Feed ────────────────────────────────────── */}
           {isWidgetVisible('activity-feed') && (
-          <DraggableWidget id="activity-feed" isDragMode={isDragMode} className={getWidgetSpanClass('activity-feed')} order={widgetOrderMap['activity-feed'] ?? 999}>
+          <div data-widget-id="activity-feed">
             <Card className="stat-card overflow-hidden">
               <div className="flex items-center justify-between px-4 sm:px-5 pt-4 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -2956,12 +2922,12 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                 </div>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
 
           {/* ─── Account Balance Overview ───────────────────────── */}
           {isWidgetVisible('active-accounts') && topAccounts.length > 0 && (
-          <DraggableWidget id="active-accounts" isDragMode={isDragMode} className={getWidgetSpanClass('active-accounts')} order={widgetOrderMap['active-accounts'] ?? 999}>
+          <div data-widget-id="active-accounts">
             <Card className="stat-card card-hover-lift overflow-hidden">
               {/* Header */}
               <div className="bg-gradient-to-r from-[#0d9488]/8 to-transparent dark:from-[#0d9488]/15 px-4 sm:px-5 pt-4 pb-3">
@@ -3035,11 +3001,9 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
                   </table>
               </CardContent>
             </Card>
-          </DraggableWidget>
+          </div>
           )}
-        </div>
-        </SortableContext>
-        </DndContext>
+        </MasonryLayout>
       </>
       )}
       <WidgetLayoutEditor open={widgetPickerOpen} onOpenChange={setWidgetPickerOpen} />
