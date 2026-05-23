@@ -3,8 +3,6 @@
  *
  * Generates professional PDF invoices using pdf-lib.
  * Layout matches the "Udskriv faktura" print view.
- * Includes company branding, line items table, VAT breakdown,
- * and payment information. Supports multiple currencies.
  *
  * SERVER-SIDE ONLY — do not import on the client.
  */
@@ -35,7 +33,7 @@ export interface InvoiceWithDetails {
   customerCvr?: string | null;
   issueDate: Date | string;
   dueDate: Date | string;
-  lineItems: any; // Prisma Json field (already parsed)
+  lineItems: any;
   subtotal: number;
   vatTotal: number;
   total: number;
@@ -43,7 +41,6 @@ export interface InvoiceWithDetails {
   exchangeRate?: number | null;
   status: string;
   notes?: string | null;
-  // Company info (joined)
   companyInfo?: {
     logo?: string | null;
     companyName: string;
@@ -59,897 +56,372 @@ export interface InvoiceWithDetails {
   } | null;
 }
 
-// ── Color Palette — matches the app's teal theme ────────────────────────────
+// ── Colors ───────────────────────────────────────────────────────────────────
 
-const COLORS = {
-  primary: rgb(0.05, 0.58, 0.53),        // Teal #0d9488
-  primaryDark: rgb(0.06, 0.46, 0.43),     // Darker teal #0f766e
-  text: rgb(0.12, 0.12, 0.12),           // Near-black #1f2937
-  textLight: rgb(0.42, 0.42, 0.42),      // Gray #6b7280
-  textMuted: rgb(0.69, 0.66, 0.62),      // Light brown-gray #b0a89e
-  border: rgb(0.90, 0.91, 0.92),         // #e5e7eb
-  borderLight: rgb(0.95, 0.96, 0.97),    // #f3f4f6
-  tableHeader: rgb(0.98, 0.98, 0.98),    // #fafafa
-  tableAlt: rgb(0.99, 0.99, 0.99),
-  bankBox: rgb(0.98, 0.98, 0.98),        // #f9fafb
-  notesBox: rgb(1.0, 0.99, 0.93),        // #fefce8
-  white: rgb(1, 1, 1),
-  teal10: rgb(0.94, 0.99, 0.98),         // #f0fdfa
+const C = {
+  teal:       rgb(0.051, 0.58, 0.533),   // #0d9488
+  tealDark:   rgb(0.059, 0.464, 0.431),  // #0f766e
+  text:       rgb(0.122, 0.122, 0.122),  // #1f2937
+  textMid:    rgb(0.420, 0.420, 0.420),  // #6b7280
+  textMuted:  rgb(0.690, 0.659, 0.620),  // #b0a89e
+  border:     rgb(0.898, 0.902, 0.906),  // #e5e7eb
+  borderLt:   rgb(0.953, 0.953, 0.953),  // #f3f4f6
+  headerBg:   rgb(0.976, 0.976, 0.976),  // #f9fafb
+  bankBg:     rgb(0.976, 0.976, 0.976),  // #f9fafb
+  notesBg:    rgb(1.0, 0.992, 0.922),    // #fefce8
+  white:      rgb(1, 1, 1),
 };
 
-// ── Layout Constants ─────────────────────────────────────────────────────────
+// ── Layout ───────────────────────────────────────────────────────────────────
 
-const PAGE_WIDTH = 595.28;  // A4 width in points
-const PAGE_HEIGHT = 841.89; // A4 height in points
-const MARGIN_LEFT = 50;
-const MARGIN_RIGHT = 50;
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
-const MARGIN_TOP = 40;
-const MARGIN_BOTTOM = 60;
-const COL_GAP = 40; // Gap between From/To columns
+const PW = 595.28;
+const PH = 841.89;
+const ML = 50;           // margin left
+const MR = 50;           // margin right
+const CW = PW - ML - MR; // content width
+const MT = 40;           // margin top
+const MB = 50;           // margin bottom (footer space)
+const COL_GAP = 40;
+const HALF = (CW - COL_GAP) / 2;
 
-// ── Status Colors ──────────────────────────────────────────────────────────
+// ── Status colors ───────────────────────────────────────────────────────────
 
-function getStatusColor(status: string) {
-  switch (status) {
-    case 'DRAFT': return { bg: rgb(0.95, 0.96, 0.96), text: rgb(0.22, 0.25, 0.29) };      // gray
-    case 'SENT': return { bg: rgb(0.86, 0.92, 0.99), text: rgb(0.11, 0.30, 0.85) };       // blue
-    case 'PAID': return { bg: rgb(0.86, 0.99, 0.91), text: rgb(0.09, 0.40, 0.20) };       // green
-    case 'CANCELLED': return { bg: rgb(1.0, 0.89, 0.89), text: rgb(0.60, 0.11, 0.11) };    // red
-    default: return { bg: rgb(0.95, 0.96, 0.96), text: rgb(0.22, 0.25, 0.29) };
-  }
+function statusColor(s: string) {
+  const m: Record<string, { bg: typeof C.white; fg: typeof C.text }> = {
+    DRAFT:     { bg: rgb(0.953, 0.957, 0.957), fg: rgb(0.216, 0.251, 0.290) },
+    SENT:      { bg: rgb(0.859, 0.922, 0.992), fg: rgb(0.110, 0.302, 0.851) },
+    PAID:      { bg: rgb(0.863, 0.992, 0.906), fg: rgb(0.086, 0.396, 0.204) },
+    CANCELLED: { bg: rgb(1.0, 0.894, 0.894), fg: rgb(0.600, 0.110, 0.110) },
+  };
+  return m[s] || m.DRAFT;
 }
 
-// ── Main Generator ───────────────────────────────────────────────────────────
+// ── Main ─────────────────────────────────────────────────────────────────────
 
-export async function generateInvoicePDF(invoice: InvoiceWithDetails): Promise<Uint8Array> {
-  const pdfDoc = await PDFDocument.create();
-  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const fontItalic = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const fR = await doc.embedFont(StandardFonts.Helvetica);
+  const fB = await doc.embedFont(StandardFonts.HelveticaBold);
+  const fI = await doc.embedFont(StandardFonts.HelveticaOblique);
 
-  const currency = invoice.currency || 'DKK';
-  const currencyConfig = getCurrencyConfig(currency);
-  const currencySymbol = currencyConfig.symbol;
-  const parsedItems = parseLineItems(invoice.lineItems);
+  const cur = inv.currency || 'DKK';
+  const sym = getCurrencyConfig(cur).symbol;
+  const items = parseItems(inv.lineItems);
+  const co = inv.companyInfo;
 
-  // ── Page 1 ──
-  let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  let y = PAGE_HEIGHT - MARGIN_TOP;
+  let pg = doc.addPage([PW, PH]);
+  let y = PH - MT;
 
-  const company = invoice.companyInfo;
-  const rightX = PAGE_WIDTH - MARGIN_RIGHT;
-  const halfContent = (CONTENT_WIDTH - COL_GAP) / 2;
-  const colLeftX = MARGIN_LEFT;
-  const colRightX = MARGIN_LEFT + halfContent + COL_GAP;
+  const RX = PW - MR;
+  const C1 = ML;                        // left column X
+  const C2 = ML + HALF + COL_GAP;       // right column X
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── HEADER: Logo/company LEFT, "FAKTURA" + invoice# + status RIGHT ─
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  HEADER
+  // ══════════════════════════════════════════════════════════
 
-  let logoBottomY = y;
-
-  // Logo
-  if (company?.logo) {
+  // Logo (left side)
+  let headerBottom = y;
+  if (co?.logo) {
     try {
-      const logoPath = path.isAbsolute(company.logo)
-        ? company.logo
-        : path.join(process.cwd(), company.logo);
-      if (existsSync(logoPath)) {
-        const logoBytes = await readFile(logoPath);
-        let image;
-        if (logoPath.toLowerCase().endsWith('.png')) {
-          image = await pdfDoc.embedPng(logoBytes);
-        } else {
-          image = await pdfDoc.embedJpg(logoBytes);
-        }
-        const logoDims = image.scale(1);
-        const maxLogoHeight = 70;
-        const maxLogoWidth = 220;
-        const scaleW = maxLogoWidth / logoDims.width;
-        const scaleH = maxLogoHeight / logoDims.height;
-        const scale = Math.min(scaleW, scaleH, 1);
-        const w = logoDims.width * scale;
-        const h = logoDims.height * scale;
-        page.drawImage(image, {
-          x: MARGIN_LEFT,
-          y: y - h,
-          width: w,
-          height: h,
-        });
-        logoBottomY = y - h;
+      const lp = path.isAbsolute(co.logo) ? co.logo : path.join(process.cwd(), co.logo);
+      if (existsSync(lp)) {
+        const bytes = await readFile(lp);
+        const img = lp.toLowerCase().endsWith('.png') ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+        const d = img.scale(1);
+        const s = Math.min(70 / d.height, 220 / d.width, 1);
+        const w = d.width * s, h = d.height * s;
+        pg.drawImage(img, { x: ML, y: y - h, width: w, height: h });
+        headerBottom = y - h;
       }
-    } catch (err) {
-      logger.warn('[PDF] Failed to embed logo:', err);
-    }
+    } catch (e) { logger.warn('[PDF] Logo embed failed:', e); }
   }
 
-  // Company name (below logo or as title)
-  const companyNameStartY = logoBottomY - 12;
-  if (!company?.logo) {
-    drawText(page, company?.companyName || '', {
-      x: MARGIN_LEFT,
-      y: y - 14,
-      font: fontBold,
-      size: 22,
-      color: COLORS.text,
-    });
+  // Invoice date below logo
+  const dateLabel = co?.logo ? '' : (co?.companyName || '');
+  if (!co?.logo && dateLabel) {
+    txt(pg, dateLabel, ML, y - 16, fB, 20, C.text);
+    headerBottom = y - 36;
   }
 
-  // Issue date below logo/name
-  drawText(page, `Fakturadato: ${formatDate(invoice.issueDate)}`, {
-    x: MARGIN_LEFT,
-    y: companyNameStartY - 8,
-    font: fontRegular,
-    size: 9,
-    color: COLORS.textLight,
-  });
+  txt(pg, `Fakturadato: ${fmtDate(inv.issueDate)}`, ML, headerBottom - 10, fR, 9, C.textMid);
 
-  // ── RIGHT SIDE: Title + number + status ──
-  const titleY = y - 14;
-  drawText(page, 'FAKTURA', {
-    x: rightX,
-    y: titleY,
-    font: fontBold,
-    size: 28,
-    color: COLORS.primary,
-    align: 'right',
-  });
+  // ── Right side: FAKTURA + number + status badge ──
+
+  const tY = y - 18;
+  txt(pg, 'FAKTURA', RX, tY, fB, 28, C.teal, 'right');
 
   // Teal underline
-  const titleWidth = fontBold.widthOfTextAtSize('FAKTURA', 28);
-  page.drawLine({
-    start: { x: rightX - titleWidth, y: titleY - 6 },
-    end: { x: rightX, y: titleY - 6 },
-    thickness: 2.5,
-    color: COLORS.primary,
-  });
+  const tw = fB.widthOfTextAtSize('FAKTURA', 28);
+  pg.drawLine({ start: { x: RX - tw, y: tY - 6 }, end: { x: RX, y: tY - 6 }, thickness: 2.5, color: C.teal });
 
   // Invoice number
-  drawText(page, invoice.invoiceNumber, {
-    x: rightX,
-    y: titleY - 24,
-    font: fontBold,
-    size: 16,
-    color: COLORS.text,
-    align: 'right',
-  });
+  txt(pg, inv.invoiceNumber, RX, tY - 28, fB, 16, C.text, 'right');
 
   // Status badge
-  const statusLabel = mapStatus(invoice.status);
-  const statusColors = getStatusColor(invoice.status);
-  const statusWidth = fontRegular.widthOfTextAtSize(statusLabel, 10) + 16;
-  const badgeH = 16;
-  const badgeY = titleY - 40;
-  page.drawRectangle({
-    x: rightX - statusWidth,
-    y: badgeY - 4,
-    width: statusWidth,
-    height: badgeH,
-    color: statusColors.bg,
-  });
-  drawText(page, statusLabel, {
-    x: rightX - statusWidth / 2,
-    y: badgeY,
-    font: fontRegular,
-    size: 10,
-    color: statusColors.text,
-    align: 'center',
-  });
+  const stLabel = mapStatus(inv.status);
+  const stC = statusColor(inv.status);
+  const stW = fR.widthOfTextAtSize(stLabel, 9.5) + 20;
+  const badgeY = tY - 46;
+  pg.drawRectangle({ x: RX - stW, y: badgeY - 5, width: stW, height: 17, color: stC.bg });
+  txt(pg, stLabel, RX - stW / 2, badgeY, fR, 9.5, stC.fg, 'center');
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── INFO GRID: "Fra" (left) / "Til" (right) ──
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  INFO GRID: FRA (left) / TIL (right)
+  // ══════════════════════════════════════════════════════════
 
-  y = Math.min(companyNameStartY - 8, badgeY - 4) - 28;
+  // Divider
+  const gridTop = Math.min(headerBottom - 10, badgeY - 5) - 24;
+  pg.drawLine({ start: { x: ML, y: gridTop }, end: { x: RX, y: gridTop }, thickness: 0.75, color: C.border });
 
-  // Divider above info grid
-  page.drawLine({
-    start: { x: MARGIN_LEFT, y },
-    end: { x: rightX, y },
-    thickness: 0.75,
-    color: COLORS.border,
-  });
+  y = gridTop - 18;
+
+  // Both columns start at the same Y
+  const colStartY = y;
+
+  // LEFT: FRA
+  let ly = colStartY;
+  txt(pg, 'FRA', C1, ly, fB, 9, C.textMid); ly -= 15;
+  txt(pg, co?.companyName || '', C1, ly, fB, 12, C.text); ly -= 13;
+  const coInfo = [co?.address, co?.phone, co?.email, co?.cvrNumber ? `CVR: ${co.cvrNumber}` : null].filter(Boolean) as string[];
+  for (const d of coInfo) { txt(pg, d, C1, ly, fR, 9, C.textMid); ly -= 11; }
+
+  // RIGHT: TIL
+  let ry = colStartY;
+  txt(pg, 'TIL', C2, ry, fB, 9, C.textMid); ry -= 15;
+  txt(pg, inv.customerName, C2, ry, fB, 12, C.text); ry -= 13;
+  const cuInfo = [inv.customerAddress, inv.customerPhone, inv.customerEmail, inv.customerCvr ? `CVR: ${inv.customerCvr}` : null].filter(Boolean) as string[];
+  for (const d of cuInfo) { txt(pg, d, C2, ry, fR, 9, C.textMid); ry -= 11; }
+
+  // y = lowest of both columns
+  y = Math.min(ly, ry);
+
+  // ══════════════════════════════════════════════════════════
+  //  LINE ITEMS TABLE
+  // ══════════════════════════════════════════════════════════
+
   y -= 20;
+  const TL = ML, TR = RX, TW = TR - TL;
 
-  // ── LEFT COLUMN: "Fra" (From) ──
-  drawText(page, 'FRA', {
-    x: colLeftX,
-    y,
-    font: fontBold,
-    size: 9,
-    color: COLORS.textLight,
-  });
-  y -= 16;
+  // Column widths
+  const cD = TW * 0.38;   // description
+  const cQ = TW * 0.10;   // quantity
+  const cP = TW * 0.18;   // unit price
+  const cV = TW * 0.10;   // vat %
+  const cT = TW * 0.24;   // line total
 
-  drawText(page, company?.companyName || '', {
-    x: colLeftX,
-    y,
-    font: fontBold,
-    size: 12,
-    color: COLORS.text,
-  });
-  y -= 14;
+  // Header row
+  pg.drawRectangle({ x: TL, y: y - 18, width: TW, height: 22, color: C.headerBg });
+  const hY = y - 4;
+  const hS = 8.5;
 
-  const companyDetails = [
-    company?.address,
-    company?.phone,
-    company?.email,
-    company?.cvrNumber ? `CVR: ${company.cvrNumber}` : null,
-  ].filter(Boolean) as string[];
+  txt(pg, 'Beskrivelse', TL + 8, hY, fB, hS, C.textMid);
+  txt(pg, 'Antal', TL + cD + cQ - 4, hY, fB, hS, C.textMid, 'right');
+  txt(pg, 'Enhedspris', TL + cD + cQ + cP - 4, hY, fB, hS, C.textMid, 'right');
+  txt(pg, 'Moms %', TL + cD + cQ + cP + cV / 2, hY, fB, hS, C.textMid, 'center');
+  txt(pg, 'Beløb', TR - 4, hY, fB, hS, C.textMid, 'right');
 
-  for (const detail of companyDetails) {
-    drawText(page, detail, {
-      x: colLeftX,
-      y,
-      font: fontRegular,
-      size: 9,
-      color: COLORS.textLight,
-    });
-    y -= 12;
-  }
-
-  // ── RIGHT COLUMN: "Til" (To) ──
-  let rightColY = y + (companyDetails.length + 1) * 12 + 20; // Align with "FRA" heading
-
-  drawText(page, 'TIL', {
-    x: colRightX,
-    y: rightColY,
-    font: fontBold,
-    size: 9,
-    color: COLORS.textLight,
-  });
-  rightColY -= 16;
-
-  drawText(page, invoice.customerName, {
-    x: colRightX,
-    y: rightColY,
-    font: fontBold,
-    size: 12,
-    color: COLORS.text,
-  });
-  rightColY -= 14;
-
-  const customerDetails = [
-    invoice.customerAddress,
-    invoice.customerPhone,
-    invoice.customerEmail,
-    invoice.customerCvr ? `CVR: ${invoice.customerCvr}` : null,
-  ].filter(Boolean) as string[];
-
-  for (const detail of customerDetails) {
-    drawText(page, detail, {
-      x: colRightX,
-      y: rightColY,
-      font: fontRegular,
-      size: 9,
-      color: COLORS.textLight,
-    });
-    rightColY -= 12;
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // ── LINE ITEMS TABLE ──
-  // ════════════════════════════════════════════════════════════════════
-
-  y -= 16;
-
-  const tableLeft = MARGIN_LEFT;
-  const tableRight = PAGE_WIDTH - MARGIN_RIGHT;
-  const tableWidth = tableRight - tableLeft;
-
-  // Column widths: description | qty | unit price | VAT% | line total
-  const colDesc = tableWidth * 0.38;
-  const colQty = tableWidth * 0.10;
-  const colUnitPrice = tableWidth * 0.18;
-  const colVat = tableWidth * 0.10;
-  const colTotal = tableWidth * 0.24;
-
-  // Table header background
-  page.drawRectangle({
-    x: tableLeft,
-    y: y - 18,
-    width: tableWidth,
-    height: 22,
-    color: COLORS.tableHeader,
-  });
-
-  const headerY = y - 4;
-  const headerSize = 8.5;
-
-  drawText(page, 'Beskrivelse', { x: tableLeft + 8, y: headerY, font: fontBold, size: headerSize, color: COLORS.textLight });
-  drawText(page, 'Antal', { x: tableLeft + colDesc + 8, y: headerY, font: fontBold, size: headerSize, color: COLORS.textLight, align: 'right', maxWidth: tableLeft + colDesc + colQty - 4 });
-  drawText(page, 'Enhedspris', { x: tableLeft + colDesc + colQty + colUnitPrice - 4, y: headerY, font: fontBold, size: headerSize, color: COLORS.textLight, align: 'right' });
-  drawText(page, 'Moms %', { x: tableLeft + colDesc + colQty + colUnitPrice + colVat / 2, y: headerY, font: fontBold, size: headerSize, color: COLORS.textLight, align: 'center' });
-  drawText(page, 'Beløb', { x: tableRight - 4, y: headerY, font: fontBold, size: headerSize, color: COLORS.textLight, align: 'right' });
-
-  // Header bottom border
-  page.drawLine({
-    start: { x: tableLeft, y: y - 18 },
-    end: { x: tableRight, y: y - 18 },
-    thickness: 1.5,
-    color: COLORS.border,
-  });
-
+  pg.drawLine({ start: { x: TL, y: y - 18 }, end: { x: TR, y: y - 18 }, thickness: 1, color: C.border });
   y -= 18;
 
-  // Line items
-  const rowHeight = 20;
-  const itemFontSize = 9;
+  // Data rows
+  const RH = 20, iS = 9;
+  for (let i = 0; i < items.length; i++) {
+    if (y - RH < MB + 100) { pg = doc.addPage([PW, PH]); y = PH - MT; }
+    const it = items[i];
+    const lt = it.quantity * it.unitPrice;
 
-  for (let i = 0; i < parsedItems.length; i++) {
-    if (y - rowHeight < MARGIN_BOTTOM + 120) {
-      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      y = PAGE_HEIGHT - MARGIN_TOP;
-    }
+    if (i % 2 === 1) pg.drawRectangle({ x: TL, y: y - RH, width: TW, height: RH, color: C.borderLt });
 
-    const item = parsedItems[i];
-    const lineTotal = item.quantity * item.unitPrice;
-
-    // Alternating row background
-    if (i % 2 === 1) {
-      page.drawRectangle({
-        x: tableLeft,
-        y: y - rowHeight,
-        width: tableWidth,
-        height: rowHeight,
-        color: COLORS.borderLight,
-      });
-    }
-
-    const rowTextY = y - 6;
-
-    drawText(page, item.description, {
-      x: tableLeft + 8,
-      y: rowTextY,
-      font: fontRegular,
-      size: itemFontSize,
-      color: COLORS.text,
-      maxWidth: colDesc - 16,
-    });
-
-    drawText(page, formatNumberForPDF(item.quantity, 0), {
-      x: tableLeft + colDesc + colQty - 4,
-      y: rowTextY,
-      font: fontRegular,
-      size: itemFontSize,
-      color: COLORS.text,
-      align: 'right',
-    });
-
-    drawText(page, `${formatNumberForPDF(item.unitPrice)} ${currencySymbol}`, {
-      x: tableLeft + colDesc + colQty + colUnitPrice - 4,
-      y: rowTextY,
-      font: fontRegular,
-      size: itemFontSize,
-      color: COLORS.text,
-      align: 'right',
-    });
-
-    drawText(page, `${item.vatPercent}%`, {
-      x: tableLeft + colDesc + colQty + colUnitPrice + colVat / 2,
-      y: rowTextY,
-      font: fontRegular,
-      size: itemFontSize,
-      color: COLORS.text,
-      align: 'center',
-    });
-
-    drawText(page, `${formatNumberForPDF(lineTotal)} ${currencySymbol}`, {
-      x: tableRight - 4,
-      y: rowTextY,
-      font: fontBold,
-      size: itemFontSize,
-      color: COLORS.text,
-      align: 'right',
-    });
-
-    y -= rowHeight;
+    const rY = y - 6;
+    txt(pg, it.description, TL + 8, rY, fR, iS, C.text, 'left', cD - 16);
+    txt(pg, fmtNum(it.quantity, 0), TL + cD + cQ - 4, rY, fR, iS, C.text, 'right');
+    txt(pg, `${fmtNum(it.unitPrice)} ${sym}`, TL + cD + cQ + cP - 4, rY, fR, iS, C.text, 'right');
+    txt(pg, `${it.vatPercent}%`, TL + cD + cQ + cP + cV / 2, rY, fR, iS, C.text, 'center');
+    txt(pg, `${fmtNum(lt)} ${sym}`, TR - 4, rY, fB, iS, C.text, 'right');
+    y -= RH;
   }
 
-  // Table bottom border
-  page.drawLine({
-    start: { x: tableLeft, y },
-    end: { x: tableRight, y },
-    thickness: 1,
-    color: COLORS.border,
-  });
+  pg.drawLine({ start: { x: TL, y }, end: { x: TR, y }, thickness: 1, color: C.border });
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── TOTALS ──
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  TOTALS (right-aligned block)
+  // ══════════════════════════════════════════════════════════
 
   y -= 24;
+  const tLbl = 140; // width reserved for labels on the left side of totals
 
   // Subtotal
-  drawText(page, 'Subtotal (excl. moms)', {
-    x: tableRight - 200,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.textLight,
-    align: 'right',
-    maxWidth: tableRight - 4,
-  });
-  drawText(page, `${formatNumberForPDF(invoice.subtotal)} ${currencySymbol}`, {
-    x: tableRight - 4,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.text,
-    align: 'right',
-  });
+  txt(pg, 'Subtotal (excl. moms)', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
+  txt(pg, `${fmtNum(inv.subtotal)} ${sym}`, TR - 4, y, fR, 10, C.text, 'right');
   y -= 16;
 
-  // VAT
-  drawText(page, 'Moms', {
-    x: tableRight - 200,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.textLight,
-    align: 'right',
-    maxWidth: tableRight - 4,
-  });
-  drawText(page, `${formatNumberForPDF(invoice.vatTotal)} ${currencySymbol}`, {
-    x: tableRight - 4,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.text,
-    align: 'right',
-  });
-  y -= 16;
+  // Moms
+  txt(pg, 'Moms', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
+  txt(pg, `${fmtNum(inv.vatTotal)} ${sym}`, TR - 4, y, fR, 10, C.text, 'right');
+  y -= 14;
 
-  // Divider
-  page.drawLine({
-    start: { x: tableRight - 200, y },
-    end: { x: tableRight, y },
-    thickness: 0.5,
-    color: COLORS.border,
-  });
+  pg.drawLine({ start: { x: TR - tLbl - 8, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
   y -= 18;
 
-  // Grand total
-  drawText(page, 'TOTAL', {
-    x: tableRight - 200,
-    y,
-    font: fontBold,
-    size: 18,
-    color: COLORS.primary,
-    align: 'right',
-    maxWidth: tableRight - 4,
-  });
-  drawText(page, `${formatNumberForPDF(invoice.total)} ${currencySymbol}`, {
-    x: tableRight - 4,
-    y,
-    font: fontBold,
-    size: 18,
-    color: COLORS.primary,
-    align: 'right',
-  });
-  y -= 16;
+  // TOTAL (big)
+  txt(pg, 'TOTAL', TR - tLbl - 8, y, fB, 18, C.teal, 'right');
+  txt(pg, `${fmtNum(inv.total)} ${sym}`, TR - 4, y, fB, 18, C.teal, 'right');
+  y -= 14;
 
-  // Divider
-  page.drawLine({
-    start: { x: tableRight - 200, y },
-    end: { x: tableRight, y },
-    thickness: 0.5,
-    color: COLORS.border,
-  });
+  pg.drawLine({ start: { x: TR - tLbl - 8, y }, end: { x: TR, y }, thickness: 0.5, color: C.border });
   y -= 14;
 
   // Due date
-  drawText(page, 'Forfaldsdato', {
-    x: tableRight - 200,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.textLight,
-    align: 'right',
-    maxWidth: tableRight - 4,
-  });
-  drawText(page, formatDate(invoice.dueDate), {
-    x: tableRight - 4,
-    y,
-    font: fontRegular,
-    size: 10,
-    color: COLORS.text,
-    align: 'right',
-  });
+  txt(pg, 'Forfaldsdato', TR - tLbl - 8, y, fR, 10, C.textMid, 'right');
+  txt(pg, fmtDate(inv.dueDate), TR - 4, y, fR, 10, C.text, 'right');
 
-  // ── DKK equivalent if foreign currency ──
-  if (invoice.exchangeRate && invoice.currency !== 'DKK') {
-    y -= 20;
-    const dkkEquivalent = Number(invoice.total) * Number(invoice.exchangeRate);
-    drawText(page, `Tilsvarende i DKK: ${formatNumberForPDF(dkkEquivalent)} kr. (kurs: ${invoice.exchangeRate.toFixed(4)})`, {
-      x: MARGIN_LEFT,
-      y,
-      font: fontItalic,
-      size: 8,
-      color: COLORS.textLight,
-    });
+  // DKK equivalent
+  if (inv.exchangeRate && inv.currency !== 'DKK') {
+    const dkk = Number(inv.total) * Number(inv.exchangeRate);
+    txt(pg, `Tilsvarende i DKK: ${fmtNum(dkk)} kr. (kurs: ${inv.exchangeRate.toFixed(4)})`, ML, y - 16, fI, 8, C.textMid);
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── BANK INFO BOX ──
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  BANK INFO
+  // ══════════════════════════════════════════════════════════
 
   y -= 28;
+  const hasBank = co && (co.bankName || co.bankRegistration || co.bankAccount || co.bankIban);
 
-  const hasBankInfo = company && (company.bankName || company.bankRegistration || company.bankAccount || company.bankIban);
+  if (hasBank) {
+    txt(pg, 'BETALINGSOPPLYSNINGER', ML, y, fB, 9, C.textMid);
+    y -= 8;
 
-  if (hasBankInfo) {
-    drawText(page, 'BETALINGSOPPLYSNINGER', {
-      x: MARGIN_LEFT,
-      y,
-      font: fontBold,
-      size: 9,
-      color: COLORS.textLight,
-    });
-    y -= 10;
+    const bankRows: [string, string][] = [];
+    if (co.bankName) bankRows.push(['Bank:', co.bankName]);
+    if (co.bankRegistration) bankRows.push(['Reg.nr.:', co.bankRegistration]);
+    if (co.bankAccount) bankRows.push(['Kontonr.:', co.bankAccount]);
+    if (co.bankIban) bankRows.push(['IBAN:', co.bankIban]);
 
-    // Bank box background
-    const bankDetails: string[] = [];
-    if (company.bankName) bankDetails.push(`Bank: ${company.bankName}`);
-    if (company.bankRegistration) bankDetails.push(`Reg.nr.: ${company.bankRegistration}`);
-    if (company.bankAccount) bankDetails.push(`Kontonr.: ${company.bankAccount}`);
-    if (company.bankIban) bankDetails.push(`IBAN: ${company.bankIban}`);
-    const bankLineCount = bankDetails.length;
+    const pad = 12;
+    const rowH = 15;
+    const boxH = bankRows.length * rowH + pad * 2 + rowH; // +rowH for reference line
+    const boxW = HALF;
 
-    const boxPadding = 14;
-    const boxHeight = bankLineCount * 16 + boxPadding * 2 + 4;
-    const boxWidth = halfContent;
+    pg.drawRectangle({ x: ML, y: y - boxH, width: boxW, height: boxH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
 
-    page.drawRectangle({
-      x: MARGIN_LEFT,
-      y: y - boxHeight,
-      width: boxWidth,
-      height: boxHeight,
-      color: COLORS.bankBox,
-      borderColor: COLORS.border,
-      borderWidth: 0.5,
-    });
-
-    let bankY = y - boxHeight + boxPadding;
-    for (const detail of bankDetails) {
-      // Split "Bank:", "Reg.nr.:" labels
-      const colonIdx = detail.indexOf(':');
-      if (colonIdx > 0) {
-        const label = detail.substring(0, colonIdx + 1);
-        const value = detail.substring(colonIdx + 2);
-        drawText(page, label, {
-          x: MARGIN_LEFT + boxPadding,
-          y: bankY,
-          font: fontRegular,
-          size: 9,
-          color: COLORS.textMuted,
-        });
-        drawText(page, value, {
-          x: MARGIN_LEFT + boxPadding + fontRegular.widthOfTextAtSize(label, 9) + 4,
-          y: bankY,
-          font: fontRegular,
-          size: 9,
-          color: COLORS.text,
-        });
-      } else {
-        drawText(page, detail, {
-          x: MARGIN_LEFT + boxPadding,
-          y: bankY,
-          font: fontRegular,
-          size: 9,
-          color: COLORS.text,
-        });
-      }
-      bankY += 16;
+    let by = y - pad;
+    for (const [label, value] of bankRows) {
+      const lw = fR.widthOfTextAtSize(label, 9);
+      txt(pg, label, ML + pad, by, fR, 9, C.textMuted);
+      txt(pg, value, ML + pad + lw + 4, by, fR, 9, C.text);
+      by -= rowH;
     }
 
-    // Payment reference
-    const refLabel = 'Reference:';
-    const refValue = invoice.invoiceNumber;
-    drawText(page, refLabel, {
-      x: MARGIN_LEFT + boxPadding,
-      y: bankY + 4,
-      font: fontBold,
-      size: 9,
-      color: COLORS.textMuted,
-    });
-    drawText(page, refValue, {
-      x: MARGIN_LEFT + boxPadding + fontRegular.widthOfTextAtSize(refLabel, 9) + 4,
-      y: bankY + 4,
-      font: fontBold,
-      size: 9,
-      color: COLORS.primary,
-    });
+    // Reference line
+    const refLw = fB.widthOfTextAtSize('Reference: ', 9);
+    txt(pg, 'Reference:', ML + pad, by, fB, 9, C.textMuted);
+    txt(pg, inv.invoiceNumber, ML + pad + refLw, by, fB, 9, C.teal);
+    by -= rowH;
 
-    // Invoice terms (if any) — right-aligned within the box area
-    if (company.invoiceTerms) {
-      const termsX = colRightX;
-      const termsMaxWidth = halfContent;
-      const termsLines = wrapText(company.invoiceTerms, fontRegular, 8.5, termsMaxWidth);
-      const termsBoxH = termsLines.length * 12 + boxPadding * 2;
+    // Invoice terms (right side of bank info, same vertical area)
+    if (co.invoiceTerms) {
+      txt(pg, 'FAKTURABETINGELSER', C2, y, fB, 9, C.textMid);
+      const lines = wrap(co.invoiceTerms, fR, 8.5, HALF - pad * 2);
+      const tH = lines.length * 12 + pad * 2;
 
-      drawText(page, 'FAKTURABETINGELSER', {
-        x: termsX,
-        y: y - boxHeight + 18 + boxHeight, // Align with top of bank box
-        font: fontBold,
-        size: 9,
-        color: COLORS.textLight,
-      });
+      pg.drawRectangle({ x: C2, y: y - 8 - tH, width: HALF, height: tH, color: C.bankBg, borderColor: C.border, borderWidth: 0.5 });
 
-      // Position correctly
-      const termsStartY = y - boxHeight + 18;
-      // We drew the heading at that Y, now draw the box
-      page.drawRectangle({
-        x: termsX,
-        y: termsStartY - termsBoxH - 10,
-        width: termsMaxWidth,
-        height: termsBoxH,
-        color: COLORS.bankBox,
-        borderColor: COLORS.border,
-        borderWidth: 0.5,
-      });
+      let ty = y - 8 - tH + pad;
+      for (const l of lines) { txt(pg, l, C2 + pad, ty, fR, 8.5, C.text); ty -= 12; }
 
-      let termY = termsStartY - termsBoxH - 10 + boxPadding;
-      for (const line of termsLines) {
-        drawText(page, line, {
-          x: termsX + boxPadding,
-          y: termY,
-          font: fontRegular,
-          size: 8.5,
-          color: COLORS.text,
-        });
-        termY += 12;
-      }
-
-      y = Math.min(y - boxHeight - 4, termsStartY - termsBoxH - 10) - 4;
+      y = Math.min(by, y - 8 - tH) - 4;
     } else {
-      y -= boxHeight + 4;
+      y = by - 4;
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── NOTES BOX ──
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  NOTES
+  // ══════════════════════════════════════════════════════════
 
-  if (invoice.notes) {
-    y -= 12;
-    drawText(page, 'BEMÆRKNINGER', {
-      x: MARGIN_LEFT,
-      y,
-      font: fontBold,
-      size: 9,
-      color: COLORS.textLight,
-    });
-    y -= 10;
+  if (inv.notes) {
+    y -= 16;
+    txt(pg, 'BEMÆRKNINGER', ML, y, fB, 9, C.textMid);
+    y -= 8;
 
-    const noteLines = wrapText(invoice.notes, fontRegular, 9, CONTENT_WIDTH - 28);
-    const noteBoxH = noteLines.length * 13 + 24;
+    const lines = wrap(inv.notes, fR, 9, CW - 28);
+    const boxH = lines.length * 13 + 24;
 
-    page.drawRectangle({
-      x: MARGIN_LEFT,
-      y: y - noteBoxH,
-      width: CONTENT_WIDTH,
-      height: noteBoxH,
-      color: COLORS.notesBox,
-      borderColor: rgb(0.95, 0.93, 0.80),
-      borderWidth: 0.5,
-    });
+    pg.drawRectangle({ x: ML, y: y - boxH, width: CW, height: boxH, color: C.notesBg, borderColor: rgb(0.95, 0.93, 0.80), borderWidth: 0.5 });
 
-    let noteY = y - noteBoxH + 12;
-    drawText(page, 'Bemærkninger:', {
-      x: MARGIN_LEFT + 14,
-      y: noteY,
-      font: fontBold,
-      size: 9,
-      color: COLORS.text,
-    });
-    noteY -= 13;
-    for (const line of noteLines) {
-      drawText(page, line, {
-        x: MARGIN_LEFT + 14,
-        y: noteY,
-        font: fontRegular,
-        size: 9,
-        color: COLORS.text,
-      });
-      noteY -= 13;
-    }
+    let ny = y - boxH + 12;
+    txt(pg, 'Bemærkninger:', ML + 14, ny, fB, 9, C.text); ny -= 13;
+    for (const l of lines) { txt(pg, l, ML + 14, ny, fR, 9, C.text); ny -= 13; }
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // ── FOOTER ──
-  // ════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════
+  //  FOOTER
+  // ══════════════════════════════════════════════════════════
 
-  drawFooter(page, fontBold, fontRegular, fontItalic, pdfDoc.getPageCount());
+  // Teal accent line
+  pg.drawLine({ start: { x: ML, y: MB + 16 }, end: { x: RX, y: MB + 16 }, thickness: 1, color: C.teal });
 
-  // ── Save ──
-  return pdfDoc.save();
+  txt(pg, 'AlphaFlow Regnskab & Bogføring', PW / 2, MB + 6, fB, 8, C.teal, 'center');
+
+  const genStr = `Genereret: ${new Date().toLocaleDateString('da-DK', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`;
+  txt(pg, genStr, PW / 2, MB - 6, fR, 7, C.textMid, 'center');
+
+  return doc.save();
 }
 
-// ── Helper Functions ─────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-function drawText(
-  page: PDFPage,
-  text: string,
-  options: {
-    x: number;
-    y: number;
-    font: PDFFont;
-    size: number;
-    color: typeof COLORS.white;
-    align?: 'left' | 'right' | 'center';
-    maxWidth?: number;
-  }
-) {
-  const { x, y, font, size, color, align = 'left', maxWidth } = options;
-  const textWidth = font.widthOfTextAtSize(text, size);
-
-  if (maxWidth && textWidth > maxWidth) {
-    let truncated = text;
-    while (font.widthOfTextAtSize(truncated + '...', size) > maxWidth && truncated.length > 0) {
-      truncated = truncated.slice(0, -1);
-    }
-    if (truncated.length > 0) {
-      const truncatedText = truncated + '...';
-      const tWidth = font.widthOfTextAtSize(truncatedText, size);
-      let drawX = x;
-      if (align === 'right') drawX = x - tWidth;
-      else if (align === 'center') drawX = x - tWidth / 2;
-      page.drawText(truncatedText, { x: drawX, y, font, size, color });
+function txt(pg: PDFPage, text: string, x: number, y: number, font: PDFFont, size: number, color: typeof C.white, align?: 'left' | 'right' | 'center', maxW?: number) {
+  const w = font.widthOfTextAtSize(text, size);
+  if (maxW && w > maxW) {
+    let t = text;
+    while (font.widthOfTextAtSize(t + '...', size) > maxW && t.length > 0) t = t.slice(0, -1);
+    if (t.length > 0) {
+      const s = t + '...';
+      const sw = font.widthOfTextAtSize(s, size);
+      pg.drawText(s, { x: align === 'right' ? x - sw : align === 'center' ? x - sw / 2 : x, y, font, size, color });
     }
     return;
   }
-
-  let drawX = x;
-  if (align === 'right') drawX = x - textWidth;
-  else if (align === 'center') drawX = x - textWidth / 2;
-
-  page.drawText(text, { x: drawX, y, font, size, color });
+  pg.drawText(text, { x: align === 'right' ? x - w : align === 'center' ? x - w / 2 : x, y, font, size, color });
 }
 
-function drawWrappedText(
-  page: PDFPage,
-  text: string,
-  options: {
-    x: number;
-    y: number;
-    font: PDFFont;
-    size: number;
-    color: typeof COLORS.white;
-    maxWidth?: number;
-    lineHeight: number;
+function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
+  const out: string[] = [];
+  for (const raw of text.split('\n')) {
+    if (!raw.trim()) { out.push(''); continue; }
+    let cur = '';
+    for (const word of raw.split(' ')) {
+      const test = cur ? `${cur} ${word}` : word;
+      if (font.widthOfTextAtSize(test, size) > maxW && cur) { out.push(cur); cur = word; }
+      else cur = test;
+    }
+    if (cur) out.push(cur);
   }
-) {
-  const { x, y, font, size, color, maxWidth, lineHeight } = options;
-  const lines = text.split('\n');
-
-  let currentY = y;
-  for (const line of lines) {
-    if (!line.trim()) {
-      currentY -= lineHeight;
-      continue;
-    }
-
-    const words = line.split(' ');
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const testWidth = font.widthOfTextAtSize(testLine, size);
-
-      if (maxWidth && testWidth > maxWidth && currentLine) {
-        page.drawText(currentLine, { x, y: currentY, font, size, color });
-        currentY -= lineHeight;
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-
-    if (currentLine) {
-      page.drawText(currentLine, { x, y: currentY, font, size, color });
-      currentY -= lineHeight;
-    }
-  }
+  return out;
 }
 
-/**
- * Word-wrap text into lines that fit within maxWidth.
- */
-function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
-  const rawLines = text.split('\n');
-  const result: string[] = [];
-
-  for (const rawLine of rawLines) {
-    if (!rawLine.trim()) {
-      result.push('');
-      continue;
-    }
-    const words = rawLine.split(' ');
-    let currentLine = '';
-
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      if (font.widthOfTextAtSize(testLine, size) > maxWidth && currentLine) {
-        result.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) result.push(currentLine);
-  }
-
-  return result;
+function parseItems(li: any): InvoiceLineItem[] {
+  if (!Array.isArray(li)) return [];
+  return li.map((i: any) => ({
+    description: i.description || '',
+    quantity: Number(i.quantity) || 0,
+    unitPrice: Number(i.unitPrice) || 0,
+    vatPercent: Number(i.vatPercent) || 0,
+  }));
 }
 
-function drawFooter(page: PDFPage, fontBold: PDFFont, fontRegular: PDFFont, fontItalic: PDFFont, _pageNum: number) {
-  const footerY = MARGIN_BOTTOM - 10;
-
-  // Thin teal line above footer
-  page.drawLine({
-    start: { x: MARGIN_LEFT, y: footerY + 22 },
-    end: { x: PAGE_WIDTH - MARGIN_RIGHT, y: footerY + 22 },
-    thickness: 1,
-    color: COLORS.primary,
-  });
-
-  // Branding
-  drawText(page, 'AlphaFlow Regnskab & Bogføring', {
-    x: PAGE_WIDTH / 2,
-    y: footerY + 10,
-    font: fontBold,
-    size: 8,
-    color: COLORS.primary,
-    align: 'center',
-  });
-
-  // Generated timestamp
-  const generatedStr = `Genereret: ${new Date().toLocaleDateString('da-DK', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`;
-  drawText(page, generatedStr, {
-    x: PAGE_WIDTH / 2,
-    y: footerY - 2,
-    font: fontRegular,
-    size: 7,
-    color: COLORS.textLight,
-    align: 'center',
-  });
+function fmtNum(n: number, decimals?: number) {
+  return formatNumberForPDF(n, decimals);
 }
 
-function parseLineItems(lineItems: any): InvoiceLineItem[] {
-  if (Array.isArray(lineItems)) {
-    return lineItems.map((item) => ({
-      description: item.description || '',
-      quantity: Number(item.quantity) || 0,
-      unitPrice: Number(item.unitPrice) || 0,
-      vatPercent: Number(item.vatPercent) || 0,
-    }));
-  }
-  return [];
+function fmtDate(d: Date | string): string {
+  const v = typeof d === 'string' ? new Date(d) : d;
+  return v.toLocaleDateString('da-DK', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('da-DK', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-}
-
-function mapStatus(status: string): string {
-  const map: Record<string, string> = {
-    DRAFT: 'Kladd',
-    SENT: 'Sendt',
-    PAID: 'Betalt',
-    CANCELLED: 'Annulleret',
-  };
-  return map[status] || status;
+function mapStatus(s: string): string {
+  return { DRAFT: 'Kladd', SENT: 'Sendt', PAID: 'Betalt', CANCELLED: 'Annulleret' }[s] || s;
 }
