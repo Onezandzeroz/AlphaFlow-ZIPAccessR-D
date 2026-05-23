@@ -18,18 +18,20 @@ export interface WidgetPosition {
 }
 
 // ─── Default column assignments ───────────────────────────────
-// Column 0 (left):   activity-feed
-// Column 1 (middle):  vat-output (top), kpi-revenue (bottom)
-// Column 2 (right):   vat-input (top), kpi-operating-result (bottom)
+// Column 0 (left):   activity-feed, active-accounts, invoice-overview
+// Column 1 (middle):  vat-output, kpi-revenue
+// Column 2 (right):   vat-input, cash-position
 
 export const COLUMN_COUNT = 3;
 
 export const DEFAULT_COLUMNS: Record<string, number> = {
   'activity-feed':        0,
+  'active-accounts':      0,
+  'invoice-overview':     0,
   'vat-output':           1,
-  'vat-input':            2,
   'kpi-revenue':          1,
-  'kpi-operating-result': 2,
+  'vat-input':            2,
+  'cash-position':        2,
 };
 
 export function clampColumn(col: number): number {
