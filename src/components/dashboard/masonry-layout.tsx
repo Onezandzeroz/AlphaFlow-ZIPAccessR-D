@@ -107,7 +107,7 @@ export function MasonryLayout({
   // Keep callbacks in refs to avoid stale closures in window event listeners
   const onPositionChangeRef = useRef(onPositionChange);
   const itemsRef = useRef(items);
-  const columnsRef = useRef<typeof columns>(columns);
+  const columnsRef = useRef<MasonryItem[][]>([]);
 
   useEffect(() => { onPositionChangeRef.current = onPositionChange; }, [onPositionChange]);
   useEffect(() => { itemsRef.current = items; }, [items]);
@@ -152,10 +152,6 @@ export function MasonryLayout({
     return 0;
   }, [positions]);
 
-  // Keep getColumn in ref for use in pointer event handlers
-  const getColumnRef = useRef(getColumn);
-  useEffect(() => { getColumnRef.current = getColumn; }, [getColumn]);
-
   // ── Distribute items into COLUMN_COUNT columns (preserving global order) ─
   const columns = useMemo(() => {
     const cols: MasonryItem[][] = Array.from({ length: COLUMN_COUNT }, () => []);
@@ -167,6 +163,10 @@ export function MasonryLayout({
 
   // Keep columns in ref for use in pointer event handlers
   useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  // Keep getColumn in ref for use in pointer event handlers
+  const getColumnRef = useRef(getColumn);
+  useEffect(() => { getColumnRef.current = getColumn; }, [getColumn]);
 
   // ── Visual columns: add drop placeholder during drag ────────
   const visualColumns = useMemo(() => {
