@@ -254,25 +254,28 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
   // ─── Widget reorder handler ──────────────────────────────────
   const setWidgetOrderDirect = useDashboardWidgets((s) => s.setWidgetOrderDirect);
+  const setWidgetPosition = useDashboardWidgets((s) => s.setWidgetPosition);
   const clearWidgetPositions = useDashboardWidgets((s) => s.clearWidgetPositions);
+  const widgetPositions = useDashboardWidgets((s) => s.widgetPositions);
 
+  // Grid-based position change (from CSS Grid drag-and-drop)
+  const handlePositionChange = useCallback((widgetId: string, col: number, row: number) => {
+    setWidgetPosition(widgetId, { x: col, y: row, width: 0 });
+  }, [setWidgetPosition]);
+
+  // Legacy reorder handler (kept for widget-layout-editor compat)
   const handleReorder = useCallback((draggedId: string, targetIndex: number) => {
     const currentOrder = useDashboardWidgets.getState().widgetOrder;
     const visibility = useDashboardWidgets.getState().visibilityMap;
 
-    // targetIndex is relative to visible widgets only.
-    // Map it back to the full order index by finding the visible widget
-    // at that position and inserting before/after it.
     const visibleWidgets = currentOrder.filter(id => visibility[id] !== false);
     const insertAfterVisibleId = targetIndex < visibleWidgets.length
       ? visibleWidgets[targetIndex]
       : null;
 
-    // Remove dragged item from the full order
     const filtered = currentOrder.filter(id => id !== draggedId);
 
     if (insertAfterVisibleId) {
-      // Find the index of the reference widget in the full order
       const refIdx = filtered.indexOf(insertAfterVisibleId);
       if (refIdx >= 0) {
         filtered.splice(refIdx, 0, draggedId);
@@ -280,7 +283,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
         filtered.push(draggedId);
       }
     } else {
-      // Append at the end
       filtered.push(draggedId);
     }
 
@@ -1473,6 +1475,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       <MasonryLayout
           items={orderedVisibleWidgets.map(id => ({ id, size: getWidgetSize(id) }))}
           isDragMode={isDragMode}
+          positions={widgetPositions}
+          onPositionChange={handlePositionChange}
           onReorder={handleReorder}
           className="mt-4 -mx-3 lg:-mx-6 w-[calc(100%+1.5rem)] lg:w-[calc(100%+3rem)]"
         >
