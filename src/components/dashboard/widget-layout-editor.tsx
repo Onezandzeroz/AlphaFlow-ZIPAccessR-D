@@ -126,6 +126,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
   const resetWidgets = useDashboardWidgets((s) => s.resetWidgets);
   const isAppOwner = useDashboardWidgets((s) => s.isAppOwner);
   const setWidgetOrderDirect = useDashboardWidgets((s) => s.setWidgetOrderDirect);
+  const clearWidgetPositions = useDashboardWidgets((s) => s.clearWidgetPositions);
   const isWidgetVisible = (id: string) => visibilityMap[id] ?? true;
 
   // Drag state
@@ -167,12 +168,15 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
       currentOrder.splice(sourceIdx, 1);
       currentOrder.splice(targetIdx, 0, sourceId);
       setWidgetOrderDirect(currentOrder);
+      // Clear saved positions so the skyline algorithm recalculates
+      // layout based on the new order
+      clearWidgetPositions();
     }
 
     setDragId(null);
     setDropTargetId(null);
     dragOverRef.current = null;
-  }, [widgetOrder, setWidgetOrderDirect]);
+  }, [widgetOrder, setWidgetOrderDirect, clearWidgetPositions]);
 
   const handleDragEnd = useCallback(() => {
     setDragId(null);
@@ -317,7 +321,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                       {/* Visibility toggle */}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleWidget(widget.id); }}
+                        onClick={(e) => { e.stopPropagation(); toggleWidget(widget.id); clearWidgetPositions(); }}
                         className={`
                           shrink-0 rounded-md flex items-center justify-center transition-all
                           ${isThird || isQuarter ? 'absolute top-1.5 right-1.5 h-5 w-5' : 'h-7 w-7'}

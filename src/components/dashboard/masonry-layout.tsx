@@ -36,8 +36,11 @@ const SIZE_WIDTH_FRACTION: Record<WidgetSize, number> = {
 
 const SNAP_THRESHOLD = 10; // px — snap when within this distance
 const GAP = 16; // consistent margin between widgets
+const PADDING = 16; // margin from container edges (all sides)
 
 // ─── Skyline bin-packing algorithm ────────────────────────────────
+// Works in a virtual coordinate system (0,0) → (availableWidth, ∞)
+// The final positions are offset by PADDING to create edge margins.
 
 interface SkylineSegment {
   x: number;
@@ -48,7 +51,7 @@ interface SkylineSegment {
 function placeRectangle(
   skyline: SkylineSegment[],
   rectWidth: number,
-  containerWidth: number,
+  availableWidth: number,
   gap: number,
 ): { x: number; y: number } {
   if (skyline.length === 0) {
@@ -60,7 +63,7 @@ function placeRectangle(
 
   for (let i = 0; i < skyline.length; i++) {
     const seg = skyline[i];
-    if (seg.x + rectWidth > containerWidth + 0.5) continue;
+    if (seg.x + rectWidth > availableWidth + 0.5) continue;
     const yAtX = getYAtX(skyline, seg.x, seg.x + rectWidth);
     if (yAtX < bestY) {
       bestY = yAtX;
@@ -71,7 +74,7 @@ function placeRectangle(
   for (let i = 0; i < skyline.length; i++) {
     const seg = skyline[i];
     const tryX = seg.x + seg.width + gap;
-    if (tryX + rectWidth > containerWidth + 0.5) continue;
+    if (tryX + rectWidth > availableWidth + 0.5) continue;
     const yAtX = getYAtX(skyline, tryX, tryX + rectWidth);
     if (yAtX < bestY) {
       bestY = yAtX;
@@ -242,18 +245,21 @@ function calculateSnapPoints(
     }
   }
 
-  // ── Container edge snaps ──
-  if (Math.abs(dLeft) < SNAP_THRESHOLD) {
-    snappedX = 0;
-    snapLines.push({ orientation: 'vertical', position: 0, start: dTop, end: dBottom });
+  // ── Container edge snaps (with PADDING offset) ──
+  // Left edge → snap to PADDING
+  if (Math.abs(dLeft - PADDING) < SNAP_THRESHOLD) {
+    snappedX = PADDING;
+    snapLines.push({ orientation: 'vertical', position: PADDING, start: dTop, end: dBottom });
   }
-  if (Math.abs(dRight - containerWidth) < SNAP_THRESHOLD) {
-    snappedX = containerWidth - draggedRect.width;
-    snapLines.push({ orientation: 'vertical', position: containerWidth, start: dTop, end: dBottom });
+  // Right edge → snap so right edge = containerWidth - PADDING
+  if (Math.abs(dRight - (containerWidth - PADDING)) < SNAP_THRESHOLD) {
+    snappedX = containerWidth - PADDING - draggedRect.width;
+    snapLines.push({ orientation: 'vertical', position: containerWidth - PADDING, start: dTop, end: dBottom });
   }
-  if (Math.abs(dTop) < SNAP_THRESHOLD) {
-    snappedY = 0;
-    snapLines.push({ orientation: 'horizontal', position: 0, start: dLeft, end: dRight });
+  // Top edge → snap to PADDING
+  if (Math.abs(dTop - PADDING) < SNAP_THRESHOLD) {
+    snappedY = PADDING;
+    snapLines.push({ orientation: 'horizontal', position: PADDING, start: dLeft, end: dRight });
   }
 
   // Deduplicate snap lines (keep unique positions)
@@ -269,11 +275,16 @@ function calculateSnapPoints(
 }
 
 // ─── Width calculation helper ─────────────────────────────────────
+// Computes widget width within the available area (between PADDING edges)
 
 function getItemWidth(size: WidgetSize, containerWidth: number): number {
+  const availableWidth = containerWidth - 2 * PADDING;
   const fraction = SIZE_WIDTH_FRACTION[size] ?? 0.5;
-  if (size === 'full') return containerWidth;
-  return Math.floor(containerWidth * fraction - GAP * (1 - fraction));
+  if (size === 'full') return availableWidth;
+  // For N items per row (N = 1/fraction), there are (N-1) gaps between them
+  const itemsPerRow = Math.round(1 / fraction);
+  const totalGaps = (itemsPerRow - 1) * GAP;
+  return Math.floor((availableWidth - totalGaps) / itemsPerRow);
 }
 
 // ─── SnapCanvas Component ─────────────────────────────────────────
@@ -389,41 +400,39 @@ export function MasonryLayout({
   const itemsKey = effectiveItems.map(i => `${i.id}:${i.size}`).join(',');
 
   // Calculate initial positions using skyline algorithm
-  // This runs when container width changes or items change
-  // and there are no saved positions for a widget
+  // Works in virtual coords (0,0)→(availableWidth,∞), then offsets by PADDING
   const initialPositions = useMemo(() => {
     if (containerWidth === 0) return {};
 
+    const availableWidth = containerWidth - 2 * PADDING;
     const result: Record<string, WidgetPosition> = {};
-    let skyline: SkylineSegment[] = [{ x: 0, y: 0, width: containerWidth }];
+    let skyline: SkylineSegment[] = [{ x: 0, y: 0, width: availableWidth }];
 
     for (const item of effectiveItems) {
-      // If we have a saved position with valid width, use it (scaled to current container)
+      const width = getItemWidth(item.size, containerWidth);
+
+      // If we have a saved position with valid data, use it (offset by PADDING)
       if (savedPositions && savedPositions[item.id]) {
         const saved = savedPositions[item.id];
-        // Scale x position proportionally if container width changed
-        const scaledX = Math.round(saved.x);
-        const width = getItemWidth(item.size, containerWidth);
-        result[item.id] = { x: scaledX, y: saved.y, width };
+        result[item.id] = { x: saved.x, y: saved.y, width };
       } else {
-        // Calculate using skyline
-        const width = getItemWidth(item.size, containerWidth);
+        // Calculate using skyline in virtual coords, then offset by PADDING
         const height = itemHeights[item.id] || 200;
-        const pos = placeRectangle(skyline, width, containerWidth, GAP);
-        result[item.id] = { x: pos.x, y: pos.y, width };
+        const pos = placeRectangle(skyline, width, availableWidth, GAP);
+        result[item.id] = { x: pos.x + PADDING, y: pos.y + PADDING, width };
         skyline = addRectangleToSkyline(skyline, pos.x, pos.y, width, height);
       }
     }
 
     return result;
-  }, [containerWidth, itemsKey, savedPositions, itemHeights]);
+  }, [containerWidth, itemsKey, savedPositions, itemHeights, effectiveItems]);
 
   // Merge initial positions with any drag-in-progress overrides
   useEffect(() => {
     setPositions(initialPositions);
   }, [initialPositions]);
 
-  // Total container height
+  // Total container height (includes PADDING at top and bottom)
   const totalHeight = useMemo(() => {
     let maxBottom = 0;
     for (const item of effectiveItems) {
@@ -433,7 +442,8 @@ export function MasonryLayout({
         if (bottom > maxBottom) maxBottom = bottom;
       }
     }
-    return maxBottom;
+    // Add bottom PADDING
+    return maxBottom > 0 ? maxBottom + PADDING : 0;
   }, [positions, effectiveItems, itemHeights]);
 
   // ── Drag handlers ──────────────────────────────────────────────
