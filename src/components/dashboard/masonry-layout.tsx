@@ -12,158 +12,45 @@ export interface MasonryItem {
 }
 
 export interface WidgetPosition {
-  x: number;  // grid column (0-based)
-  y: number;  // grid row (0-based)
-  width: number; // kept for store backwards-compat (unused)
+  x: number;     // column index (0, 1, or 2)
+  y: number;     // unused — kept for store backwards-compat
+  width: number; // unused — kept for store backwards-compat
 }
 
-interface GridPos {
-  col: number;
-  row: number;
-}
+// ─── Default column assignments ───────────────────────────────
+// Column 0 (left):   activity-feed
+// Column 1 (middle):  vat-output (top), kpi-revenue (bottom)
+// Column 2 (right):   vat-input (top), kpi-operating-result (bottom)
 
-// ─── Grid constants ──────────────────────────────────────────────
+const COLUMN_COUNT = 3;
 
-const TOTAL_COLS = 12;
-const GAP_PX = 12; // gap-3
-
-const LG_SPAN: Record<WidgetSize, number> = {
-  full: 12,
-  half: 6,
-  third: 4,
-  quarter: 3,
+const DEFAULT_COLUMNS: Record<string, number> = {
+  'activity-feed':        0,
+  'vat-output':           1,
+  'vat-input':            2,
+  'kpi-revenue':          1,
+  'kpi-operating-result': 2,
 };
 
-// ─── Default grid layout for the 5 default widgets ─────────────
-// Row 1: activity-feed (left half), vat-output + vat-input (right half)
-// Row 2: kpi-revenue + kpi-operating-result (right half, under VAT)
-const DEFAULT_GRID_POSITIONS: Record<string, GridPos> = {
-  'activity-feed':        { col: 0, row: 0 },
-  'vat-output':           { col: 6, row: 0 },
-  'vat-input':            { col: 9, row: 0 },
-  'kpi-revenue':          { col: 6, row: 1 },
-  'kpi-operating-result': { col: 9, row: 1 },
-};
-
-// ─── Responsive grid span Tailwind classes ─────────────────────
-// Returns complete class strings so Tailwind JIT can detect them.
-
-function getGridSpanClasses(size: WidgetSize): string {
-  switch (size) {
-    case 'full':    return 'col-span-1 sm:col-span-4 lg:col-span-12';
-    case 'half':    return 'col-span-1 sm:col-span-2 lg:col-span-6';
-    case 'third':   return 'col-span-1 sm:col-span-2 lg:col-span-4';
-    case 'quarter': return 'col-span-1 sm:col-span-1 lg:col-span-3';
-    default:        return 'col-span-1 sm:col-span-2 lg:col-span-6';
-  }
+function clampColumn(col: number): number {
+  return Math.max(0, Math.min(col, COLUMN_COUNT - 1));
 }
 
-// ─── Grid occupation helpers ───────────────────────────────────
-
-function fitsAt(occupied: Set<string>, col: number, row: number, span: number): boolean {
-  for (let c = col; c < col + span && c < TOTAL_COLS; c++) {
-    if (occupied.has(`${c},${row}`)) return false;
-  }
-  return true;
-}
-
-function markOccupied(occupied: Set<string>, col: number, row: number, span: number): void {
-  for (let c = col; c < col + span && c < TOTAL_COLS; c++) {
-    occupied.add(`${c},${row}`);
-  }
-}
-
-/** Find the nearest valid grid position for a widget, starting from (targetCol, targetRow). */
-function findValidPosition(
-  occupied: Set<string>,
-  targetCol: number,
-  targetRow: number,
-  span: number,
-): GridPos {
-  const maxCol = Math.max(0, TOTAL_COLS - span);
-  let col = Math.min(Math.max(0, targetCol), maxCol);
-  let row = Math.max(0, targetRow);
-
-  // Try exact target
-  if (fitsAt(occupied, col, row, span)) return { col, row };
-
-  // Scan same row left/right from target column
-  for (let offset = 1; offset <= maxCol; offset++) {
-    if (col - offset >= 0 && fitsAt(occupied, col - offset, row, span)) {
-      return { col: col - offset, row };
-    }
-    if (col + offset <= maxCol && fitsAt(occupied, col + offset, row, span)) {
-      return { col: col + offset, row };
-    }
-  }
-
-  // Try next rows at same column, then scanning left
-  for (let r = row + 1; r < 100; r++) {
-    if (fitsAt(occupied, col, r, span)) return { col, row: r };
-    for (let offset = 1; offset <= col; offset++) {
-      if (fitsAt(occupied, col - offset, r, span)) return { col: col - offset, row: r };
-    }
-    // Also try right
-    for (let offset = 1; offset <= maxCol - col; offset++) {
-      if (fitsAt(occupied, col + offset, r, span)) return { col: col + offset, row: r };
-    }
-  }
-
-  return { col: 0, row };
-}
-
-/**
- * Compute grid positions for ALL items.
- * Priority: saved position > default template > auto-flow.
- */
-function computeAllPositions(
-  items: MasonryItem[],
-  savedPositions: Record<string, WidgetPosition>,
-): Record<string, GridPos> {
-  const result: Record<string, GridPos> = {};
-  const occupied = new Set<string>();
-  const positioned = new Set<string>();
-
-  // Pass 1 — explicit positions (saved + default template)
-  for (const item of items) {
-    const saved = savedPositions[item.id];
-    if (saved) {
-      result[item.id] = { col: saved.x, row: saved.y };
-      positioned.add(item.id);
-      markOccupied(occupied, saved.x, saved.y, LG_SPAN[item.size]);
-    } else if (DEFAULT_GRID_POSITIONS[item.id]) {
-      const def = DEFAULT_GRID_POSITIONS[item.id];
-      result[item.id] = { ...def };
-      positioned.add(item.id);
-      markOccupied(occupied, def.col, def.row, LG_SPAN[item.size]);
-    }
-  }
-
-  // Pass 2 — auto-place remaining items (fill gaps top-to-bottom, left-to-right)
-  for (const item of items) {
-    if (positioned.has(item.id)) continue;
-    const span = LG_SPAN[item.size];
-    const pos = findValidPosition(occupied, 0, 0, span);
-    result[item.id] = pos;
-    markOccupied(occupied, pos.col, pos.row, span);
-  }
-
-  return result;
-}
-
-// ─── MasonryLayout Component ──────────────────────────────────
+// ─── MasonryLayout ────────────────────────────────────────────
 //
-// CSS Grid layout (12 cols on lg, 4 on sm, 1 on xs) with free-form
-// drag-and-drop positioning.
+// Column-based masonry layout with free-form drag-and-drop.
 //
-// Features:
-//   • Default layout places the 5 standard widgets in the correct
-//     arrangement (activity left, VAT right, KPI under VAT).
-//   • Drag a widget to any grid cell — a dashed preview shows where
-//     it will land.
-//   • Collision detection prevents overlap.
-//   • Positions persist across sessions.
-//   • On mobile/sm, positions are ignored (auto-flow).
+// Layout model:
+//   • 3 logical columns on lg, 2 on sm, 1 on xs
+//   • Widgets stack vertically within each column (flex-col + gap-3)
+//   • NO rows — each column is independent, no cross-column alignment
+//   • No empty gaps — every pixel is filled by a widget or padding
+//
+// Drag-and-drop (lg only):
+//   • Drag a widget to any column — snaps to column boundary
+//   • Within a column, snaps to widget edges (+ padding)
+//   • Drop preview shows exactly where the widget will land
+//   • Column assignments persist across sessions
 
 interface MasonryLayoutProps {
   items: MasonryItem[];
@@ -172,7 +59,7 @@ interface MasonryLayoutProps {
   positions?: Record<string, WidgetPosition>;
   className?: string;
   onReorder?: (draggedId: string, targetIndex: number) => void; // kept for compat
-  onPositionChange?: (widgetId: string, col: number, row: number) => void;
+  onPositionChange?: (widgetId: string, col: number, insertAfterId: string | null) => void;
 }
 
 export function MasonryLayout({
@@ -183,11 +70,16 @@ export function MasonryLayout({
   className = '',
   onPositionChange,
 }: MasonryLayoutProps) {
+  // ── Drag state ──────────────────────────────────────────────
   const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dropPreview, setDropPreview] = useState<{ col: number; row: number; span: number } | null>(null);
+  const [dropPreview, setDropPreview] = useState<{
+    col: number;
+    insertAfterId: string | null;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Track screen size — explicit positions only apply on lg+
+  // ── Responsive breakpoint (column drag only on lg+) ──────────
   const isLg = useSyncExternalStore(
     (cb) => {
       const mql = window.matchMedia('(min-width: 1024px)');
@@ -197,30 +89,7 @@ export function MasonryLayout({
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
 
-  // Compute effective grid positions for all items
-  const effectivePositions = useMemo(
-    () => computeAllPositions(items, positions),
-    [items, positions],
-  );
-
-  // Build occupied set WITHOUT the dragged item (for collision detection)
-  const occupiedWithoutDrag = useMemo(() => {
-    if (!draggedId) return null;
-    const without = items.filter(i => i.id !== draggedId);
-    const posWithout: Record<string, WidgetPosition> = {};
-    for (const key of Object.keys(positions)) {
-      if (key !== draggedId) posWithout[key] = positions[key];
-    }
-    const pos = computeAllPositions(without, posWithout);
-    const set = new Set<string>();
-    for (const item of without) {
-      const p = pos[item.id];
-      if (p) markOccupied(set, p.col, p.row, LG_SPAN[item.size]);
-    }
-    return set;
-  }, [draggedId, items, positions]);
-
-  // Build child content map from children with data-widget-id
+  // ── Child content map (from data-widget-id children) ────────
   const childContentMap = useMemo(() => {
     const map = new Map<string, ReactNode>();
     if (!children) return map;
@@ -235,6 +104,49 @@ export function MasonryLayout({
     });
     return map;
   }, [children]);
+
+  // ── Get column assignment for a widget ──────────────────────
+  const getColumn = useCallback((id: string): number => {
+    if (positions[id] !== undefined) return clampColumn(positions[id].x);
+    if (DEFAULT_COLUMNS[id] !== undefined) return DEFAULT_COLUMNS[id];
+    return 0;
+  }, [positions]);
+
+  // ── Distribute items into 3 columns (preserving global order) ─
+  const columns = useMemo(() => {
+    const cols: MasonryItem[][] = Array.from({ length: COLUMN_COUNT }, () => []);
+    for (const item of items) {
+      cols[getColumn(item.id)].push(item);
+    }
+    return cols;
+  }, [items, getColumn]);
+
+  // ── Visual columns: add drop placeholder during drag ────────
+  const visualColumns = useMemo(() => {
+    const result = columns.map(col => [...col]);
+    if (!draggedId || !dropPreview) return result;
+
+    const { col: targetCol, insertAfterId } = dropPreview;
+    const targetWidgets = result[targetCol];
+    let insertIdx: number;
+
+    if (insertAfterId !== null) {
+      const afterIdx = targetWidgets.findIndex(w => w.id === insertAfterId);
+      insertIdx = afterIdx >= 0 ? afterIdx + 1 : 0;
+    } else {
+      insertIdx = 0;
+    }
+
+    targetWidgets.splice(insertIdx, 0, {
+      id: '__drop_placeholder__',
+      size: 'half',
+    } as MasonryItem);
+
+    return result;
+  }, [columns, draggedId, dropPreview]);
+
+  // ── Active drop column (for visual highlight) ───────────────
+  const activeDropCol = dropPreview?.col ?? -1;
 
   // ─── Drag-and-Drop handlers ─────────────────────────────────
 
@@ -257,146 +169,127 @@ export function MasonryLayout({
     setDropPreview(null);
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleColumnDragOver = useCallback((e: React.DragEvent, colIndex: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
+    if (!draggedId || !isLg) return;
 
-    if (!draggedId || !isLg || !containerRef.current || !occupiedWithoutDrag) return;
+    const colEl = columnRefs.current[colIndex];
+    if (!colEl) return;
 
-    const container = containerRef.current;
-    const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Widgets in this column (excluding the dragged one)
+    const colWidgets = columns[colIndex].filter(w => w.id !== draggedId);
+    let insertAfterId: string | null = null;
 
-    // Compute target column from X position
-    const style = getComputedStyle(container);
-    const padLeft = parseFloat(style.paddingLeft) || 0;
-    const padRight = parseFloat(style.paddingRight) || 0;
-    const gridWidth = rect.width - padLeft - padRight;
-    const colWidth = (gridWidth + GAP_PX) / TOTAL_COLS;
-    let col = Math.floor((x - padLeft) / colWidth);
+    if (colWidgets.length === 0) {
+      // Empty column — find last widget before this column in global order
+      for (const item of items) {
+        if (item.id === draggedId) continue;
+        if (getColumn(item.id) === colIndex) break;
+        insertAfterId = item.id;
+      }
+    } else {
+      // Snap to widget edges: find which widget the cursor is nearest to
+      for (const widget of colWidgets) {
+        const el = colEl.querySelector(`[data-widget-id="${widget.id}"]`);
+        if (!el) continue;
+        const rect = (el as HTMLElement).getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
 
-    const draggedItem = items.find(i => i.id === draggedId);
-    if (!draggedItem) return;
-    const span = LG_SPAN[draggedItem.size];
-    col = Math.max(0, Math.min(col, TOTAL_COLS - span));
+        if (e.clientY < midY) break; // Cursor above midpoint → insert before this widget
+        insertAfterId = widget.id;
+      }
 
-    // Compute target row from Y position.
-    // Look at actual widget bounding boxes to detect row boundaries.
-    const widgetEls = container.querySelectorAll('[data-widget-id]');
-    const rowTops = new Set<number>();
-    rowTops.add(0);
-
-    widgetEls.forEach(el => {
-      if ((el as HTMLElement).dataset.widgetId === draggedId) return;
-      const elRect = (el as HTMLElement).getBoundingClientRect();
-      const top = Math.round(elRect.top - rect.top);
-      if (top > 0) rowTops.add(top);
-    });
-
-    const sortedTops = [...rowTops].sort((a, b) => a - b);
-    let row = sortedTops.length - 1;
-    for (let i = sortedTops.length - 1; i >= 0; i--) {
-      if (y >= sortedTops[i]) {
-        row = i;
-        break;
+      // Cursor above first widget → find widget before this column in global order
+      if (insertAfterId === null) {
+        for (const item of items) {
+          if (item.id === draggedId) continue;
+          if (getColumn(item.id) === colIndex) break;
+          insertAfterId = item.id;
+        }
       }
     }
 
-    // Find nearest valid position
-    const validPos = findValidPosition(occupiedWithoutDrag, col, row, span);
-
     setDropPreview(prev => {
-      if (prev && prev.col === validPos.col && prev.row === validPos.row) return prev;
-      return { col: validPos.col, row: validPos.row, span };
+      if (prev && prev.col === colIndex && prev.insertAfterId === insertAfterId) return prev;
+      return { col: colIndex, insertAfterId };
     });
-  }, [draggedId, items, occupiedWithoutDrag, isLg]);
+  }, [draggedId, columns, items, getColumn, isLg]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    if (!draggedId || !dropPreview) {
-      cleanup();
-      return;
-    }
-
+    if (!draggedId || !dropPreview) { cleanup(); return; }
     if (onPositionChange) {
-      onPositionChange(draggedId, dropPreview.col, dropPreview.row);
+      onPositionChange(draggedId, dropPreview.col, dropPreview.insertAfterId);
     }
     cleanup();
   }, [draggedId, dropPreview, onPositionChange, cleanup]);
 
-  const handleDragEnd = useCallback(() => {
-    cleanup();
-  }, [cleanup]);
+  const handleDragEnd = useCallback(() => { cleanup(); }, [cleanup]);
 
-  // ─── Render ─────────────────────────────────────────────────
+  // ─── Render ────────────────────────────────────────────────
 
   return (
     <div
       ref={containerRef}
-      className={`grid grid-cols-1 sm:grid-cols-4 lg:grid-cols-12 gap-3 p-3 sm:p-4 ${className}`}
-      style={{ gridAutoFlow: 'dense' }}
-      onDragOver={isDragMode ? handleDragOver : undefined}
-      onDrop={isDragMode ? handleDrop : undefined}
+      className={`flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
     >
-      {items.map(item => {
-        const isDragging = draggedId === item.id;
-        const content = childContentMap.get(item.id) ?? item.element;
-        const pos = effectivePositions[item.id];
-        const span = LG_SPAN[item.size];
-
-        // Explicit position (only applied on lg+ screens)
-        const positionStyle: React.CSSProperties | undefined =
-          pos && isLg
-            ? { gridColumn: `${pos.col + 1} / span ${span}`, gridRow: `${pos.row + 1}` }
-            : undefined;
-
-        return (
-          <div
-            key={item.id}
-            data-widget-id={item.id}
-            draggable={isDragMode}
-            onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
-            onDragEnd={isDragMode ? handleDragEnd : undefined}
-            className={`
-              ${getGridSpanClasses(item.size)}
-              ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
-              ${isDragging ? 'opacity-40 scale-[0.97] pointer-events-none' : 'transition-all duration-200 ease-out'}
-              relative
-            `}
-            style={positionStyle}
-          >
-            {content}
-          </div>
-        );
-      })}
-
-      {/* Drop preview placeholder */}
-      {dropPreview && isLg && (
+      {visualColumns.map((col, colIdx) => (
         <div
+          key={colIdx}
+          ref={el => { columnRefs.current[colIdx] = el; }}
           className={`
-            border-2 border-dashed border-[#0d9488]/50 rounded-xl
-            bg-[#0d9488]/5 dark:bg-[#0d9488]/10
-            flex items-center justify-center
-            transition-all duration-150 ease-out
-            min-h-[120px]
-            animate-pulse
-            pointer-events-none
-            ${getGridSpanClasses(items.find(i => i.id === draggedId)?.size ?? 'half')}
+            w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)]
+            flex flex-col gap-3
+            transition-all duration-200 ease-out
+            ${isDragMode && isLg ? 'min-h-[60px]' : ''}
+            ${isDragMode && isLg && activeDropCol === colIdx
+              ? 'rounded-xl ring-2 ring-teal-400/30 bg-teal-50/50 dark:bg-teal-900/10'
+              : ''}
           `}
-          style={{
-            gridColumn: `${dropPreview.col + 1} / span ${dropPreview.span}`,
-            gridRow: `${dropPreview.row + 1}`,
-          }}
+          onDragOver={isDragMode && isLg ? (e) => handleColumnDragOver(e, colIdx) : undefined}
+          onDrop={isDragMode && isLg ? handleDrop : undefined}
         >
-          <div className="flex flex-col items-center gap-2 text-[#0d9488]/60 dark:text-[#2dd4bf]/60">
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            <span className="text-[10px] font-medium tracking-wide uppercase">Drop here</span>
-          </div>
+          {col.map(item => {
+            // ── Drop placeholder ──
+            if (item.id === '__drop_placeholder__') {
+              return (
+                <div
+                  key="__placeholder__"
+                  className="border-2 border-dashed border-[#0d9488]/50 rounded-xl bg-[#0d9488]/5 dark:bg-[#0d9488]/10 flex items-center justify-center min-h-[120px] animate-pulse"
+                >
+                  <div className="flex flex-col items-center gap-2 text-[#0d9488]/60 dark:text-[#2dd4bf]/60">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    <span className="text-[10px] font-medium tracking-wide uppercase">Drop here</span>
+                  </div>
+                </div>
+              );
+            }
+
+            const isDragging = draggedId === item.id;
+            const content = childContentMap.get(item.id) ?? item.element;
+
+            return (
+              <div
+                key={item.id}
+                data-widget-id={item.id}
+                draggable={isDragMode}
+                onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
+                onDragEnd={isDragMode ? handleDragEnd : undefined}
+                className={`
+                  ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
+                  ${isDragging ? 'opacity-40 scale-[0.97] pointer-events-none' : 'transition-all duration-200 ease-out'}
+                  relative
+                `}
+              >
+                {content}
+              </div>
+            );
+          })}
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -405,12 +298,9 @@ export function MasonryLayout({
 
 export function getWidgetPixelWidth(size: WidgetSize, containerWidth: number): number {
   const fractions: Record<WidgetSize, number> = {
-    full: 1,
-    half: 0.5,
-    third: 1 / 3,
-    quarter: 0.25,
+    full: 1, half: 0.5, third: 1 / 3, quarter: 0.25,
   };
-  const gap = GAP_PX;
+  const gap = 12;
   const padding = 16;
   const available = containerWidth - 2 * padding;
   const fraction = fractions[size] ?? 0.5;

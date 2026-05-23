@@ -34,7 +34,7 @@ const CURRENT_ORDER_MIGRATION = 5; // v5: reset order to match new default layou
 
 // Migration: reset stored widget positions when layout algorithm changes
 const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
-const CURRENT_POSITIONS_MIGRATION = 8; // v8: switched to CSS Grid positioning, clear stale positions
+const CURRENT_POSITIONS_MIGRATION = 9; // v9: switched to column-based masonry, clear stale grid positions
 
 export interface WidgetPosition {
   x: number;

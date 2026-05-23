@@ -258,10 +258,31 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const clearWidgetPositions = useDashboardWidgets((s) => s.clearWidgetPositions);
   const widgetPositions = useDashboardWidgets((s) => s.widgetPositions);
 
-  // Grid-based position change (from CSS Grid drag-and-drop)
-  const handlePositionChange = useCallback((widgetId: string, col: number, row: number) => {
-    setWidgetPosition(widgetId, { x: col, y: row, width: 0 });
-  }, [setWidgetPosition]);
+  // Column-based position change (from masonry drag-and-drop)
+  // col = target column index (0, 1, or 2)
+  // insertAfterId = widget to insert after (null = beginning of column)
+  const handlePositionChange = useCallback((widgetId: string, col: number, insertAfterId: string | null) => {
+    // 1. Update column assignment
+    setWidgetPosition(widgetId, { x: col, y: 0, width: 0 });
+
+    // 2. Reorder in widgetOrder: remove widget, insert at new position
+    const state = useDashboardWidgets.getState();
+    const filtered = state.widgetOrder.filter(id => id !== widgetId);
+
+    if (insertAfterId !== null) {
+      const idx = filtered.indexOf(insertAfterId);
+      if (idx >= 0) {
+        filtered.splice(idx + 1, 0, widgetId);
+      } else {
+        filtered.push(widgetId);
+      }
+    } else {
+      // Insert at very beginning
+      filtered.unshift(widgetId);
+    }
+
+    setWidgetOrderDirect(filtered);
+  }, [setWidgetPosition, setWidgetOrderDirect]);
 
   // Legacy reorder handler (kept for widget-layout-editor compat)
   const handleReorder = useCallback((draggedId: string, targetIndex: number) => {
