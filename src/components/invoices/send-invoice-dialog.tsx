@@ -76,13 +76,11 @@ export function SendInvoiceDialog({
 
   return (
     <Dialog open={!!invoice} onOpenChange={(open) => !open && onClose()}>
-      {/* Semi-transparent dark overlay */}
       <DialogContent
-        className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 max-w-lg w-[95vw] border-0 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+        className="sm:max-w-lg w-[95vw] p-0 gap-0 overflow-hidden bg-white dark:bg-[#1a1f1e] rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10"
       >
         {/* Inner card */}
-        <div className="bg-white dark:bg-[#1a1f1e] rounded-2xl shadow-2xl border border-gray-200 dark:border-white/10 w-full overflow-hidden">
+        <div className="w-full overflow-hidden">
           {/* Header */}
           <div className="bg-gradient-to-r from-[#0d9488] to-[#14b8a6] dark:from-[#0f766e] dark:to-[#0d9488] px-6 py-5">
             <div className="flex items-center gap-3">
