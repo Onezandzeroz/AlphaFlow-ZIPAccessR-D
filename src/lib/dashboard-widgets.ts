@@ -22,7 +22,7 @@ const DEFAULT_SIZES = getDefaultSizesMap();
 
 // Migration: reset stored widget visibility when default visibility changes
 const VISIBILITY_MIGRATION_KEY = 'alphaflow-dashboard-widget-visibility-migration';
-const CURRENT_VISIBILITY_MIGRATION = 1;
+const CURRENT_VISIBILITY_MIGRATION = 2; // v2: reset to show only 5 default widgets
 
 // Migration: reset specific widget sizes when defaults change
 const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
@@ -34,7 +34,7 @@ const CURRENT_ORDER_MIGRATION = 3; // bump when changing default order
 
 // Migration: reset stored widget positions when layout algorithm changes
 const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
-const CURRENT_POSITIONS_MIGRATION = 4; // bump when layout algorithm changes
+const CURRENT_POSITIONS_MIGRATION = 5; // v5: switched to flex-wrap layout, clear old absolute positions
 
 export interface WidgetPosition {
   x: number;

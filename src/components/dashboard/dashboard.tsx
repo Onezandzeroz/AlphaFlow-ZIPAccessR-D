@@ -229,7 +229,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const [onboardingVideoExists, setOnboardingVideoExists] = useState(true);
   const [showCompletionOverlay, setShowCompletionOverlay] = useState(false);
   const [isDragMode, setIsDragMode] = useState(false);
-  const [itemHeights, setItemHeights] = useState<Record<string, number>>({});
 
   // Initialize widget store (load from server/localStorage once)
   useDashboardWidgetsInit();
@@ -269,13 +268,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const orderedVisibleWidgets = useMemo(() => {
     return widgetOrder.filter(id => isWidgetVisible(id));
   }, [widgetOrder, isWidgetVisible]);
-
-  const onItemHeightChange = useCallback((id: string, height: number) => {
-    setItemHeights(prev => {
-      if (prev[id] === height) return prev;
-      return { ...prev, [id]: height };
-    });
-  }, []);
 
   // ─── Date helpers ───────────────────────────────────────────────────
 
@@ -1457,8 +1449,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       <MasonryLayout
           items={orderedVisibleWidgets.map(id => ({ id, size: getWidgetSize(id) }))}
           isDragMode={isDragMode}
-          itemHeights={itemHeights}
-          onItemHeightChange={onItemHeightChange}
           onReorder={handleReorder}
           className="mt-4 -mx-3 lg:-mx-6 w-[calc(100%+1.5rem)] lg:w-[calc(100%+3rem)]"
         >
