@@ -90,7 +90,7 @@ const CURRENT_ORDER_MIGRATION = 2; // bump when changing default order
 
 // Migration: reset stored widget positions when layout algorithm changes
 const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
-const CURRENT_POSITIONS_MIGRATION = 2; // bump when layout algorithm changes
+const CURRENT_POSITIONS_MIGRATION = 3; // bump when layout algorithm changes
 
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };

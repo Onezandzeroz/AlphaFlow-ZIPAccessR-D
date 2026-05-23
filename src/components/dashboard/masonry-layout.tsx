@@ -49,11 +49,151 @@ function getItemWidth(size: WidgetSize, containerWidth: number): number {
   return Math.floor((availableWidth - totalGaps) / itemsPerRow);
 }
 
+// ─── Overlap detection ────────────────────────────────────────────
+// Returns true if two rects overlap (are closer than minGap pixels
+// in BOTH the horizontal AND vertical axes simultaneously).
+
+function rectsOverlap(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+  minGap: number,
+): boolean {
+  // No overlap if there's enough horizontal OR vertical separation
+  const separatedHorizontally = a.x + a.width + minGap <= b.x || b.x + b.width + minGap <= a.x;
+  const separatedVertically = a.y + a.height + minGap <= b.y || b.y + b.height + minGap <= a.y;
+  return !separatedHorizontally && !separatedVertically;
+}
+
+// ─── Overlap resolution ───────────────────────────────────────────
+// Takes a set of positions and resolves any overlaps by pushing
+// overlapping widgets down. Processes widgets top-to-bottom so
+// higher widgets stay in place and lower ones get pushed.
+// This is the "desktop icon" guarantee: no two widgets ever overlap.
+
+function resolveAllOverlaps(
+  positions: Record<string, WidgetPosition>,
+  itemOrder: string[],
+  itemHeights: Record<string, number>,
+  containerWidth: number,
+): Record<string, WidgetPosition> {
+  if (containerWidth === 0) return positions;
+
+  const resolved: Record<string, WidgetPosition> = {};
+  const placedRects: PlacedRect[] = [];
+
+  // Sort by y position (top-to-bottom), then x (left-to-right)
+  const sortedIds = [...itemOrder].sort((a, b) => {
+    const posA = positions[a];
+    const posB = positions[b];
+    if (!posA && !posB) return 0;
+    if (!posA) return 1;
+    if (!posB) return -1;
+    const dy = posA.y - posB.y;
+    if (Math.abs(dy) > 1) return dy;
+    return posA.x - posB.x;
+  });
+
+  for (const id of sortedIds) {
+    const pos = positions[id];
+    if (!pos) continue;
+
+    const height = itemHeights[id] || 200;
+    let currentPos = { ...pos };
+
+    // Check against all previously placed (and resolved) widgets
+    let hasOverlap = true;
+    let iterations = 0;
+    while (hasOverlap && iterations < 100) {
+      hasOverlap = false;
+      for (const placed of placedRects) {
+        if (rectsOverlap(
+          { x: currentPos.x, y: currentPos.y, width: currentPos.width, height },
+          { x: placed.x, y: placed.y, width: placed.width, height: placed.height },
+          GAP,
+        )) {
+          // Push down past the overlapping widget
+          currentPos = {
+            ...currentPos,
+            y: placed.y + placed.height + GAP,
+          };
+          hasOverlap = true;
+          break; // Restart check from the first placed widget
+        }
+      }
+      iterations++;
+    }
+
+    // Clamp to container bounds
+    if (currentPos.x < PADDING) currentPos.x = PADDING;
+    if (currentPos.x + currentPos.width > containerWidth - PADDING) {
+      currentPos.x = Math.max(PADDING, containerWidth - PADDING - currentPos.width);
+    }
+    if (currentPos.y < PADDING) currentPos.y = PADDING;
+
+    resolved[id] = currentPos;
+    placedRects.push({
+      id,
+      x: currentPos.x,
+      y: currentPos.y,
+      width: currentPos.width,
+      height,
+    });
+  }
+
+  return resolved;
+}
+
+// ─── Find non-overlapping position for a dragged widget ───────────
+// Given a desired position, push the widget down if it would overlap
+// any other widget. Used during drag to prevent dropping on top of
+// other widgets.
+
+function findNonOverlappingPosition(
+  id: string,
+  desiredPos: WidgetPosition,
+  desiredHeight: number,
+  otherRects: PlacedRect[],
+  containerWidth: number,
+): WidgetPosition {
+  let pos = { ...desiredPos };
+
+  // Clamp to container first
+  if (pos.x < PADDING) pos.x = PADDING;
+  if (pos.x + pos.width > containerWidth - PADDING) {
+    pos.x = Math.max(PADDING, containerWidth - PADDING - pos.width);
+  }
+  if (pos.y < PADDING) pos.y = PADDING;
+
+  // Push down past any overlapping widgets
+  let hasOverlap = true;
+  let iterations = 0;
+  while (hasOverlap && iterations < 100) {
+    hasOverlap = false;
+    for (const other of otherRects) {
+      if (other.id === id) continue;
+      if (rectsOverlap(
+        { x: pos.x, y: pos.y, width: pos.width, height: desiredHeight },
+        { x: other.x, y: other.y, width: other.width, height: other.height },
+        GAP,
+      )) {
+        pos = {
+          ...pos,
+          y: other.y + other.height + GAP,
+        };
+        hasOverlap = true;
+        break;
+      }
+    }
+    iterations++;
+  }
+
+  return pos;
+}
+
 // ─── Row-based flow layout ────────────────────────────────────────
 // Places widgets left-to-right in rows, wrapping to the next row
 // when they don't fit. Like desktop icons in "auto-arrange" mode.
 // Each row's height is the max height of its widgets.
-// Returns positions in real coords (PADDING-offset).
 
 interface Row {
   widgets: Array<{ id: string; width: number }>;
@@ -107,13 +247,6 @@ function calculateFlowLayout(
 
   // Assign positions from rows
   for (const row of rows) {
-    // Calculate total widget width in this row
-    const totalWidgetWidth = row.widgets.reduce((sum, w) => sum + w.width, 0);
-    const totalGapsInRow = (row.widgets.length - 1) * GAP;
-    const usedSpace = totalWidgetWidth + totalGapsInRow;
-    const remainingSpace = availableWidth - usedSpace;
-
-    // Left-align widgets (like desktop icons)
     let x = PADDING;
 
     for (const widget of row.widgets) {
@@ -215,13 +348,10 @@ function calculateSnapPoints(
   }
 
   // ── Clamp to container bounds (never off-screen) ──
-  // Left edge
   if (snappedX < PADDING) snappedX = PADDING;
-  // Right edge
   if (snappedX + draggedRect.width > containerWidth - PADDING) {
     snappedX = containerWidth - PADDING - draggedRect.width;
   }
-  // Top edge
   if (snappedY < PADDING) snappedY = PADDING;
 
   // Deduplicate snap lines
@@ -271,8 +401,14 @@ export function MasonryLayout({
   } | null>(null);
 
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
-  // Track which widgets have been manually positioned via drag (state so it triggers re-render)
-  const [manuallyPositionedIds, setManuallyPositionedIds] = useState<Set<string>>(new Set());
+
+  // Track which widgets have been manually positioned via drag.
+  // We pair this with the itemsKey so that when widget order/visibility changes,
+  // manual positions are automatically cleared (no useEffect needed).
+  const [manualPositionState, setManualPositionState] = useState<{
+    ids: Set<string>;
+    itemsKey: string;
+  }>({ ids: new Set(), itemsKey: '' });
 
   // Build child content map from children with data-widget-id
   const childContentMap = useMemo(() => {
@@ -335,8 +471,6 @@ export function MasonryLayout({
   const itemsKey = effectiveItems.map(i => `${i.id}:${i.size}`).join(',');
 
   // ── Flow layout: always recalculate from scratch ──
-  // This is the "desktop icon auto-arrange" — positions are always
-  // derived from the widget order and sizes, never from stale saved data.
   const flowPositions = useMemo(() => {
     return calculateFlowLayout(
       effectiveItems.map(i => ({ id: i.id, size: i.size })),
@@ -345,27 +479,36 @@ export function MasonryLayout({
     );
   }, [containerWidth, itemsKey, itemHeights, effectiveItems]);
 
-  // Merge flow positions with any manually-positioned widgets.
-  // On initial load, ALL widgets use flow positions.
-  // After a user drags a widget, that widget uses its custom position
-  // until the layout is reset or the widget order changes.
-  // NOTE: itemsKey is included to automatically reset manual positioning
-  // when the widget order/visibility changes.
+  // Derive effective manual IDs — auto-reset when itemsKey changes
+  const effectiveManualIds = manualPositionState.itemsKey === itemsKey
+    ? manualPositionState.ids
+    : new Set<string>();
+
+  // Merge flow positions with manually-positioned widgets, then resolve overlaps.
+  // This is the key step: after merging, we run overlap resolution to guarantee
+  // that no two widgets ever overlap — like desktop icons.
   const basePositions = useMemo(() => {
     const merged: Record<string, WidgetPosition> = {};
     for (const item of effectiveItems) {
-      if (manuallyPositionedIds.has(item.id) && savedPositions && savedPositions[item.id]) {
-        // Use saved custom position, but always use the current width
+      if (effectiveManualIds.has(item.id) && savedPositions && savedPositions[item.id]) {
         const saved = savedPositions[item.id];
         const width = getItemWidth(item.size, containerWidth);
         merged[item.id] = { x: saved.x, y: saved.y, width };
       } else {
-        // Use flow layout position
         merged[item.id] = flowPositions[item.id];
       }
     }
-    return merged;
-  }, [flowPositions, savedPositions, containerWidth, effectiveItems, manuallyPositionedIds, itemsKey]);
+
+    // ── Resolve overlaps ──
+    // After merging flow + manual positions, some widgets may overlap.
+    // Push overlapping widgets down so they don't overlap any other widget.
+    return resolveAllOverlaps(
+      merged,
+      effectiveItems.map(i => i.id),
+      itemHeights,
+      containerWidth,
+    );
+  }, [flowPositions, savedPositions, containerWidth, effectiveItems, effectiveManualIds, itemsKey, itemHeights]);
 
   // Active positions: base + any drag-in-progress overrides
   const [dragOverrides, setDragOverrides] = useState<Record<string, WidgetPosition>>({});
@@ -414,11 +557,11 @@ export function MasonryLayout({
     const newX = e.clientX - dragState.offsetX;
     const newY = e.clientY - dragState.offsetY;
 
-    // Build list of other widgets' rects for snap calculation
+    // Build list of other widgets' rects for snap + overlap calculation
     const otherRects: PlacedRect[] = [];
     for (const item of effectiveItems) {
       if (item.id === dragState.id) continue;
-      const pos = positions[item.id];
+      const pos = basePositions[item.id];
       if (!pos) continue;
       otherRects.push({
         id: item.id,
@@ -430,8 +573,9 @@ export function MasonryLayout({
     }
 
     const draggedHeight = itemHeights[dragState.id] || 200;
-    const draggedWidth = positions[dragState.id]?.width || 200;
+    const draggedWidth = basePositions[dragState.id]?.width || 200;
 
+    // Step 1: Snap to alignment guides
     const { snappedX, snappedY, snapLines: newSnapLines } = calculateSnapPoints(
       dragState.id,
       { x: newX, y: newY, width: draggedWidth, height: draggedHeight },
@@ -440,14 +584,23 @@ export function MasonryLayout({
       totalHeight,
     );
 
+    // Step 2: Resolve overlaps — push down if this position overlaps any other widget
+    const resolvedPos = findNonOverlappingPosition(
+      dragState.id,
+      { x: snappedX, y: snappedY, width: draggedWidth },
+      draggedHeight,
+      otherRects,
+      containerWidth,
+    );
+
     setSnapLines(newSnapLines);
 
     // Update drag override in real-time
     setDragOverrides(prev => ({
       ...prev,
-      [dragState.id]: { ...prev[dragState.id], x: snappedX, y: snappedY, width: draggedWidth },
+      [dragState.id]: resolvedPos,
     }));
-  }, [dragState, effectiveItems, positions, itemHeights, containerWidth, totalHeight]);
+  }, [dragState, effectiveItems, basePositions, itemHeights, containerWidth, totalHeight]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!dragState) return;
@@ -455,20 +608,23 @@ export function MasonryLayout({
     const el = itemRefs.current.get(dragState.id);
     if (el) el.releasePointerCapture(e.pointerId);
 
-    // Mark this widget as manually positioned
-    setManuallyPositionedIds(prev => new Set(prev).add(dragState.id));
+    // Mark this widget as manually positioned (paired with current itemsKey)
+    setManualPositionState(prev => ({
+      ids: new Set(prev.ids).add(dragState.id),
+      itemsKey,
+    }));
 
-    // Get the final drag position
+    // Get the final drag position (already overlap-resolved from handlePointerMove)
     const finalPos = dragOverrides[dragState.id] || positions[dragState.id];
     if (finalPos) {
       onPositionChange?.(dragState.id, { x: finalPos.x, y: finalPos.y, width: finalPos.width });
     }
 
-    // Clear drag state and overrides (basePositions will pick up saved positions)
+    // Clear drag state and overrides (basePositions will pick up saved positions + resolve overlaps)
     setDragState(null);
     setSnapLines([]);
     setDragOverrides({});
-  }, [dragState, dragOverrides, positions, onPositionChange]);
+  }, [dragState, dragOverrides, positions, onPositionChange, itemsKey]);
 
   return (
     <div
