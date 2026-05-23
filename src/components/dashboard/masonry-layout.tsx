@@ -44,9 +44,6 @@ export function MasonryLayout({
   className = '',
   onReorder,
 }: MasonryLayoutProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
-
   // Drag state for reordering
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -81,29 +78,6 @@ export function MasonryLayout({
   const effectiveItems = useMemo(() => {
     return items;
   }, [items]);
-
-  // Observe container width for min-height calculation
-  const widthObserverRef = useRef<ResizeObserver | null>(null);
-  const measureRef = useCallback((el: HTMLDivElement | null) => {
-    // Combine callback ref with containerRef
-    (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-    if (!el) return;
-
-    // Set initial width
-    setContainerWidth(el.clientWidth);
-
-    // Observe width changes
-    if (widthObserverRef.current) widthObserverRef.current.disconnect();
-    widthObserverRef.current = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    widthObserverRef.current.observe(el);
-  }, []);
-
-  // Minimum height = 4× width (never collapse)
-  const minHeight = containerWidth > 0 ? containerWidth * 4 : 0;
 
   // ── HTML5 Drag-and-Drop handlers ────────────────────────────────
   const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
@@ -149,11 +123,7 @@ export function MasonryLayout({
   }, []);
 
   return (
-    <div
-      ref={measureRef}
-      className={`w-full flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
-      style={{ minHeight: minHeight > 0 ? minHeight : undefined }}
-    >
+    <div className={`w-full flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}>
       {effectiveItems.map((item) => {
         const isDragging = draggedId === item.id;
         const isDropTarget = dropTargetId === item.id && draggedId !== item.id;
