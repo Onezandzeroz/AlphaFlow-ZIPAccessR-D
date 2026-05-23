@@ -74,7 +74,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { DateRangeFilter } from '@/components/shared/date-range-filter';
-import { useDashboardWidgets, useDashboardWidgetsInit, DASHBOARD_WIDGETS, type WidgetPosition } from '@/lib/dashboard-widgets';
+import { useDashboardWidgets, useDashboardWidgetsInit, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
 import { ExpenseAnalysis } from '@/components/expense-analysis/expense-analysis';
 import { ProfitLossWaterfall } from '@/components/profit-loss-waterfall/profit-loss-waterfall';
 import { FinancialHealthWidget } from '@/components/financial-health/financial-health-widget';
@@ -253,13 +253,17 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
 
 
-  // ─── Widget position persistence ──────────────────────────────────
-  const widgetPositions = useDashboardWidgets((s) => s.widgetPositions);
-  const setWidgetPosition = useDashboardWidgets((s) => s.setWidgetPosition);
+  // ─── Widget reorder handler ──────────────────────────────────
+  const setWidgetOrderDirect = useDashboardWidgets((s) => s.setWidgetOrderDirect);
+  const clearWidgetPositions = useDashboardWidgets((s) => s.clearWidgetPositions);
 
-  const handlePositionChange = useCallback((id: string, position: WidgetPosition) => {
-    setWidgetPosition(id, position);
-  }, [setWidgetPosition]);
+  const handleReorder = useCallback((draggedId: string, targetIndex: number) => {
+    const currentOrder = useDashboardWidgets.getState().widgetOrder;
+    const filtered = currentOrder.filter(id => id !== draggedId);
+    filtered.splice(targetIndex, 0, draggedId);
+    setWidgetOrderDirect(filtered);
+    clearWidgetPositions();
+  }, [setWidgetOrderDirect, clearWidgetPositions]);
 
   // Ordered visible widget IDs
   const orderedVisibleWidgets = useMemo(() => {
@@ -1452,11 +1456,10 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
       <MasonryLayout
           items={orderedVisibleWidgets.map(id => ({ id, size: getWidgetSize(id) }))}
-          savedPositions={widgetPositions}
-          onPositionChange={handlePositionChange}
           isDragMode={isDragMode}
           itemHeights={itemHeights}
           onItemHeightChange={onItemHeightChange}
+          onReorder={handleReorder}
           className="mt-4"
         >
           {/* ═══════════════════════════════════════════════════════════

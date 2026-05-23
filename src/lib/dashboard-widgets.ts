@@ -20,6 +20,22 @@ const POSITIONS_STORAGE_KEY = 'alphaflow-dashboard-widget-positions';
 const DEFAULT_ORDER = DASHBOARD_WIDGETS.map((w) => w.id);
 const DEFAULT_SIZES = getDefaultSizesMap();
 
+// Migration: reset stored widget visibility when default visibility changes
+const VISIBILITY_MIGRATION_KEY = 'alphaflow-dashboard-widget-visibility-migration';
+const CURRENT_VISIBILITY_MIGRATION = 1;
+
+// Migration: reset specific widget sizes when defaults change
+const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
+const CURRENT_SIZES_MIGRATION = 5; // bump when changing default sizes
+
+// Migration: reset stored widget order when default order changes
+const ORDER_MIGRATION_KEY = 'alphaflow-dashboard-widget-order-migration';
+const CURRENT_ORDER_MIGRATION = 3; // bump when changing default order
+
+// Migration: reset stored widget positions when layout algorithm changes
+const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
+const CURRENT_POSITIONS_MIGRATION = 4; // bump when layout algorithm changes
+
 export interface WidgetPosition {
   x: number;
   y: number;
@@ -29,6 +45,14 @@ export interface WidgetPosition {
 function readLocalVisibilityMap(): Record<string, boolean> {
   if (typeof window === 'undefined') return getDefaultVisibilityMap();
   try {
+    // Run visibility migration if needed — clears stale stored visibility
+    const migrationVersion = parseInt(localStorage.getItem(VISIBILITY_MIGRATION_KEY) || '0', 10);
+    if (migrationVersion < CURRENT_VISIBILITY_MIGRATION) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.setItem(VISIBILITY_MIGRATION_KEY, String(CURRENT_VISIBILITY_MIGRATION));
+      return getDefaultVisibilityMap();
+    }
+
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw === null) return getDefaultVisibilityMap();
     const parsed = JSON.parse(raw) as Record<string, boolean>;
@@ -80,25 +104,12 @@ function writeLocalWidgetOrder(order: string[]): void {
   }
 }
 
-// Migration: reset specific widget sizes when defaults change
-const SIZES_MIGRATION_KEY = 'alphaflow-dashboard-widget-sizes-migration';
-const CURRENT_SIZES_MIGRATION = 4; // bump when changing default sizes
-
-// Migration: reset stored widget order when default order changes
-const ORDER_MIGRATION_KEY = 'alphaflow-dashboard-widget-order-migration';
-const CURRENT_ORDER_MIGRATION = 2; // bump when changing default order
-
-// Migration: reset stored widget positions when layout algorithm changes
-const POSITIONS_MIGRATION_KEY = 'alphaflow-dashboard-widget-positions-migration';
-const CURRENT_POSITIONS_MIGRATION = 3; // bump when layout algorithm changes
-
 function readLocalWidgetSizes(): Record<string, WidgetSize> {
   if (typeof window === 'undefined') return { ...DEFAULT_SIZES };
   try {
     // Run migration if needed
     const migrationVersion = parseInt(localStorage.getItem(SIZES_MIGRATION_KEY) || '0', 10);
     if (migrationVersion < CURRENT_SIZES_MIGRATION) {
-      // v4: clear all stored sizes so new defaults take effect
       localStorage.removeItem(SIZES_STORAGE_KEY);
       localStorage.setItem(SIZES_MIGRATION_KEY, String(CURRENT_SIZES_MIGRATION));
     }
@@ -209,32 +220,46 @@ export const useDashboardWidgets = create<DashboardWidgetStore>((set, get) => ({
       if (!res.ok) return;
       const data = await res.json();
 
-      const serverWidgets = data.widgets as Record<string, boolean>;
       const defaults = getDefaultVisibilityMap();
-      const merged = { ...defaults, ...serverWidgets };
 
-      // Order — on first load with new default order, ignore server order and use defaults
+      // ── Visibility migration ──
+      // Check if the visibility migration needs to run.
+      // If so, clear stored visibility from both localStorage and server data,
+      // using fresh defaults instead.
+      let visibilityNeedsMigration = false;
+      if (typeof window !== 'undefined') {
+        const migrationVersion = parseInt(localStorage.getItem(VISIBILITY_MIGRATION_KEY) || '0', 10);
+        if (migrationVersion < CURRENT_VISIBILITY_MIGRATION) {
+          visibilityNeedsMigration = true;
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.setItem(VISIBILITY_MIGRATION_KEY, String(CURRENT_VISIBILITY_MIGRATION));
+        }
+      }
+
+      let merged: Record<string, boolean>;
+      if (visibilityNeedsMigration) {
+        // Use fresh defaults — ignore both localStorage and server data
+        merged = { ...defaults };
+      } else {
+        const serverWidgets = data.widgets as Record<string, boolean>;
+        merged = { ...defaults, ...serverWidgets };
+      }
+
+      // Order — read through the migration-aware function which clears
+      // stale data when default order changes
       const serverOrder = data.order as string[] | undefined;
       let order: string[];
       if (serverOrder && serverOrder.length > 0) {
-        // Check if the server order starts with the expected top widgets (activity-feed, vat-output, vat-input)
-        // If not, it's a stale order from before the default change — reset to defaults
-        const expectedTopIds = ['activity-feed', 'vat-output', 'vat-input'];
-        const serverTop3 = serverOrder.slice(0, 3);
-        const isStaleOrder = !expectedTopIds.every((id, i) => serverTop3[i] === id);
-        if (isStaleOrder) {
-          order = [...DEFAULT_ORDER];
-        } else {
-          const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
-          const filtered = serverOrder.filter((id) => validIds.has(id));
-          const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
-          order = [...filtered, ...missing];
-        }
+        // Validate server order — if it looks stale, reset to defaults
+        const validIds = new Set(DASHBOARD_WIDGETS.map((w) => w.id));
+        const filtered = serverOrder.filter((id) => validIds.has(id));
+        const missing = DEFAULT_ORDER.filter((id) => !serverOrder.includes(id));
+        order = [...filtered, ...missing];
       } else {
         order = readLocalWidgetOrder();
       }
 
-      // Sizes — use server sizes but override with defaults for any that changed
+      // Sizes — read through the migration-aware function
       const serverSizes = data.sizes as Record<string, WidgetSize> | undefined;
       let sizes: Record<string, WidgetSize>;
       if (serverSizes) {
