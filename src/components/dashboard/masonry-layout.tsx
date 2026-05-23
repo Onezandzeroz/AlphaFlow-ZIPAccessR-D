@@ -22,9 +22,9 @@ export interface WidgetPosition {
 // Column 1 (middle):  vat-output (top), kpi-revenue (bottom)
 // Column 2 (right):   vat-input (top), kpi-operating-result (bottom)
 
-const COLUMN_COUNT = 3;
+export const COLUMN_COUNT = 3;
 
-const DEFAULT_COLUMNS: Record<string, number> = {
+export const DEFAULT_COLUMNS: Record<string, number> = {
   'activity-feed':        0,
   'vat-output':           1,
   'vat-input':            2,
@@ -32,7 +32,7 @@ const DEFAULT_COLUMNS: Record<string, number> = {
   'kpi-operating-result': 2,
 };
 
-function clampColumn(col: number): number {
+export function clampColumn(col: number): number {
   return Math.max(0, Math.min(col, COLUMN_COUNT - 1));
 }
 
@@ -46,7 +46,7 @@ function clampColumn(col: number): number {
 //   • NO rows — each column is independent, no cross-column alignment
 //   • No empty gaps — every pixel is filled by a widget or padding
 //
-// Drag-and-drop (lg only):
+// Drag-and-drop (all screen sizes):
 //   • Drag a widget to any column — snaps to column boundary
 //   • Within a column, snaps to widget edges (+ padding)
 //   • Drop preview shows exactly where the widget will land
@@ -79,14 +79,21 @@ export function MasonryLayout({
   const containerRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // ── Responsive breakpoint (column drag only on lg+) ──────────
-  const isLg = useSyncExternalStore(
+  // ── Responsive: how many columns are currently visible? ─────
+  const visibleColumns = useSyncExternalStore(
     (cb) => {
-      const mql = window.matchMedia('(min-width: 1024px)');
-      mql.addEventListener('change', cb);
-      return () => mql.removeEventListener('change', cb);
+      const mqlSm = window.matchMedia('(min-width: 640px)');
+      const mqlLg = window.matchMedia('(min-width: 1024px)');
+      mqlSm.addEventListener('change', cb);
+      mqlLg.addEventListener('change', cb);
+      return () => { mqlSm.removeEventListener('change', cb); mqlLg.removeEventListener('change', cb); };
     },
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
+    () => {
+      if (typeof window === 'undefined') return 1;
+      if (window.matchMedia('(min-width: 1024px)').matches) return 3;
+      if (window.matchMedia('(min-width: 640px)').matches) return 2;
+      return 1;
+    },
   );
 
   // ── Child content map (from data-widget-id children) ────────
@@ -112,7 +119,7 @@ export function MasonryLayout({
     return 0;
   }, [positions]);
 
-  // ── Distribute items into 3 columns (preserving global order) ─
+  // ── Distribute items into COLUMN_COUNT columns (preserving global order) ─
   const columns = useMemo(() => {
     const cols: MasonryItem[][] = Array.from({ length: COLUMN_COUNT }, () => []);
     for (const item of items) {
@@ -148,7 +155,7 @@ export function MasonryLayout({
   // ── Active drop column (for visual highlight) ───────────────
   const activeDropCol = dropPreview?.col ?? -1;
 
-  // ─── Drag-and-Drop handlers ─────────────────────────────────
+  // ─── Drag-and-Drop handlers (all screen sizes) ─────────────
 
   const cleanup = useCallback(() => {
     if (draggedId) {
@@ -172,7 +179,7 @@ export function MasonryLayout({
   const handleColumnDragOver = useCallback((e: React.DragEvent, colIndex: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (!draggedId || !isLg) return;
+    if (!draggedId) return;
 
     const colEl = columnRefs.current[colIndex];
     if (!colEl) return;
@@ -214,7 +221,7 @@ export function MasonryLayout({
       if (prev && prev.col === colIndex && prev.insertAfterId === insertAfterId) return prev;
       return { col: colIndex, insertAfterId };
     });
-  }, [draggedId, columns, items, getColumn, isLg]);
+  }, [draggedId, columns, items, getColumn]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -229,67 +236,77 @@ export function MasonryLayout({
 
   // ─── Render ────────────────────────────────────────────────
 
+  // Column CSS: always render 3 column slots. On sm/lg the columns flex-wrap
+  // into the right number of visible columns.
+  const colWidthClass = 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)]';
+
   return (
     <div
       ref={containerRef}
       className={`flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
     >
-      {visualColumns.map((col, colIdx) => (
-        <div
-          key={colIdx}
-          ref={el => { columnRefs.current[colIdx] = el; }}
-          className={`
-            w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)]
-            flex flex-col gap-3
-            transition-all duration-200 ease-out
-            ${isDragMode && isLg ? 'min-h-[60px]' : ''}
-            ${isDragMode && isLg && activeDropCol === colIdx
-              ? 'rounded-xl ring-2 ring-teal-400/30 bg-teal-50/50 dark:bg-teal-900/10'
-              : ''}
-          `}
-          onDragOver={isDragMode && isLg ? (e) => handleColumnDragOver(e, colIdx) : undefined}
-          onDrop={isDragMode && isLg ? handleDrop : undefined}
-        >
-          {col.map(item => {
-            // ── Drop placeholder ──
-            if (item.id === '__drop_placeholder__') {
+      {visualColumns.map((col, colIdx) => {
+        const isDropTarget = isDragMode && activeDropCol === colIdx;
+        // Only show column drop targets for the columns that are currently visible
+        const isColVisible = colIdx < visibleColumns;
+
+        return (
+          <div
+            key={colIdx}
+            ref={el => { columnRefs.current[colIdx] = el; }}
+            className={`
+              ${colWidthClass}
+              flex flex-col gap-3
+              transition-all duration-200 ease-out
+              ${isDragMode && isColVisible ? 'min-h-[60px]' : ''}
+              ${isDropTarget && isColVisible
+                ? 'rounded-xl ring-2 ring-teal-400/30 bg-teal-50/50 dark:bg-teal-900/10'
+                : ''}
+            `}
+            onDragOver={isDragMode && isColVisible ? (e) => handleColumnDragOver(e, colIdx) : undefined}
+            onDrop={isDragMode && isColVisible ? handleDrop : undefined}
+          >
+            {col.map(item => {
+              // ── Drop placeholder ──
+              if (item.id === '__drop_placeholder__') {
+                return (
+                  <div
+                    key="__placeholder__"
+                    className="border-2 border-dashed border-[#0d9488]/50 rounded-xl bg-[#0d9488]/5 dark:bg-[#0d9488]/10 flex items-center justify-center min-h-[120px] animate-pulse"
+                  >
+                    <div className="flex flex-col items-center gap-2 text-[#0d9488]/60 dark:text-[#2dd4bf]/60">
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                      <span className="text-[10px] font-medium tracking-wide uppercase">Drop here</span>
+                    </div>
+                  </div>
+                );
+              }
+
+              const isDragging = draggedId === item.id;
+              const content = childContentMap.get(item.id) ?? item.element;
+
               return (
                 <div
-                  key="__placeholder__"
-                  className="border-2 border-dashed border-[#0d9488]/50 rounded-xl bg-[#0d9488]/5 dark:bg-[#0d9488]/10 flex items-center justify-center min-h-[120px] animate-pulse"
+                  key={item.id}
+                  data-widget-id={item.id}
+                  draggable={isDragMode}
+                  onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
+                  onDragEnd={isDragMode ? handleDragEnd : undefined}
+                  className={`
+                    ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
+                    ${isDragging ? 'opacity-40 scale-[0.97] pointer-events-none' : 'transition-all duration-200 ease-out'}
+                    relative
+                  `}
                 >
-                  <div className="flex flex-col items-center gap-2 text-[#0d9488]/60 dark:text-[#2dd4bf]/60">
-                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    <span className="text-[10px] font-medium tracking-wide uppercase">Drop here</span>
-                  </div>
+                  {content}
                 </div>
               );
-            }
-
-            const isDragging = draggedId === item.id;
-            const content = childContentMap.get(item.id) ?? item.element;
-
-            return (
-              <div
-                key={item.id}
-                data-widget-id={item.id}
-                draggable={isDragMode}
-                onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
-                onDragEnd={isDragMode ? handleDragEnd : undefined}
-                className={`
-                  ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
-                  ${isDragging ? 'opacity-40 scale-[0.97] pointer-events-none' : 'transition-all duration-200 ease-out'}
-                  relative
-                `}
-              >
-                {content}
-              </div>
-            );
-          })}
-        </div>
-      ))}
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }
