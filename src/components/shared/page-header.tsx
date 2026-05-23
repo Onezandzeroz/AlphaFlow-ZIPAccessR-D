@@ -134,9 +134,9 @@ export function PageHeader({
             )}
           </div>
 
-          {/* Right: Action area */}
+          {/* Right: Action area — aligned with description text */}
           {action && (
-            <div className="flex items-center gap-2 shrink-0 sm:self-start">
+            <div className="flex items-center gap-2 shrink-0 sm:self-start sm:mt-[38px]">
               {action}
             </div>
           )}
