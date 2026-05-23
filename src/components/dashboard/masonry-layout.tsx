@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef, ReactNode, useMemo, useSyncExternalStore } from 'react';
+import React, { useState, useCallback, useRef, ReactNode, useMemo, useSyncExternalStore, useEffect } from 'react';
 import { WidgetSize } from '@/lib/dashboard-widget-definitions';
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ export function clampColumn(col: number): number {
 
 // ─── MasonryLayout ────────────────────────────────────────────
 //
-// Column-based masonry layout with free-form drag-and-drop.
+// Column-based masonry layout with pointer-event drag-and-drop.
 //
 // Layout model:
 //   • 3 logical columns on lg, 2 on sm, 1 on xs
@@ -46,9 +46,9 @@ export function clampColumn(col: number): number {
 //   • NO rows — each column is independent, no cross-column alignment
 //   • No empty gaps — every pixel is filled by a widget or padding
 //
-// Drag-and-drop (all screen sizes):
-//   • Drag a widget to any column — snaps to column boundary
-//   • Within a column, snaps to widget edges (+ padding)
+// Drag-and-drop (pointer events — works on all screen sizes):
+//   • Click and drag a widget to move it between columns
+//   • Snaps to column boundary and widget edges (+ padding)
 //   • Drop preview shows exactly where the widget will land
 //   • Column assignments persist across sessions
 
@@ -70,14 +70,47 @@ export function MasonryLayout({
   className = '',
   onPositionChange,
 }: MasonryLayoutProps) {
-  // ── Drag state ──────────────────────────────────────────────
+  // ── Drag state (React state for rendering, pointer events for mechanics) ─
+  const [isDragging, setIsDragging] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropPreview, setDropPreview] = useState<{
     col: number;
     insertAfterId: string | null;
   } | null>(null);
+
+  // ── Refs for pointer event tracking (don't trigger re-renders) ─
+  const dragInternalRef = useRef<{
+    isDown: boolean;
+    widgetId: string | null;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+    hasMoved: boolean;
+    clone: HTMLElement | null;
+    sourceEl: HTMLElement | null;
+  }>({
+    isDown: false,
+    widgetId: null,
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    hasMoved: false,
+    clone: null,
+    sourceEl: null,
+  });
+
   const containerRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Keep callbacks in refs to avoid stale closures in window event listeners
+  const onPositionChangeRef = useRef(onPositionChange);
+  const itemsRef = useRef(items);
+  const columnsRef = useRef<typeof columns>(columns);
+
+  useEffect(() => { onPositionChangeRef.current = onPositionChange; }, [onPositionChange]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   // ── Responsive: how many columns are currently visible? ─────
   const visibleColumns = useSyncExternalStore(
@@ -119,6 +152,10 @@ export function MasonryLayout({
     return 0;
   }, [positions]);
 
+  // Keep getColumn in ref for use in pointer event handlers
+  const getColumnRef = useRef(getColumn);
+  useEffect(() => { getColumnRef.current = getColumn; }, [getColumn]);
+
   // ── Distribute items into COLUMN_COUNT columns (preserving global order) ─
   const columns = useMemo(() => {
     const cols: MasonryItem[][] = Array.from({ length: COLUMN_COUNT }, () => []);
@@ -128,10 +165,13 @@ export function MasonryLayout({
     return cols;
   }, [items, getColumn]);
 
+  // Keep columns in ref for use in pointer event handlers
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+
   // ── Visual columns: add drop placeholder during drag ────────
   const visualColumns = useMemo(() => {
     const result = columns.map(col => [...col]);
-    if (!draggedId || !dropPreview) return result;
+    if (!isDragging || !dropPreview) return result;
 
     const { col: targetCol, insertAfterId } = dropPreview;
     const targetWidgets = result[targetCol];
@@ -150,104 +190,212 @@ export function MasonryLayout({
     } as MasonryItem);
 
     return result;
-  }, [columns, draggedId, dropPreview]);
+  }, [columns, isDragging, dropPreview]);
 
   // ── Active drop column (for visual highlight) ───────────────
   const activeDropCol = dropPreview?.col ?? -1;
 
-  // ─── Drag-and-Drop handlers (all screen sizes) ─────────────
+  // ─── Pointer-event Drag-and-Drop ────────────────────────────
 
-  const cleanup = useCallback(() => {
-    if (draggedId) {
-      const el = containerRef.current?.querySelector(`[data-widget-id="${draggedId}"]`);
-      if (el instanceof HTMLElement) el.style.opacity = '1';
+  // Determine which column the pointer is over
+  const getColumnAtPoint = useCallback((clientX: number): number => {
+    for (let i = 0; i < COLUMN_COUNT; i++) {
+      const colEl = columnRefs.current[i];
+      if (!colEl) continue;
+      const rect = colEl.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right) return i;
     }
-    setDraggedId(null);
-    setDropPreview(null);
-  }, [draggedId]);
-
-  const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', widgetId);
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '0.4';
+    // Fallback: closest column by center distance
+    let closest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < COLUMN_COUNT; i++) {
+      const colEl = columnRefs.current[i];
+      if (!colEl) continue;
+      const rect = colEl.getBoundingClientRect();
+      const center = rect.left + rect.width / 2;
+      const dist = Math.abs(clientX - center);
+      if (dist < minDist) { minDist = dist; closest = i; }
     }
-    setDraggedId(widgetId);
-    setDropPreview(null);
+    return closest;
   }, []);
 
-  const handleColumnDragOver = useCallback((e: React.DragEvent, colIndex: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!draggedId) return;
+  // Determine where in a column the widget should be inserted
+  const getInsertPosition = useCallback((colIndex: number, clientY: number): { col: number; insertAfterId: string | null } => {
+    const internal = dragInternalRef.current;
+    const currentColumns = columnsRef.current;
+    const getCol = getColumnRef.current;
 
     const colEl = columnRefs.current[colIndex];
-    if (!colEl) return;
+    if (!colEl) return { col: colIndex, insertAfterId: null };
 
     // Widgets in this column (excluding the dragged one)
-    const colWidgets = columns[colIndex].filter(w => w.id !== draggedId);
+    const colWidgets = currentColumns[colIndex]?.filter(w => w.id !== internal.widgetId) ?? [];
     let insertAfterId: string | null = null;
 
     if (colWidgets.length === 0) {
-      // Empty column — find last widget before this column in global order
-      for (const item of items) {
-        if (item.id === draggedId) continue;
-        if (getColumn(item.id) === colIndex) break;
-        insertAfterId = item.id;
-      }
-    } else {
-      // Snap to widget edges: find which widget the cursor is nearest to
-      for (const widget of colWidgets) {
-        const el = colEl.querySelector(`[data-widget-id="${widget.id}"]`);
-        if (!el) continue;
-        const rect = (el as HTMLElement).getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
+      // Empty column — insert at beginning
+      return { col: colIndex, insertAfterId: null };
+    }
 
-        if (e.clientY < midY) break; // Cursor above midpoint → insert before this widget
-        insertAfterId = widget.id;
-      }
+    // Snap to widget edges: find which widget the cursor is nearest to
+    for (const widget of colWidgets) {
+      const el = colEl.querySelector(`[data-widget-id="${widget.id}"]`);
+      if (!el) continue;
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (clientY < midY) break; // Cursor above midpoint → insert before this widget
+      insertAfterId = widget.id;
+    }
 
-      // Cursor above first widget → find widget before this column in global order
-      if (insertAfterId === null) {
-        for (const item of items) {
-          if (item.id === draggedId) continue;
-          if (getColumn(item.id) === colIndex) break;
-          insertAfterId = item.id;
+    return { col: colIndex, insertAfterId };
+  }, []);
+
+  // Clean up drag state
+  const cleanupDrag = useCallback(() => {
+    const internal = dragInternalRef.current;
+    if (internal.clone) {
+      internal.clone.remove();
+      internal.clone = null;
+    }
+    if (internal.sourceEl) {
+      internal.sourceEl.style.opacity = '1';
+      internal.sourceEl = null;
+    }
+    internal.isDown = false;
+    internal.widgetId = null;
+    internal.hasMoved = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    setIsDragging(false);
+    setDraggedId(null);
+    setDropPreview(null);
+  }, []);
+
+  // Handle pointer down on a widget — start potential drag
+  const handlePointerDown = useCallback((e: React.PointerEvent, widgetId: string) => {
+    if (!isDragMode) return;
+    // Only left mouse button or touch
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+
+    dragInternalRef.current = {
+      isDown: true,
+      widgetId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      hasMoved: false,
+      clone: null,
+      sourceEl: el,
+    };
+
+    // Prevent text selection during drag
+    document.body.style.userSelect = 'none';
+  }, [isDragMode]);
+
+  // Global pointer move and up handlers
+  useEffect(() => {
+    if (!isDragMode) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const internal = dragInternalRef.current;
+      if (!internal.isDown || !internal.widgetId) return;
+
+      const dx = e.clientX - internal.startX;
+      const dy = e.clientY - internal.startY;
+
+      // Need at least 5px movement before starting the visual drag
+      if (!internal.hasMoved) {
+        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        internal.hasMoved = true;
+
+        // Now set React state for rendering (placeholder, dimming)
+        setIsDragging(true);
+        setDraggedId(internal.widgetId);
+        document.body.style.cursor = 'grabbing';
+
+        // Create clone of the widget
+        const sourceEl = internal.sourceEl;
+        if (sourceEl) {
+          sourceEl.style.opacity = '0.3';
+
+          const clone = sourceEl.cloneNode(true) as HTMLElement;
+          clone.style.position = 'fixed';
+          clone.style.width = `${sourceEl.offsetWidth}px`;
+          clone.style.zIndex = '9999';
+          clone.style.pointerEvents = 'none';
+          clone.style.opacity = '0.85';
+          clone.style.transform = 'scale(1.03)';
+          clone.style.boxShadow = '0 20px 40px rgba(0,0,0,0.15), 0 8px 16px rgba(0,0,0,0.1)';
+          clone.style.borderRadius = '12px';
+          clone.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
+          clone.setAttribute('data-drag-clone', 'true');
+          document.body.appendChild(clone);
+          internal.clone = clone;
         }
       }
-    }
 
-    setDropPreview(prev => {
-      if (prev && prev.col === colIndex && prev.insertAfterId === insertAfterId) return prev;
-      return { col: colIndex, insertAfterId };
-    });
-  }, [draggedId, columns, items, getColumn]);
+      // Update clone position
+      if (internal.clone) {
+        internal.clone.style.left = `${e.clientX - internal.offsetX}px`;
+        internal.clone.style.top = `${e.clientY - internal.offsetY}px`;
+      }
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    if (!draggedId || !dropPreview) { cleanup(); return; }
-    if (onPositionChange) {
-      onPositionChange(draggedId, dropPreview.col, dropPreview.insertAfterId);
-    }
-    cleanup();
-  }, [draggedId, dropPreview, onPositionChange, cleanup]);
+      // Calculate drop target
+      const visCols = typeof window !== 'undefined'
+        ? (window.matchMedia('(min-width: 1024px)').matches ? 3
+          : window.matchMedia('(min-width: 640px)').matches ? 2 : 1)
+        : 1;
 
-  const handleDragEnd = useCallback(() => { cleanup(); }, [cleanup]);
+      const col = Math.min(getColumnAtPoint(e.clientX), visCols - 1);
+      const position = getInsertPosition(col, e.clientY);
+
+      setDropPreview(prev => {
+        if (prev && prev.col === position.col && prev.insertAfterId === position.insertAfterId) return prev;
+        return position;
+      });
+    };
+
+    const handlePointerUp = () => {
+      const internal = dragInternalRef.current;
+      if (!internal.isDown) return;
+
+      // Only apply if we actually moved (prevents accidental clicks)
+      if (internal.hasMoved && dropPreview && internal.widgetId) {
+        const callback = onPositionChangeRef.current;
+        if (callback) {
+          callback(internal.widgetId, dropPreview.col, dropPreview.insertAfterId);
+        }
+      }
+
+      cleanupDrag();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDragMode, getColumnAtPoint, getInsertPosition, cleanupDrag, dropPreview]);
 
   // ─── Render ────────────────────────────────────────────────
 
-  // Column CSS: always render 3 column slots. On sm/lg the columns flex-wrap
-  // into the right number of visible columns.
   const colWidthClass = 'w-full sm:w-[calc(50%-6px)] lg:w-[calc(33.333%-8px)]';
 
   return (
     <div
       ref={containerRef}
       className={`flex flex-wrap gap-3 p-3 sm:p-4 ${className}`}
+      style={isDragMode ? { touchAction: 'none' } : undefined}
     >
       {visualColumns.map((col, colIdx) => {
         const isDropTarget = isDragMode && activeDropCol === colIdx;
-        // Only show column drop targets for the columns that are currently visible
         const isColVisible = colIdx < visibleColumns;
 
         return (
@@ -257,14 +405,12 @@ export function MasonryLayout({
             className={`
               ${colWidthClass}
               flex flex-col gap-3
-              transition-all duration-200 ease-out
-              ${isDragMode && isColVisible ? 'min-h-[60px]' : ''}
+              transition-colors duration-200 ease-out
+              ${isDragMode && isColVisible ? 'min-h-[60px] rounded-xl' : ''}
               ${isDropTarget && isColVisible
-                ? 'rounded-xl ring-2 ring-teal-400/30 bg-teal-50/50 dark:bg-teal-900/10'
+                ? 'ring-2 ring-teal-400/30 bg-teal-50/50 dark:bg-teal-900/10'
                 : ''}
             `}
-            onDragOver={isDragMode && isColVisible ? (e) => handleColumnDragOver(e, colIdx) : undefined}
-            onDrop={isDragMode && isColVisible ? handleDrop : undefined}
           >
             {col.map(item => {
               // ── Drop placeholder ──
@@ -284,21 +430,20 @@ export function MasonryLayout({
                 );
               }
 
-              const isDragging = draggedId === item.id;
+              const isThisDragging = isDragging && draggedId === item.id;
               const content = childContentMap.get(item.id) ?? item.element;
 
               return (
                 <div
                   key={item.id}
                   data-widget-id={item.id}
-                  draggable={isDragMode}
-                  onDragStart={isDragMode ? (e) => handleDragStart(e, item.id) : undefined}
-                  onDragEnd={isDragMode ? handleDragEnd : undefined}
+                  onPointerDown={isDragMode ? (e) => handlePointerDown(e, item.id) : undefined}
                   className={`
-                    ${isDragMode ? 'cursor-grab active:cursor-grabbing' : ''}
-                    ${isDragging ? 'opacity-40 scale-[0.97] pointer-events-none' : 'transition-all duration-200 ease-out'}
+                    ${isDragMode ? 'cursor-grab select-none' : ''}
+                    ${isThisDragging ? 'opacity-30' : ''}
                     relative
                   `}
+                  style={isDragMode ? { touchAction: 'none' } : undefined}
                 >
                   {content}
                 </div>

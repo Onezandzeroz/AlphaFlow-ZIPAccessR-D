@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -34,7 +34,6 @@ import {
   PieChart,
 } from 'lucide-react';
 import { useDashboardWidgets, DASHBOARD_WIDGETS } from '@/lib/dashboard-widgets';
-import { type WidgetSize } from '@/lib/dashboard-widget-definitions';
 import { useTranslation } from '@/lib/use-translation';
 import { COLUMN_COUNT, DEFAULT_COLUMNS, clampColumn } from './masonry-layout';
 
@@ -91,7 +90,6 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
   // Subscribe to widget store state
   const visibilityMap = useDashboardWidgets((s) => s.visibilityMap);
   const widgetOrder = useDashboardWidgets((s) => s.widgetOrder);
-  const widgetSizes = useDashboardWidgets((s) => s.widgetSizes);
   const widgetPositions = useDashboardWidgets((s) => s.widgetPositions);
   const toggleWidget = useDashboardWidgets((s) => s.toggleWidget);
   const resetWidgets = useDashboardWidgets((s) => s.resetWidgets);
@@ -100,13 +98,44 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
   const setWidgetPosition = useDashboardWidgets((s) => s.setWidgetPosition);
   const isWidgetVisible = (id: string) => visibilityMap[id] ?? true;
 
-  // ── Drag state ──────────────────────────────────────────────
-  const [dragId, setDragId] = useState<string | null>(null);
+  // ── Drag state (React state for rendering) ──────────────────
+  const [isDragging, setIsDragging] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropPreview, setDropPreview] = useState<{
     col: number;
     insertAfterId: string | null;
   } | null>(null);
+
+  // ── Internal drag tracking (refs for non-rendering data) ────
+  const dragInternalRef = useRef<{
+    isDown: boolean;
+    widgetId: string | null;
+    startX: number;
+    startY: number;
+    offsetX: number;
+    offsetY: number;
+    hasMoved: boolean;
+    clone: HTMLElement | null;
+    sourceEl: HTMLElement | null;
+  }>({
+    isDown: false,
+    widgetId: null,
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    hasMoved: false,
+    clone: null,
+    sourceEl: null,
+  });
+
   const columnRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Refs for store actions (avoid stale closures in window event listeners)
+  const setWidgetPositionRef = useRef(setWidgetPosition);
+  const setWidgetOrderDirectRef = useRef(setWidgetOrderDirect);
+  useEffect(() => { setWidgetPositionRef.current = setWidgetPosition; }, [setWidgetPosition]);
+  useEffect(() => { setWidgetOrderDirectRef.current = setWidgetOrderDirect; }, [setWidgetOrderDirect]);
 
   // ── Get column for a widget (same logic as masonry-layout) ──
   const getColumn = useCallback((id: string): number => {
@@ -124,6 +153,10 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     })
   , [widgetOrder]);
 
+  // Keep refs for use in pointer event handlers
+  const sortedWidgetsRef = useRef(sortedWidgets);
+  useEffect(() => { sortedWidgetsRef.current = sortedWidgets; }, [sortedWidgets]);
+
   // ── Distribute widgets into 3 columns (same as dashboard) ───
   const columns = useMemo(() => {
     const cols: (typeof DASHBOARD_WIDGETS[number])[][] = Array.from({ length: COLUMN_COUNT }, () => []);
@@ -133,10 +166,16 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     return cols;
   }, [sortedWidgets, getColumn]);
 
+  const columnsRef = useRef(columns);
+  useEffect(() => { columnsRef.current = columns; }, [columns]);
+
+  const getColumnRef = useRef(getColumn);
+  useEffect(() => { getColumnRef.current = getColumn; }, [getColumn]);
+
   // ── Visual columns with drop placeholder ────────────────────
   const visualColumns = useMemo(() => {
     const result = columns.map(col => [...col]);
-    if (!dragId || !dropPreview) return result;
+    if (!isDragging || !dropPreview) return result;
 
     const { col: targetCol, insertAfterId } = dropPreview;
     const targetWidgets = result[targetCol];
@@ -155,106 +194,194 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
     });
 
     return result;
-  }, [columns, dragId, dropPreview]);
+  }, [columns, isDragging, dropPreview]);
 
   const activeDropCol = dropPreview?.col ?? -1;
 
-  // ─── Drag handlers ──────────────────────────────────────────
+  // ─── Pointer-event Drag-and-Drop ────────────────────────────
 
-  const cleanupEditor = useCallback(() => {
-    if (dragId) {
-      const el = columnRefs.current
-        .flatMap(col => col ? [col] : [])
-        .flatMap(col => Array.from(col.querySelectorAll(`[data-widget-editor-id="${dragId}"]`)));
-      el.forEach(e => { if (e instanceof HTMLElement) e.style.opacity = '1'; });
+  const getColumnAtPoint = useCallback((clientX: number): number => {
+    for (let i = 0; i < COLUMN_COUNT; i++) {
+      const colEl = columnRefs.current[i];
+      if (!colEl) continue;
+      const rect = colEl.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right) return i;
     }
-    setDragId(null);
-    setDropPreview(null);
-  }, [dragId]);
-
-  const handleDragStart = useCallback((e: React.DragEvent, widgetId: string) => {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', widgetId);
-    if (e.currentTarget instanceof HTMLElement) {
-      e.currentTarget.style.opacity = '0.4';
+    let closest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < COLUMN_COUNT; i++) {
+      const colEl = columnRefs.current[i];
+      if (!colEl) continue;
+      const rect = colEl.getBoundingClientRect();
+      const center = rect.left + rect.width / 2;
+      const dist = Math.abs(clientX - center);
+      if (dist < minDist) { minDist = dist; closest = i; }
     }
-    setDragId(widgetId);
-    setDropPreview(null);
+    return closest;
   }, []);
 
-  const handleColumnDragOver = useCallback((e: React.DragEvent, colIndex: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (!dragId) return;
+  const getInsertPosition = useCallback((colIndex: number, clientY: number): { col: number; insertAfterId: string | null } => {
+    const internal = dragInternalRef.current;
+    const currentColumns = columnsRef.current;
+    const getCol = getColumnRef.current;
 
     const colEl = columnRefs.current[colIndex];
-    if (!colEl) return;
+    if (!colEl) return { col: colIndex, insertAfterId: null };
 
-    // Widgets in this column (excluding the dragged one)
-    const colWidgets = columns[colIndex].filter(w => w.id !== dragId);
+    const colWidgets = currentColumns[colIndex]?.filter(w => w.id !== internal.widgetId) ?? [];
     let insertAfterId: string | null = null;
 
     if (colWidgets.length === 0) {
-      for (const w of sortedWidgets) {
-        if (w.id === dragId) continue;
-        if (getColumn(w.id) === colIndex) break;
-        insertAfterId = w.id;
-      }
-    } else {
-      for (const widget of colWidgets) {
-        const el = colEl.querySelector(`[data-widget-editor-id="${widget.id}"]`);
-        if (!el) continue;
-        const rect = (el as HTMLElement).getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        if (e.clientY < midY) break;
-        insertAfterId = widget.id;
-      }
+      return { col: colIndex, insertAfterId: null };
+    }
 
-      if (insertAfterId === null) {
-        for (const w of sortedWidgets) {
-          if (w.id === dragId) continue;
-          if (getColumn(w.id) === colIndex) break;
-          insertAfterId = w.id;
+    for (const widget of colWidgets) {
+      const el = colEl.querySelector(`[data-widget-editor-id="${widget.id}"]`);
+      if (!el) continue;
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (clientY < midY) break;
+      insertAfterId = widget.id;
+    }
+
+    return { col: colIndex, insertAfterId };
+  }, []);
+
+  const cleanupDrag = useCallback(() => {
+    const internal = dragInternalRef.current;
+    if (internal.clone) {
+      internal.clone.remove();
+      internal.clone = null;
+    }
+    if (internal.sourceEl) {
+      internal.sourceEl.style.opacity = '1';
+      internal.sourceEl = null;
+    }
+    internal.isDown = false;
+    internal.widgetId = null;
+    internal.hasMoved = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    setIsDragging(false);
+    setDraggedId(null);
+    setDropPreview(null);
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent, widgetId: string) => {
+    if (!isWidgetVisible(widgetId)) return;
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+
+    dragInternalRef.current = {
+      isDown: true,
+      widgetId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+      hasMoved: false,
+      clone: null,
+      sourceEl: el,
+    };
+
+    document.body.style.userSelect = 'none';
+  }, [isWidgetVisible]);
+
+  // Global pointer move and up handlers
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      const internal = dragInternalRef.current;
+      if (!internal.isDown || !internal.widgetId) return;
+
+      const dx = e.clientX - internal.startX;
+      const dy = e.clientY - internal.startY;
+
+      if (!internal.hasMoved) {
+        if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        internal.hasMoved = true;
+
+        setIsDragging(true);
+        setDraggedId(internal.widgetId);
+        document.body.style.cursor = 'grabbing';
+
+        const sourceEl = internal.sourceEl;
+        if (sourceEl) {
+          sourceEl.style.opacity = '0.3';
+
+          const clone = sourceEl.cloneNode(true) as HTMLElement;
+          clone.style.position = 'fixed';
+          clone.style.width = `${sourceEl.offsetWidth}px`;
+          clone.style.zIndex = '9999';
+          clone.style.pointerEvents = 'none';
+          clone.style.opacity = '0.9';
+          clone.style.transform = 'scale(1.05)';
+          clone.style.boxShadow = '0 12px 28px rgba(0,0,0,0.15), 0 4px 10px rgba(0,0,0,0.1)';
+          clone.style.borderRadius = '8px';
+          clone.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease';
+          clone.setAttribute('data-drag-clone', 'true');
+          document.body.appendChild(clone);
+          internal.clone = clone;
         }
       }
-    }
 
-    setDropPreview(prev => {
-      if (prev && prev.col === colIndex && prev.insertAfterId === insertAfterId) return prev;
-      return { col: colIndex, insertAfterId };
-    });
-  }, [dragId, columns, sortedWidgets, getColumn]);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const sourceId = e.dataTransfer.getData('text/plain');
-    if (!sourceId || !dragId || !dropPreview) { cleanupEditor(); return; }
-
-    const { col: targetCol, insertAfterId } = dropPreview;
-
-    // 1. Update column assignment for the dragged widget
-    setWidgetPosition(sourceId, { x: targetCol, y: 0, width: 0 });
-
-    // 2. Update global order: remove from old position, insert at new position
-    const state = useDashboardWidgets.getState();
-    const filtered = state.widgetOrder.filter(id => id !== sourceId);
-
-    if (insertAfterId !== null) {
-      const idx = filtered.indexOf(insertAfterId);
-      if (idx >= 0) {
-        filtered.splice(idx + 1, 0, sourceId);
-      } else {
-        filtered.push(sourceId);
+      if (internal.clone) {
+        internal.clone.style.left = `${e.clientX - internal.offsetX}px`;
+        internal.clone.style.top = `${e.clientY - internal.offsetY}px`;
       }
-    } else {
-      filtered.unshift(sourceId);
-    }
 
-    setWidgetOrderDirect(filtered);
-    cleanupEditor();
-  }, [dragId, dropPreview, setWidgetPosition, setWidgetOrderDirect, cleanupEditor]);
+      const col = getColumnAtPoint(e.clientX);
+      const position = getInsertPosition(col, e.clientY);
 
-  const handleDragEnd = useCallback(() => { cleanupEditor(); }, [cleanupEditor]);
+      setDropPreview(prev => {
+        if (prev && prev.col === position.col && prev.insertAfterId === position.insertAfterId) return prev;
+        return position;
+      });
+    };
+
+    const handlePointerUp = () => {
+      const internal = dragInternalRef.current;
+      if (!internal.isDown) return;
+
+      if (internal.hasMoved && dropPreview && internal.widgetId) {
+        const { col: targetCol, insertAfterId } = dropPreview;
+        const sourceId = internal.widgetId;
+
+        // 1. Update column assignment
+        setWidgetPositionRef.current(sourceId, { x: targetCol, y: 0, width: 0 });
+
+        // 2. Update global order: remove from old position, insert at new position
+        const state = useDashboardWidgets.getState();
+        const filtered = state.widgetOrder.filter(id => id !== sourceId);
+
+        if (insertAfterId !== null) {
+          const idx = filtered.indexOf(insertAfterId);
+          if (idx >= 0) {
+            filtered.splice(idx + 1, 0, sourceId);
+          } else {
+            filtered.push(sourceId);
+          }
+        } else {
+          filtered.unshift(sourceId);
+        }
+
+        setWidgetOrderDirectRef.current(filtered);
+      }
+
+      cleanupDrag();
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [getColumnAtPoint, getInsertPosition, cleanupDrag, dropPreview]);
 
   const handleReset = useCallback(() => {
     resetWidgets();
@@ -298,7 +425,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
 
         {/* 3-column preview (mirrors the dashboard layout) */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 min-h-[300px]">
+          <div className="relative rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 min-h-[300px]" style={{ touchAction: 'none' }}>
             <div className="absolute -top-3 left-4 px-2 bg-white dark:bg-[#1a1f1e] text-[10px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
               {language === 'da' ? 'Live forhåndsvisning' : 'Live Preview'}
             </div>
@@ -313,11 +440,9 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                     ref={el => { columnRefs.current[colIdx] = el; }}
                     className={`
                       flex-1 flex flex-col gap-2 min-h-[200px]
-                      rounded-lg transition-all duration-200
+                      rounded-lg transition-colors duration-200
                       ${isDropTarget ? 'ring-2 ring-teal-400/40 bg-teal-50/60 dark:bg-teal-900/15' : 'bg-gray-100/60 dark:bg-gray-800/30'}
                     `}
-                    onDragOver={(e) => handleColumnDragOver(e, colIdx)}
-                    onDrop={handleDrop}
                   >
                     {/* Column label */}
                     <div className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-center pb-1 border-b border-gray-200 dark:border-gray-700">
@@ -339,24 +464,22 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
 
                       const color = getWidgetColor(widget.id);
                       const visible = isWidgetVisible(widget.id);
-                      const isDragging = dragId === widget.id;
+                      const isThisDragging = isDragging && draggedId === widget.id;
                       const IconComp = ICON_MAP[widget.icon];
 
                       return (
                         <div
                           key={widget.id}
                           data-widget-editor-id={widget.id}
-                          draggable={visible}
-                          onDragStart={(e) => handleDragStart(e, widget.id)}
-                          onDragEnd={handleDragEnd}
+                          onPointerDown={(e) => handlePointerDown(e, widget.id)}
                           className={`
-                            relative rounded-lg border-2 transition-all duration-200 select-none
+                            relative rounded-lg border-2 select-none
                             ${visible ? color.border : 'border-dashed border-gray-300 dark:border-gray-600'}
-                            ${isDragging ? 'opacity-40 scale-95 pointer-events-none' : 'opacity-100'}
+                            ${isThisDragging ? 'opacity-30' : 'opacity-100'}
                             ${!visible ? 'opacity-50' : ''}
-                            ${visible ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
+                            ${visible ? 'cursor-grab' : 'cursor-default'}
                           `}
-                          style={{ minHeight: '44px' }}
+                          style={{ minHeight: '44px', touchAction: 'none' }}
                         >
                           <div className={`
                             absolute inset-0 rounded-md flex items-center gap-2 px-2.5 overflow-hidden
