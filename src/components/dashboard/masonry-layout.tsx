@@ -31,7 +31,7 @@ interface MasonryLayoutProps {
   items: MasonryItem[];
   children?: ReactNode;
   isDragMode: boolean;
-  itemHeights: Record<string, number>;
+  itemHeights?: Record<string, number>; // optional — kept for backward compat, not used in flex-wrap layout
   onItemHeightChange?: (id: string, height: number) => void;
   className?: string;
   onReorder?: (draggedId: string, targetIndex: number) => void;
