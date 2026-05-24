@@ -56,7 +56,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
 // ─── Defaults version ──────────────────────────────────────────
 // Bump this when code-level defaults change (visibility, order, column layout).
 // The Zustand store compares this against localStorage to detect stale cache.
-export const WIDGET_DEFAULTS_VERSION = 3;
+export const WIDGET_DEFAULTS_VERSION = 4;
 
 export function getDefaultVisibilityMap(): Record<string, boolean> {
   const map: Record<string, boolean> = {};
