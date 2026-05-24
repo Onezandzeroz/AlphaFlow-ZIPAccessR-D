@@ -60,6 +60,7 @@ import {
   Loader2,
   UserCheck,
   UserMinus,
+  UserPlus,
   ArrowRightLeft,
   Mail,
   Phone,
@@ -71,7 +72,6 @@ import {
   FileText,
   ArrowRight,
   Receipt,
-  AlertCircle,
   ChevronDown,
 } from 'lucide-react';
 
@@ -271,15 +271,11 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
 
   const stats = useMemo(() => {
     const allActive = contacts.filter((c) => c.isActive);
-    // Count contacts with outstanding balance (those with type CUSTOMER or BOTH who have active invoices)
-    // For now we approximate by counting contacts that are customers or both since we don't have invoice data here
-    const withOutstanding = allActive.filter((c) => c.type === 'CUSTOMER' || c.type === 'BOTH').length;
     return {
       total: allActive.length,
       customers: allActive.filter((c) => c.type === 'CUSTOMER').length,
       suppliers: allActive.filter((c) => c.type === 'SUPPLIER').length,
       both: allActive.filter((c) => c.type === 'BOTH').length,
-      withOutstanding,
     };
   }, [contacts]);
 
@@ -563,20 +559,20 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
           </CardContent>
         </Card>
 
-        {/* With Outstanding Balance */}
+        {/* Both Customer & Supplier */}
         <Card className="stat-card">
           <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-                  {isDanish ? 'Udestående saldo' : 'Outstanding'}
+                  {isDanish ? 'Kunde & Leverandør' : 'Customer & Supplier'}
                 </p>
                 <p className="text-lg sm:text-2xl font-bold text-gray-900 dark:text-white mt-0.5 sm:mt-1">
-                  {stats.withOutstanding}
+                  {stats.both}
                 </p>
               </div>
               <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-full stat-icon-amber flex items-center justify-center">
-                <AlertCircle className="h-4 w-4 sm:h-6 sm:w-6 text-amber-600 dark:text-amber-400" />
+                <UserPlus className="h-4 w-4 sm:h-6 sm:w-6 text-amber-600 dark:text-amber-400" />
               </div>
             </div>
           </CardContent>
@@ -601,6 +597,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9 bg-gray-50 dark:bg-white/[0.04] border-0"
+                autoComplete="off"
+                data-form-type="other"
               />
             </div>
 
