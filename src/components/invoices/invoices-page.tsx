@@ -1946,9 +1946,9 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                 style={{
                   padding: '0',
                   transformOrigin: 'top left',
-                  transform: 'scale(0.62)',
-                  width: '161.3%',
-                  minHeight: '161.3%',
+                  transform: 'scale(0.72)',
+                  width: '138.9%',
+                  minHeight: '138.9%',
                 }}
               >
                 <div className="invoice-preview-content" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '28px 32px' }}>
