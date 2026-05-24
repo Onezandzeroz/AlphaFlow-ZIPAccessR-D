@@ -7,27 +7,26 @@
  *   - OpenCV.js: ONLY used for perspective warp (getPerspectiveTransform + warpPerspective)
  *   - Canvas 2D API: ALL enhancement (brightness, contrast, sharpen)
  *
- * Pipeline (v7 — scanner-quality with Sauvola binarization):
+ * Pipeline (v8 — balanced enhancement, no overexposure):
  *   1. Perspective warp (OpenCV INTER_CUBIC) — correct skew, minimum 2000px longest side
  *   2. Grayscale conversion — FIRST (eliminates 3-channel work from every subsequent step)
  *   3. Median denoise — SECOND (remove sensor noise BEFORE any value manipulation)
- *   4. Contrast stretch (1st–99th percentile) — wider dynamic range, natural text contrast
- *   5. Adaptive brightness (target mean ~215) — consistent luminance across all lighting
- *   6. Two-pass sharpening — crisp text edges
- *   7. Paper whitening — lift near-white pixels to pure white for photocopy/scanner aesthetic
- *   8. Sauvola binarization — pure B&W output for maximum OCR accuracy
+ *   4. Contrast stretch (2nd–98th percentile) — widen dynamic range without clipping extremes
+ *   5. Adaptive brightness (target mean ~200, gamma-corrected) — natural luminance adjustment
+ *   6. Single-pass sharpening — crisp text edges without halos
+ *   7. Paper whitening — lift ONLY near-white pixels (230+) to pure white
+ *
+ * v7 → v8 changes (OVEREXPOSURE FIX):
+ *   - REMOVED Sauvola binarization — it destroyed detail on brightened images
+ *   - Lowered brightness target: 215 → 200 (less aggressive push)
+ *   - Changed brightness from additive to gamma correction (more natural, preserves blacks)
+ *   - Raised paper whitening threshold: 190 → 230 (only whitens already-near-white pixels)
+ *   - Reduced sharpening from two-pass to single-pass (less edge halo)
+ *   - Tightened contrast percentiles: 1st–99th → 2nd–98th (less extreme stretching)
  *
  * v6 → v7 changes:
  *   - Added Sauvola local binarization as final step (pure black text on white paper)
  *   - Sauvola handles uneven illumination better than global Otsu for receipt documents
- *
- * v5 → v6 changes:
- *   - Reordered pipeline: denoise BEFORE brightness/contrast (noise no longer amplified)
- *   - Replaced fixed +64 brightness with adaptive target-mean normalization
- *   - Widened contrast percentiles from 2nd–98th to 1st–99th for natural tonal range
- *   - Added paper whitening step for scanner-quality white backgrounds
- *   - JPEG quality raised to 90% for better text preservation
- *   - Pipeline: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten → Binarize
  */
 
 declare const cv: any;
@@ -112,10 +111,11 @@ function writeGrayscale(imageData: ImageData, gray: Uint8Array): void {
 }
 
 /**
- * Adaptive brightness normalization.
- * Shifts all pixel values so the mean luminance approaches `targetMean`.
- * Uses a smooth factor (0.8×) to avoid overcorrection.
- * Skips adjustment if the image is already within ±8 of target.
+ * Adaptive brightness normalization using gamma correction.
+ * Adjusts image brightness so the mean luminance approaches `targetMean`.
+ * Uses gamma correction instead of additive shift — this preserves near-black
+ * pixels (text) while gently lifting mid-tones (paper).
+ * Skips adjustment if the image is already within ±5 of target.
  */
 function adaptiveBrightness(gray: Uint8Array, targetMean: number): void {
   const n = gray.length;
@@ -123,17 +123,32 @@ function adaptiveBrightness(gray: Uint8Array, targetMean: number): void {
   for (let i = 0; i < n; i++) sum += gray[i];
   const currentMean = sum / n;
   const delta = targetMean - currentMean;
-  if (Math.abs(delta) < 8) return; // Already close enough
-  const boost = delta * 0.8;
+  if (Math.abs(delta) < 5) return; // Already close enough
+
+  // Use gamma correction instead of additive shift.
+  // Gamma brightens mid-tones while preserving near-black pixels.
+  // gamma < 1 = brighten, gamma > 1 = darken.
+  // We interpolate toward the ideal gamma, capped to avoid extreme values.
+  const ratio = targetMean / currentMean;
+  let gamma = 1.0 / Math.max(0.5, Math.min(2.0, ratio)); // clamp ratio
+  // Blend: if delta is small, stay closer to 1.0 (neutral)
+  gamma = 1.0 + (gamma - 1.0) * 0.6;
+
+  // Precompute 256-entry LUT for speed
+  const lut = new Uint8Array(256);
+  const invGamma = 1.0 / gamma;
+  for (let i = 0; i < 256; i++) {
+    lut[i] = Math.min(255, Math.max(0, Math.round(255 * Math.pow(i / 255, invGamma))));
+  }
   for (let i = 0; i < n; i++) {
-    gray[i] = Math.min(255, Math.max(0, Math.round(gray[i] + boost)));
+    gray[i] = lut[gray[i]];
   }
 }
 
 /**
- * Contrast stretch using 1st and 99th percentiles.
- * Wider range than v5's 2nd–98th for a more natural tonal distribution.
- * Clips only the extreme 1% tails (sensor outliers, pure black borders).
+ * Contrast stretch using 2nd and 98th percentiles.
+ * Clips the extreme 2% tails (sensor outliers, pure black borders, hot pixels).
+ * Tighter than 1st–99th — prevents over-stretching which causes washed-out whites.
  */
 function stretchContrast(gray: Uint8Array): void {
   const n = gray.length;
@@ -144,9 +159,9 @@ function stretchContrast(gray: Uint8Array): void {
 
   let lo = 0, hi = 255;
   let cum = 0;
-  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.01) { lo = i; break; } }
+  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.02) { lo = i; break; } }
   cum = 0;
-  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.01) { hi = i; break; } }
+  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.02) { hi = i; break; } }
 
   const range = hi - lo;
   if (range <= 20) return; // Already high contrast
@@ -250,12 +265,12 @@ function unsharpMaskPass(gray: Uint8Array, w: number, h: number, radius: number,
 }
 
 /**
- * Two-pass sharpening for crisp text edges.
- *   Pass 1: Broad (radius 2, strength 0.8) — overall edge clarity
- *   Pass 2: Fine (radius 1, strength 0.6) — text stroke detail
+ * Single-pass sharpening for crisp text edges.
+ * Moderate strength (0.6) at radius 1 — sharpens text without creating
+ * visible halos or amplifying noise.
+ * v8: reduced from two-pass to prevent over-sharpening artifacts.
  */
-function sharpenTwoPass(gray: Uint8Array, w: number, h: number): void {
-  unsharpMaskPass(gray, w, h, 2, 0.8);
+function sharpenPass(gray: Uint8Array, w: number, h: number): void {
   unsharpMaskPass(gray, w, h, 1, 0.6);
 }
 
@@ -340,15 +355,14 @@ function sauvolaBinarize(gray: Uint8Array, w: number, h: number): void {
 // ── Paper whitening ─────────────────────────────────────────────────
 
 /**
- * Paper whitening: lift near-white pixels toward pure white.
- * Uses a quadratic curve so that pixels near 190 stay put,
- * but pixels closer to 255 get pushed to pure white (255).
- * This creates the "floating on white paper" scanner aesthetic
- * without affecting text or mid-tone content.
+ * Paper whitening: lift ONLY near-white pixels toward pure white.
+ * Threshold 230 means only pixels already very close to white get boosted.
+ * This creates a clean white paper look without destroying mid-tones.
+ * v8: raised from 190 to 230 to prevent over-whitening of mid-tone content.
  */
 function whitenPaper(gray: Uint8Array): void {
-  const THRESHOLD = 190;
-  const RANGE = 255 - THRESHOLD; // 65
+  const THRESHOLD = 230;
+  const RANGE = 255 - THRESHOLD; // 25
   for (let i = 0; i < gray.length; i++) {
     if (gray[i] > THRESHOLD) {
       const t = (gray[i] - THRESHOLD) / RANGE; // 0 → 1
@@ -360,13 +374,18 @@ function whitenPaper(gray: Uint8Array): void {
 // ── Main enhancement pipeline ──────────────────────────────────────
 
 /**
- * v6 enhancement pipeline — optimized order for scanner-quality output.
+ * v8 enhancement pipeline — balanced, no overexposure.
  *
- * Key insight from v5→v6: denoising MUST happen before brightness/contrast
- * manipulation. In v5, the fixed +64 brightness boost amplified sensor noise
- * before the median filter cleaned it up. Now noise is removed first.
+ * v8 key changes (overexposure fix):
+ *   - REMOVED Sauvola binarization: was destroying detail on brightened images.
+ *     Clean grayscale preserves text readability, colored elements, and formatting.
+ *   - Brightness: target 200 (was 215), gamma-corrected (was additive).
+ *     Gamma preserves dark text while gently lifting mid-tones.
+ *   - Paper whitening: threshold 230 (was 190). Only whitens already-near-white pixels.
+ *   - Contrast: 2nd–98th percentile (was 1st–99th). Less extreme stretching.
+ *   - Sharpening: single-pass (was two-pass). Less edge halo artifacts.
  *
- * Order: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten → Binarize
+ * Order: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten
  */
 function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
@@ -376,7 +395,7 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const h = canvas.height;
   const imageData = ctx.getImageData(0, 0, w, h);
 
-  console.log(`[perspectiveWarp] v6 enhancing ${w}×${h}`);
+  console.log(`[perspectiveWarp] v8 enhancing ${w}×${h}`);
 
   // STEP 1: Grayscale — FIRST (eliminates 3-channel work from all subsequent steps)
   const gray = extractGrayscale(imageData);
@@ -388,35 +407,29 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
     console.log('[perspectiveWarp] ✓ Median denoise');
   } catch (e) { console.warn('[perspectiveWarp] Denoise failed:', e); }
 
-  // STEP 3: Contrast stretch (1st–99th percentile — wider, more natural range)
+  // STEP 3: Contrast stretch (2nd–98th percentile — natural range, no over-stretching)
   try {
     stretchContrast(gray);
     console.log('[perspectiveWarp] ✓ Contrast stretch');
   } catch (e) { console.warn('[perspectiveWarp] Contrast failed:', e); }
 
-  // STEP 4: Adaptive brightness (target mean ~215 — consistent across all lighting)
+  // STEP 4: Adaptive brightness (target mean ~200, gamma-corrected — preserves blacks)
   try {
-    adaptiveBrightness(gray, 215);
+    adaptiveBrightness(gray, 200);
     console.log('[perspectiveWarp] ✓ Adaptive brightness');
   } catch (e) { console.warn('[perspectiveWarp] Brightness failed:', e); }
 
-  // STEP 5: Two-pass sharpen — LAST before whitening (sharpen clean edges only)
+  // STEP 5: Single-pass sharpen — crisp text without halos
   try {
-    sharpenTwoPass(gray, w, h);
-    console.log('[perspectiveWarp] ✓ Two-pass sharpen');
+    sharpenPass(gray, w, h);
+    console.log('[perspectiveWarp] ✓ Sharpen');
   } catch (e) { console.warn('[perspectiveWarp] Sharpen failed:', e); }
 
-  // STEP 6: Paper whitening (lift near-white to pure white for scanner look)
+  // STEP 6: Paper whitening (lift only 230+ to white — preserves mid-tones)
   try {
     whitenPaper(gray);
     console.log('[perspectiveWarp] ✓ Paper whitening');
   } catch (e) { console.warn('[perspectiveWarp] Whitening failed:', e); }
-
-  // STEP 7: Sauvola binarization (pure B&W for maximum OCR accuracy)
-  try {
-    sauvolaBinarize(gray, w, h);
-    console.log('[perspectiveWarp] ✓ Sauvola binarization');
-  } catch (e) { console.warn('[perspectiveWarp] Binarization failed:', e); }
 
   // Write back to ImageData (R=G=B=gray, A=255)
   writeGrayscale(imageData, gray);
@@ -444,7 +457,7 @@ export function warpAndThreshold(
     outputHeight = dims.height;
   }
 
-  console.log(`[perspectiveWarp] v6 output: ${outputWidth}×${outputHeight}`);
+  console.log(`[perspectiveWarp] v8 output: ${outputWidth}×${outputHeight}`);
 
   if (typeof cv !== 'undefined' && cv.Mat) {
     try {
