@@ -1975,13 +1975,13 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr>
-                          {[
-                            { label: t('itemDescription'), align: 'left' },
-                            { label: t('quantity'), align: 'right' },
-                            { label: t('unitPrice'), align: 'right' },
-                            { label: t('vatPercent'), align: 'right' },
-                            { label: t('amount'), align: 'right' },
-                          ].map((h) => (
+                          {([
+                            { label: t('itemDescription'), align: 'left' as const },
+                            { label: t('quantity'), align: 'right' as const },
+                            { label: t('unitPrice'), align: 'right' as const },
+                            { label: t('vatPercent'), align: 'right' as const },
+                            { label: t('amount'), align: 'right' as const },
+                          ]).map((h) => (
                             <th
                               key={h.label}
                               style={{
