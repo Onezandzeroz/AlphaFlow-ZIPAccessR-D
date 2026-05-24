@@ -955,7 +955,14 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
 
       {/* Add/Edit Contact Dialog */}
       <Dialog open={isFormOpen} onOpenChange={(open) => { if (!open) setIsFormOpen(false); }}>
-        <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="bg-white dark:bg-[#1a1f1e] max-w-lg max-h-[90vh] overflow-y-auto"
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            const nameInput = document.getElementById('contact-name') as HTMLInputElement | null;
+            nameInput?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="dark:text-white flex items-center gap-2 text-xl">
               {editingContact ? (
@@ -1001,7 +1008,6 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder={isDanish ? 'Firma- eller personnavn' : 'Business or person name'}
                 className="bg-gray-50 dark:bg-white/5"
-                autoFocus
               />
             </div>
 
