@@ -344,8 +344,9 @@ function isEdgeQuad(dp: Pt[], dw: number, dh: number): boolean {
  *   2. Fall back to canvas drawImage from the video stream — uses whatever
  *      resolution the stream provides (typically 1920×1080).
  *
- * The result is capped at `maxDim` longest side to keep post-processing fast
- * (median denoise at 3000×4000 ≈ 1s on mobile — acceptable).
+ * The result is capped at `maxDim` longest side (set by caller based on
+ * track capabilities — typically the device's native sensor resolution,
+ * up to 4000px to keep post-processing manageable).
  */
 async function captureHighQualityFrame(
   video: HTMLVideoElement,
@@ -843,9 +844,22 @@ export function useScannerEngine() {
 
     // High-quality capture: try ImageCapture API first, fall back to canvas.
     // ImageCapture can grab at sensor's full resolution (much higher than stream),
-    // hardware-processed — no GPU decode overhead. Capped at CAPTURE_MAX_DIM.
-    const CAPTURE_MAX_DIM = 3000;
-    const capCanvas = await captureHighQualityFrame(video, track, CAPTURE_MAX_DIM);
+    // hardware-processed — no GPU decode overhead.
+    // Let the device decide its best resolution: use track capabilities as cap,
+    // fall back to 4000px safety limit only if capabilities are unavailable.
+    // This ensures consistent quality across different devices and sensor sizes.
+    let captureMaxDim = 4000; // Safety upper bound (prevents 48MP/64MP monsters)
+    if (track) {
+      try {
+        const caps = track.getCapabilities() as { width?: { max: number }; height?: { max: number } } | undefined;
+        if (caps?.width?.max && caps?.height?.max) {
+          const trackMax = Math.max(caps.width.max, caps.height.max);
+          captureMaxDim = Math.min(trackMax, 4000); // Cap at 4000 to keep post-processing fast
+          console.log(`[ScannerEngine] Track max resolution: ${caps.width.max}×${caps.height.max} → capture cap: ${captureMaxDim}px`);
+        }
+      } catch { /* getCapabilities not supported — use 4000 default */ }
+    }
+    const capCanvas = await captureHighQualityFrame(video, track, captureMaxDim);
     console.log(`[ScannerEngine] Captured at ${capCanvas.width}×${capCanvas.height} (stream was ${videoW}×${videoH})`);
 
     // Flash animation delay

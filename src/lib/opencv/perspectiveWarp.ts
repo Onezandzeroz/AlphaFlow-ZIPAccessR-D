@@ -10,11 +10,12 @@
  * Pipeline (v10 — clean document scan):
  *   1. Perspective warp (OpenCV INTER_CUBIC) — correct skew, minimum 2000px longest side
  *   2. Grayscale conversion — eliminates 3-channel work from every subsequent step
- *   3. Median denoise — remove sensor noise before any manipulation
- *   4. Contrast stretch (1st–99th percentile) — gentle dynamic range normalization
- *   5. Mild sharpening — crisp text edges without introducing halos
- *   6. Gentle S-curve — subtle contrast boost, preserves natural tonal gradations
- *   7. Paper whitening — lift near-white pixels to clean white background
+ *   3. Brightness boost (+15%) — compensates for sensor underexposure on mobile
+ *   4. Median denoise — remove sensor noise before any manipulation
+ *   5. Contrast stretch (1st–99th percentile) — gentle dynamic range normalization
+ *   6. Mild sharpening — crisp text edges without introducing halos
+ *   7. Gentle S-curve — subtle contrast boost, preserves natural tonal gradations
+ *   8. Paper whitening — lift near-white pixels to clean white background
  *
  * v9 → v10 changes (CLEAN SCAN, NOT PHOTOCOPY):
  *   - REDUCED S-curve steepness from 8 → 4 (preserves natural shading)
@@ -22,6 +23,7 @@
  *   - RELAXED contrast stretch from 2nd-98th → 1st-99th (prevents darkening of darker areas)
  *   - REDUCED sharpen strength from 0.7 → 0.5 (fewer halos on mid-tone text)
  *   - LOWERED paper whiten threshold from 235 → 225 (cleaner white background)
+ *   - ADDED brightness boost +15% (compensates for mobile sensor underexposure)
  *   - Result: looks like a real flatbed scanner, not a harsh photocopy
  */
 
@@ -103,6 +105,17 @@ function writeGrayscale(imageData: ImageData, gray: Uint8Array): void {
     d[j + 1] = gray[i];
     d[j + 2] = gray[i];
     d[j + 3] = 255;
+  }
+}
+
+/**
+ * Linear brightness boost — multiplies each pixel by a factor (1.15 = +15%).
+ * Clamps to 255 to prevent overflow. Applied early in the pipeline so
+ * subsequent steps (contrast stretch, S-curve) work on properly-lit data.
+ */
+function boostBrightness(gray: Uint8Array, factor: number): void {
+  for (let i = 0; i < gray.length; i++) {
+    gray[i] = Math.min(255, (gray[i] * factor + 0.5) | 0);
   }
 }
 
@@ -413,7 +426,7 @@ function whitenPaper(gray: Uint8Array): void {
  * Result: looks like a real flatbed scanner — clean whites, readable text,
  * natural shading preserved. No harsh photocopy contrast.
  *
- * Order: Gray → Denoise → Contrast → Sharpen → S-curve → Whiten
+ * Order: Gray → Brightness → Denoise → Contrast → Sharpen → S-curve → Whiten
  */
 function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
@@ -429,31 +442,37 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const gray = extractGrayscale(imageData);
   console.log('[perspectiveWarp] ✓ Grayscale');
 
-  // STEP 2: Median denoise (clean noise before any manipulation)
+  // STEP 2: Brightness boost (+15%)
+  try {
+    boostBrightness(gray, 1.15);
+    console.log('[perspectiveWarp] ✓ Brightness +15%');
+  } catch (e) { console.warn('[perspectiveWarp] Brightness failed:', e); }
+
+  // STEP 3: Median denoise (clean noise before any manipulation)
   try {
     medianDenoise(gray, w, h);
     console.log('[perspectiveWarp] ✓ Median denoise');
   } catch (e) { console.warn('[perspectiveWarp] Denoise failed:', e); }
 
-  // STEP 3: Contrast stretch (1st–99th percentile — gentle normalization)
+  // STEP 4: Contrast stretch (1st–99th percentile — gentle normalization)
   try {
     stretchContrast(gray);
     console.log('[perspectiveWarp] ✓ Contrast stretch');
   } catch (e) { console.warn('[perspectiveWarp] Contrast failed:', e); }
 
-  // STEP 4: Sharpen (on natural tones, BEFORE S-curve)
+  // STEP 5: Sharpen (on natural tones, BEFORE S-curve)
   try {
     sharpenPass(gray, w, h);
     console.log('[perspectiveWarp] ✓ Sharpen');
   } catch (e) { console.warn('[perspectiveWarp] Sharpen failed:', e); }
 
-  // STEP 5: Gentle S-curve (subtle contrast boost — scanner look, not photocopy)
+  // STEP 6: Gentle S-curve (subtle contrast boost — scanner look, not photocopy)
   try {
     gentleSCurve(gray);
     console.log('[perspectiveWarp] ✓ Gentle S-curve');
   } catch (e) { console.warn('[perspectiveWarp] S-curve failed:', e); }
 
-  // STEP 6: Paper whitening (clean up near-white pixels to pure white)
+  // STEP 7: Paper whitening (clean up near-white pixels to pure white)
   try {
     whitenPaper(gray);
     console.log('[perspectiveWarp] ✓ Paper whitening');
