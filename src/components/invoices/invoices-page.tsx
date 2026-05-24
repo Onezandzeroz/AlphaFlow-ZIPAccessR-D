@@ -1918,18 +1918,40 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
           </CardHeader>
           <CardContent className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#141918] overflow-hidden flex flex-col min-h-0">
+              <style>{`
+                .inv-prev { color: #1f2937; }
+                .dark .inv-prev { color: #e5e7eb; }
+                .inv-muted { color: #6b7280; }
+                .dark .inv-muted { color: #9ca3af; }
+                .inv-label { color: #b0a89e; }
+                .dark .inv-label { color: #6b7280; }
+                .inv-border { border-color: #e5e7eb; }
+                .dark .inv-border { border-color: #374151; }
+                .inv-row-border { border-color: #f3f4f6; }
+                .dark .inv-row-border { border-color: #1f2937; }
+                .inv-th-bg { background: #f9fafb; }
+                .dark .inv-th-bg { background: #1a1f1e; }
+                .inv-bank-bg { background: #f9fafb; }
+                .dark .inv-bank-bg { background: #1a1f1e; }
+                .inv-notes-bg { background: #fefce8; }
+                .dark .inv-notes-bg { background: rgba(234,179,8,0.1); }
+                .inv-accent { color: #0d9488; }
+                .dark .inv-accent { color: #2dd4bf; }
+                .inv-hr { border-color: #e5e7eb; }
+                .dark .inv-hr { border-color: #374151; }
+              `}</style>
               {/* Mini invoice — mirrors print template design exactly */}
               <div
-                className="flex-1 overflow-y-auto text-gray-800 dark:text-gray-200"
+                className="flex-1 overflow-y-auto inv-prev"
                 style={{
                   padding: '0',
                   transformOrigin: 'top left',
-                  transform: 'scale(0.52)',
-                  width: '192.3%',   /* 1 / 0.52 */
-                  minHeight: '192.3%',
+                  transform: 'scale(0.62)',
+                  width: '161.3%',
+                  minHeight: '161.3%',
                 }}
               >
-                <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '28px 32px', color: '#1f2937' }}>
+                <div className="invoice-preview-content" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '28px 32px' }}>
 
                   {/* ── Header ── */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -1938,12 +1960,12 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                         ? <img src={companyInfo.logo} alt="Logo" style={{ maxHeight: '50px', maxWidth: '180px', objectFit: 'contain' }} />
                         : <div style={{ fontSize: '20px', fontWeight: 700 }}>{companyInfo?.companyName || ''}</div>
                       }
-                      <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+                      <div className="inv-muted" style={{ marginTop: '10px', fontSize: '12px' }}>
                         {t('invoiceDate')}: {invoiceForm.issueDate ? td(new Date(invoiceForm.issueDate)) : '—'}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: '24px', fontWeight: 700, color: '#0d9488' }}>
+                      <div className="inv-accent" style={{ fontSize: '24px', fontWeight: 700 }}>
                         {language === 'da' ? 'FAKTURA' : 'INVOICE'}
                       </div>
                       <div style={{ marginTop: '6px', fontSize: '15px', fontWeight: 600 }}>{nextInvoiceNumber}</div>
@@ -1953,20 +1975,20 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                   {/* ── From / To info grid ── */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '28px' }}>
                     <div>
-                      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '6px' }}>{t('from')}</div>
+                      <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{t('from')}</div>
                       <div style={{ fontSize: '13px', fontWeight: 500 }}>{companyInfo?.companyName || ''}</div>
-                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px', whiteSpace: 'pre-line' }}>{companyInfo?.address || ''}</div>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{companyInfo?.phone || ''}</div>
-                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{companyInfo?.email || ''}</div>
-                      {companyInfo?.cvrNumber && <div style={{ fontSize: '12px', color: '#6b7280' }}>CVR: {companyInfo.cvrNumber}</div>}
+                      <div className="inv-muted" style={{ fontSize: '12px', marginTop: '3px', whiteSpace: 'pre-line' }}>{companyInfo?.address || ''}</div>
+                      <div className="inv-muted" style={{ fontSize: '12px' }}>{companyInfo?.phone || ''}</div>
+                      <div className="inv-muted" style={{ fontSize: '12px' }}>{companyInfo?.email || ''}</div>
+                      {companyInfo?.cvrNumber && <div className="inv-muted" style={{ fontSize: '12px' }}>CVR: {companyInfo.cvrNumber}</div>}
                     </div>
                     <div>
-                      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '6px' }}>{t('to')}</div>
+                      <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{t('to')}</div>
                       <div style={{ fontSize: '13px', fontWeight: 500 }}>{invoiceForm.customerName || (language === 'da' ? 'Kundenavn...' : 'Customer name...')}</div>
-                      {invoiceForm.customerAddress && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px', whiteSpace: 'pre-line' }}>{invoiceForm.customerAddress}</div>}
-                      {invoiceForm.customerPhone && <div style={{ fontSize: '12px', color: '#6b7280' }}>{invoiceForm.customerPhone}</div>}
-                      {invoiceForm.customerEmail && <div style={{ fontSize: '12px', color: '#6b7280' }}>{invoiceForm.customerEmail}</div>}
-                      {invoiceForm.customerCvr && <div style={{ fontSize: '12px', color: '#6b7280' }}>CVR: {invoiceForm.customerCvr}</div>}
+                      {invoiceForm.customerAddress && <div className="inv-muted" style={{ fontSize: '12px', marginTop: '3px', whiteSpace: 'pre-line' }}>{invoiceForm.customerAddress}</div>}
+                      {invoiceForm.customerPhone && <div className="inv-muted" style={{ fontSize: '12px' }}>{invoiceForm.customerPhone}</div>}
+                      {invoiceForm.customerEmail && <div className="inv-muted" style={{ fontSize: '12px' }}>{invoiceForm.customerEmail}</div>}
+                      {invoiceForm.customerCvr && <div className="inv-muted" style={{ fontSize: '12px' }}>CVR: {invoiceForm.customerCvr}</div>}
                     </div>
                   </div>
 
@@ -1984,14 +2006,14 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                           ]).map((h) => (
                             <th
                               key={h.label}
+                              className="inv-th-bg inv-muted inv-border"
                               style={{
-                                background: '#f9fafb',
                                 textAlign: h.align,
                                 padding: '8px 10px',
                                 fontSize: '11px',
                                 textTransform: 'uppercase',
-                                color: '#6b7280',
-                                borderBottom: '2px solid #e5e7eb',
+                                borderBottomWidth: '2px',
+                                borderBottomStyle: 'solid',
                                 fontWeight: 600,
                               }}
                             >
@@ -2003,19 +2025,19 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                       <tbody>
                         {invoiceForm.lineItems.map((item, idx) => (
                           <tr key={idx}>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                            <td className="inv-row-border" style={{ padding: '8px 10px', borderBottomStyle: 'solid', fontSize: '13px' }}>
                               {item.description || '—'}
                             </td>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                            <td className="inv-row-border" style={{ padding: '8px 10px', borderBottomStyle: 'solid', fontSize: '13px', textAlign: 'right' }}>
                               {item.quantity}
                             </td>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                            <td className="inv-row-border" style={{ padding: '8px 10px', borderBottomStyle: 'solid', fontSize: '13px', textAlign: 'right' }}>
                               {tc(item.unitPrice)}
                             </td>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                            <td className="inv-row-border" style={{ padding: '8px 10px', borderBottomStyle: 'solid', fontSize: '13px', textAlign: 'right' }}>
                               {item.vatPercent}%
                             </td>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                            <td className="inv-row-border" style={{ padding: '8px 10px', borderBottomStyle: 'solid', fontSize: '13px', textAlign: 'right' }}>
                               {tc(item.quantity * item.unitPrice)}
                             </td>
                           </tr>
@@ -2029,21 +2051,21 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                     <table>
                       <tbody>
                         <tr>
-                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('subtotal')}</td>
+                          <td className="inv-muted" style={{ padding: '3px 10px', fontSize: '13px' }}>{t('subtotal')}</td>
                           <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{tc(calculatedTotals.subtotal)}</td>
                         </tr>
                         <tr>
-                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('vatTotalLabel')}</td>
+                          <td className="inv-muted" style={{ padding: '3px 10px', fontSize: '13px' }}>{t('vatTotalLabel')}</td>
                           <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{tc(calculatedTotals.vatTotal)}</td>
                         </tr>
-                        <tr><td colSpan={2}><hr style={{ borderColor: '#e5e7eb' }} /></td></tr>
+                        <tr><td colSpan={2}><hr className="inv-hr" /></td></tr>
                         <tr>
-                          <td style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700, color: '#0d9488' }}>{t('grandTotal')}</td>
-                          <td style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700, color: '#0d9488', textAlign: 'right' }}>{tc(calculatedTotals.total)}</td>
+                          <td className="inv-accent" style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700 }}>{t('grandTotal')}</td>
+                          <td className="inv-accent" style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700, textAlign: 'right' }}>{tc(calculatedTotals.total)}</td>
                         </tr>
-                        <tr><td colSpan={2}><hr style={{ borderColor: '#e5e7eb' }} /></td></tr>
+                        <tr><td colSpan={2}><hr className="inv-hr" /></td></tr>
                         <tr>
-                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('dueDate')}</td>
+                          <td className="inv-muted" style={{ padding: '3px 10px', fontSize: '13px' }}>{t('dueDate')}</td>
                           <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{invoiceForm.dueDate ? td(new Date(invoiceForm.dueDate)) : '—'}</td>
                         </tr>
                       </tbody>
@@ -2052,20 +2074,20 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
                   {/* ── Bank Info ── */}
                   {companyInfo?.bankName && (
-                    <div style={{ marginTop: '32px', padding: '14px', background: '#f9fafb', borderRadius: '8px' }}>
+                    <div className="inv-bank-bg" style={{ marginTop: '32px', padding: '14px', borderRadius: '8px' }}>
                       <div style={{ marginBottom: '14px' }}>
-                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankDetailsTitle')}</div>
+                        <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankDetailsTitle')}</div>
                         <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
-                          {companyInfo.bankRegistration && <div><span style={{ color: '#b0a89e' }}>{t('bankRegistration')}:</span> {companyInfo.bankRegistration}</div>}
-                          {companyInfo.bankAccount && <div><span style={{ color: '#b0a89e' }}>{t('bankAccount')}:</span> {companyInfo.bankAccount}</div>}
-                          {companyInfo.bankIban && <div><span style={{ color: '#b0a89e' }}>{t('bankIban')}:</span> {companyInfo.bankIban}</div>}
+                          {companyInfo.bankRegistration && <div><span className="inv-label">{t('bankRegistration')}:</span> {companyInfo.bankRegistration}</div>}
+                          {companyInfo.bankAccount && <div><span className="inv-label">{t('bankAccount')}:</span> {companyInfo.bankAccount}</div>}
+                          {companyInfo.bankIban && <div><span className="inv-label">{t('bankIban')}:</span> {companyInfo.bankIban}</div>}
                         </div>
                       </div>
                       {(companyInfo.bankName || companyInfo.bankStreet || companyInfo.invoiceTerms) && (
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                           {(companyInfo.bankName || companyInfo.bankStreet || companyInfo.bankCity || companyInfo.bankCountry) && (
                             <div>
-                              <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankAddressTitle')}</div>
+                              <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankAddressTitle')}</div>
                               <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
                                 {companyInfo.bankName && <div>{companyInfo.bankName}</div>}
                                 {companyInfo.bankStreet && <div>{companyInfo.bankStreet}</div>}
@@ -2076,7 +2098,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                           )}
                           {companyInfo.invoiceTerms && (
                             <div style={{ width: '220px', textAlign: 'left' }}>
-                              <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('invoiceTerms')}</div>
+                              <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('invoiceTerms')}</div>
                               <div style={{ fontSize: '12px', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{companyInfo.invoiceTerms}</div>
                             </div>
                           )}
@@ -2087,7 +2109,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
                   {/* ── Notes ── */}
                   {invoiceForm.notes && (
-                    <div style={{ marginTop: '16px', padding: '14px', background: '#fefce8', borderRadius: '8px', fontSize: '12px' }}>
+                    <div className="inv-notes-bg" style={{ marginTop: '16px', padding: '14px', borderRadius: '8px', fontSize: '12px' }}>
                       <strong>{t('notes')}:</strong> {invoiceForm.notes}
                     </div>
                   )}
