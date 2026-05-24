@@ -1918,114 +1918,180 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
           </CardHeader>
           <CardContent className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#141918] overflow-hidden flex flex-col min-h-0">
-              {/* Mini invoice document */}
-              <div className="flex-1 p-3 sm:p-4 overflow-y-auto text-[10px] sm:text-[11px] leading-relaxed text-gray-700 dark:text-gray-300" style={{ zoom: 0.72, MozTransform: 'scale(0.72)', transformOrigin: 'top left' }}>
+              {/* Mini invoice — mirrors print template design exactly */}
+              <div
+                className="flex-1 overflow-y-auto text-gray-800 dark:text-gray-200"
+                style={{
+                  padding: '0',
+                  transformOrigin: 'top left',
+                  transform: 'scale(0.52)',
+                  width: '192.3%',   /* 1 / 0.52 */
+                  minHeight: '192.3%',
+                }}
+              >
+                <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '28px 32px', color: '#1f2937' }}>
 
-                {/* Invoice header */}
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <div className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
-                      {companyInfo?.companyName || (language === 'da' ? 'Dit Firma' : 'Your Company')}
-                    </div>
-                    {companyInfo?.address && <div className="mt-0.5 whitespace-pre-line">{companyInfo.address}</div>}
-                    {companyInfo?.cvrNumber && <div>CVR: {companyInfo.cvrNumber}</div>}
-                    {companyInfo?.email && <div>{companyInfo.email}</div>}
-                    {companyInfo?.phone && <div>{companyInfo.phone}</div>}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm sm:text-base font-bold text-[#0d9488] dark:text-[#2dd4bf]">
-                      {language === 'da' ? 'FAKTURA' : 'INVOICE'}
-                    </div>
-                    <div className="font-semibold text-gray-900 dark:text-white mt-0.5">{nextInvoiceNumber}</div>
-                  </div>
-                </div>
-
-                {/* Dates */}
-                <div className="flex gap-6 mb-3 text-[10px]">
-                  <div>
-                    <span className="text-gray-400">{language === 'da' ? 'Dato' : 'Date'}:</span>{' '}
-                    <span className="font-medium">{invoiceForm.issueDate || '—'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">{language === 'da' ? 'Forfalder' : 'Due'}:</span>{' '}
-                    <span className="font-medium">{invoiceForm.dueDate || '—'}</span>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
-
-                {/* Customer */}
-                <div className="mb-3">
-                  <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">
-                    {language === 'da' ? 'Faktureres til' : 'Bill to'}
-                  </div>
-                  <div className="font-semibold text-gray-900 dark:text-white">
-                    {invoiceForm.customerName || (language === 'da' ? 'Kundenavn...' : 'Customer name...')}
-                  </div>
-                  {invoiceForm.customerAddress && <div className="whitespace-pre-line">{invoiceForm.customerAddress}</div>}
-                  {(invoiceForm.customerCvr || invoiceForm.customerEmail) && (
+                  {/* ── Header ── */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
                     <div>
-                      {invoiceForm.customerCvr && <div>CVR: {invoiceForm.customerCvr}</div>}
-                      {invoiceForm.customerEmail && <div>{invoiceForm.customerEmail}</div>}
+                      {companyInfo?.logo
+                        ? <img src={companyInfo.logo} alt="Logo" style={{ maxHeight: '50px', maxWidth: '180px', objectFit: 'contain' }} />
+                        : <div style={{ fontSize: '20px', fontWeight: 700 }}>{companyInfo?.companyName || ''}</div>
+                      }
+                      <div style={{ marginTop: '10px', fontSize: '12px', color: '#6b7280' }}>
+                        {t('invoiceDate')}: {invoiceForm.issueDate ? td(new Date(invoiceForm.issueDate)) : '—'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '24px', fontWeight: 700, color: '#0d9488' }}>
+                        {language === 'da' ? 'FAKTURA' : 'INVOICE'}
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '15px', fontWeight: 600 }}>{nextInvoiceNumber}</div>
+                    </div>
+                  </div>
+
+                  {/* ── From / To info grid ── */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '28px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '6px' }}>{t('from')}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 500 }}>{companyInfo?.companyName || ''}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px', whiteSpace: 'pre-line' }}>{companyInfo?.address || ''}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{companyInfo?.phone || ''}</div>
+                      <div style={{ fontSize: '12px', color: '#6b7280' }}>{companyInfo?.email || ''}</div>
+                      {companyInfo?.cvrNumber && <div style={{ fontSize: '12px', color: '#6b7280' }}>CVR: {companyInfo.cvrNumber}</div>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '6px' }}>{t('to')}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 500 }}>{invoiceForm.customerName || (language === 'da' ? 'Kundenavn...' : 'Customer name...')}</div>
+                      {invoiceForm.customerAddress && <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '3px', whiteSpace: 'pre-line' }}>{invoiceForm.customerAddress}</div>}
+                      {invoiceForm.customerPhone && <div style={{ fontSize: '12px', color: '#6b7280' }}>{invoiceForm.customerPhone}</div>}
+                      {invoiceForm.customerEmail && <div style={{ fontSize: '12px', color: '#6b7280' }}>{invoiceForm.customerEmail}</div>}
+                      {invoiceForm.customerCvr && <div style={{ fontSize: '12px', color: '#6b7280' }}>CVR: {invoiceForm.customerCvr}</div>}
+                    </div>
+                  </div>
+
+                  {/* ── Line Items Table ── */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr>
+                          {[
+                            { label: t('itemDescription'), align: 'left' },
+                            { label: t('quantity'), align: 'right' },
+                            { label: t('unitPrice'), align: 'right' },
+                            { label: t('vatPercent'), align: 'right' },
+                            { label: t('amount'), align: 'right' },
+                          ].map((h) => (
+                            <th
+                              key={h.label}
+                              style={{
+                                background: '#f9fafb',
+                                textAlign: h.align,
+                                padding: '8px 10px',
+                                fontSize: '11px',
+                                textTransform: 'uppercase',
+                                color: '#6b7280',
+                                borderBottom: '2px solid #e5e7eb',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {h.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoiceForm.lineItems.map((item, idx) => (
+                          <tr key={idx}>
+                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px' }}>
+                              {item.description || '—'}
+                            </td>
+                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                              {item.quantity}
+                            </td>
+                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                              {tc(item.unitPrice)}
+                            </td>
+                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                              {item.vatPercent}%
+                            </td>
+                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f3f4f6', fontSize: '13px', textAlign: 'right' }}>
+                              {tc(item.quantity * item.unitPrice)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* ── Totals ── */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('subtotal')}</td>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{tc(calculatedTotals.subtotal)}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('vatTotalLabel')}</td>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{tc(calculatedTotals.vatTotal)}</td>
+                        </tr>
+                        <tr><td colSpan={2}><hr style={{ borderColor: '#e5e7eb' }} /></td></tr>
+                        <tr>
+                          <td style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700, color: '#0d9488' }}>{t('grandTotal')}</td>
+                          <td style={{ padding: '3px 10px', fontSize: '16px', fontWeight: 700, color: '#0d9488', textAlign: 'right' }}>{tc(calculatedTotals.total)}</td>
+                        </tr>
+                        <tr><td colSpan={2}><hr style={{ borderColor: '#e5e7eb' }} /></td></tr>
+                        <tr>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', color: '#6b7280' }}>{t('dueDate')}</td>
+                          <td style={{ padding: '3px 10px', fontSize: '13px', textAlign: 'right', fontWeight: 500 }}>{invoiceForm.dueDate ? td(new Date(invoiceForm.dueDate)) : '—'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* ── Bank Info ── */}
+                  {companyInfo?.bankName && (
+                    <div style={{ marginTop: '32px', padding: '14px', background: '#f9fafb', borderRadius: '8px' }}>
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankDetailsTitle')}</div>
+                        <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                          {companyInfo.bankRegistration && <div><span style={{ color: '#b0a89e' }}>{t('bankRegistration')}:</span> {companyInfo.bankRegistration}</div>}
+                          {companyInfo.bankAccount && <div><span style={{ color: '#b0a89e' }}>{t('bankAccount')}:</span> {companyInfo.bankAccount}</div>}
+                          {companyInfo.bankIban && <div><span style={{ color: '#b0a89e' }}>{t('bankIban')}:</span> {companyInfo.bankIban}</div>}
+                        </div>
+                      </div>
+                      {(companyInfo.bankName || companyInfo.bankStreet || companyInfo.invoiceTerms) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          {(companyInfo.bankName || companyInfo.bankStreet || companyInfo.bankCity || companyInfo.bankCountry) && (
+                            <div>
+                              <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankAddressTitle')}</div>
+                              <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                                {companyInfo.bankName && <div>{companyInfo.bankName}</div>}
+                                {companyInfo.bankStreet && <div>{companyInfo.bankStreet}</div>}
+                                {companyInfo.bankCity && <div>{companyInfo.bankCity}</div>}
+                                {companyInfo.bankCountry && <div>{companyInfo.bankCountry}</div>}
+                              </div>
+                            </div>
+                          )}
+                          {companyInfo.invoiceTerms && (
+                            <div style={{ width: '220px', textAlign: 'left' }}>
+                              <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#6b7280', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('invoiceTerms')}</div>
+                              <div style={{ fontSize: '12px', lineHeight: '1.6', whiteSpace: 'pre-line' }}>{companyInfo.invoiceTerms}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Notes ── */}
+                  {invoiceForm.notes && (
+                    <div style={{ marginTop: '16px', padding: '14px', background: '#fefce8', borderRadius: '8px', fontSize: '12px' }}>
+                      <strong>{t('notes')}:</strong> {invoiceForm.notes}
                     </div>
                   )}
                 </div>
-
-                <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
-
-                {/* Line items table */}
-                <table className="w-full mb-3">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-gray-700 text-left text-[9px] uppercase tracking-wider text-gray-400">
-                      <th className="pb-1.5 pr-2">{language === 'da' ? 'Beskrivelse' : 'Description'}</th>
-                      <th className="pb-1.5 text-right w-12">{language === 'da' ? 'Antal' : 'Qty'}</th>
-                      <th className="pb-1.5 text-right w-16">{language === 'da' ? 'Pris' : 'Price'}</th>
-                      <th className="pb-1.5 text-right w-10">{language === 'da' ? 'Moms' : 'VAT'}</th>
-                      <th className="pb-1.5 text-right w-16">{language === 'da' ? 'Beløb' : 'Amt'}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoiceForm.lineItems.map((item, idx) => (
-                      <tr key={idx} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
-                        <td className="py-1.5 pr-2 font-medium text-gray-900 dark:text-white">
-                          {item.description || (language === 'da' ? '—' : '—')}
-                        </td>
-                        <td className="py-1.5 text-right">{item.quantity}</td>
-                        <td className="py-1.5 text-right">{tc(item.unitPrice)}</td>
-                        <td className="py-1.5 text-right">{item.vatPercent}%</td>
-                        <td className="py-1.5 text-right font-medium">{tc(item.quantity * item.unitPrice)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* Totals */}
-                <div className="flex justify-end">
-                  <div className="w-48 space-y-1">
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-gray-400">{t('subtotal')}</span>
-                      <span className="font-medium">{tc(calculatedTotals.subtotal)}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-gray-400">{t('vatTotalLabel')}</span>
-                      <span className="font-medium">{tc(calculatedTotals.vatTotal)}</span>
-                    </div>
-                    <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
-                      <div className="flex justify-between">
-                        <span className="font-bold text-gray-900 dark:text-white text-xs">{t('grandTotal')}</span>
-                        <span className="font-bold text-[#0d9488] dark:text-[#2dd4bf] text-xs">{tc(calculatedTotals.total)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Notes */}
-                {invoiceForm.notes && (
-                  <>
-                    <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
-                    <div className="text-[9px] text-gray-400 whitespace-pre-line">{invoiceForm.notes}</div>
-                  </>
-                )}
               </div>
             </div>
           </CardContent>
