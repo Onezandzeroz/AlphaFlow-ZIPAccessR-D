@@ -598,6 +598,14 @@ export const translations = {
     da: 'Regnskabsperiode',
     en: 'Accounting Period',
   },
+  saftFollowMainPeriod: {
+    da: 'Følg hovedperiode',
+    en: 'Follow main period',
+  },
+  saftOverridePeriod: {
+    da: 'Tilpas periode for SAF-T',
+    en: 'Customize period for SAF-T',
+  },
 
   // Auth
   signIn: {

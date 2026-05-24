@@ -54,18 +54,81 @@ import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-f
 import { da } from 'date-fns/locale';
 import { Calendar as CalendarUI } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 
-// SAF-T period type options
-type SaftPeriodType = 'year' | 'quarter' | 'month' | 'custom';
-type SaftQuarter = '1' | '2' | '3' | '4';
+// Shared period type options (used by both main and SAF-T selectors)
+type PeriodType = 'year' | 'quarter' | 'month' | 'custom';
+type Quarter = '1' | '2' | '3' | '4';
 
 // Quarter date ranges (calendar year based)
-function getQuarterRange(year: number, quarter: SaftQuarter): { start: Date; end: Date } {
+function getQuarterRange(year: number, quarter: Quarter): { start: Date; end: Date } {
   const qStart = (parseInt(quarter) - 1) * 3;
   return {
     start: new Date(year, qStart, 1),
     end: new Date(year, qStart + 3, 0, 23, 59, 59, 999),
   };
+}
+
+// Compute period date range from a set of period state values
+function computePeriodRange(
+  periodType: PeriodType,
+  year: string,
+  month: string,
+  quarter: Quarter,
+  customFrom: Date | undefined,
+  customTo: Date | undefined,
+): { start: Date; end: Date } {
+  const y = parseInt(year);
+  switch (periodType) {
+    case 'year':
+      return {
+        start: startOfYear(new Date(y, 0, 1)),
+        end: endOfYear(new Date(y, 0, 1)),
+      };
+    case 'quarter':
+      return getQuarterRange(y, quarter);
+    case 'month': {
+      const m = parseInt(month) - 1;
+      return {
+        start: startOfMonth(new Date(y, m, 1)),
+        end: endOfMonth(new Date(y, m, 1)),
+      };
+    }
+    case 'custom':
+      return {
+        start: customFrom || startOfMonth(new Date()),
+        end: customTo || endOfMonth(new Date()),
+      };
+  }
+}
+
+// Compute a human-readable label for a period
+function computePeriodLabel(
+  periodType: PeriodType,
+  year: string,
+  month: string,
+  quarter: Quarter,
+  customFrom: Date | undefined,
+  customTo: Date | undefined,
+  t: (key: string) => string,
+  language: string,
+): string {
+  const fmt = (d: Date) => format(d, 'dd/MM/yyyy');
+  switch (periodType) {
+    case 'year':
+      return `${year} (01/01 – 31/12)`;
+    case 'quarter':
+      return `${year} ${t('saftPeriodQ' + quarter) || `Q${quarter}`}`;
+    case 'month': {
+      const m = parseInt(month) - 1;
+      return format(new Date(parseInt(year), m, 1), 'MMMM yyyy');
+    }
+    case 'custom':
+      if (customFrom && customTo) {
+        return `${fmt(customFrom)} – ${fmt(customTo)}`;
+      }
+      return t('saftPeriodCustom');
+  }
 }
 
 interface Transaction {
@@ -137,15 +200,27 @@ export function ExportsPage({ user }: ExportsPageProps) {
   const previewRef = useRef<HTMLPreElement>(null);
 
   const currentDate = new Date();
-  const [selectedMonth, setSelectedMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
-  // SAF-T period state — supports full year, quarter, month, and custom date ranges
-  const [saftPeriodType, setSaftPeriodType] = useState<SaftPeriodType>('year');
+
+  // ─── Main period state ───
+  const [periodType, setPeriodType] = useState<PeriodType>('year');
+  const [periodYear, setPeriodYear] = useState(currentDate.getFullYear().toString());
+  const [periodMonth, setPeriodMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [periodQuarter, setPeriodQuarter] = useState<Quarter>('1');
+  const [periodCustomFrom, setPeriodCustomFrom] = useState<Date | undefined>(undefined);
+  const [periodCustomTo, setPeriodCustomTo] = useState<Date | undefined>(undefined);
+
+  // ─── SAF-T period state (own local selector) ───
+  const [saftPeriodType, setSaftPeriodType] = useState<PeriodType>('year');
   const [saftYear, setSaftYear] = useState(currentDate.getFullYear().toString());
   const [saftMonth, setSaftMonth] = useState((currentDate.getMonth() + 1).toString());
-  const [saftQuarter, setSaftQuarter] = useState<SaftQuarter>('1');
+  const [saftQuarter, setSaftQuarter] = useState<Quarter>('1');
   const [saftCustomFrom, setSaftCustomFrom] = useState<Date | undefined>(undefined);
   const [saftCustomTo, setSaftCustomTo] = useState<Date | undefined>(undefined);
+
+  // ─── SAF-T override toggle ───
+  // When false (default), SAF-T follows the main period.
+  // When true, SAF-T uses its own local selector values.
+  const [saftOverridePeriod, setSaftOverridePeriod] = useState(false);
 
   // VAT register data (single source of truth for VAT totals)
   const [vatSummaryCSV, setVatSummaryCSV] = useState<VATRegisterSummary | null>(null);
@@ -222,17 +297,46 @@ export function ExportsPage({ user }: ExportsPageProps) {
     fetchData();
   }, []);
 
-  // ─── Period-specific VAT register fetch (re-fetches on month/year change) ───
+  // ─── Main period computed values ───
+  const mainPeriodRange = useMemo(() => {
+    return computePeriodRange(periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo);
+  }, [periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo]);
+
+  const mainPeriodLabel = useMemo(() => {
+    return computePeriodLabel(periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo, t, language);
+  }, [periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo, language, t]);
+
+  // ─── SAF-T period computed values ───
+  const saftPeriodRange = useMemo(() => {
+    return computePeriodRange(saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo);
+  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo]);
+
+  const saftPeriodLabel = useMemo(() => {
+    return computePeriodLabel(saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, t, language);
+  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, language, t]);
+
+  // ─── Effective SAF-T values ───
+  const effectiveSaftRange = useMemo(() => {
+    return saftOverridePeriod ? saftPeriodRange : mainPeriodRange;
+  }, [saftOverridePeriod, saftPeriodRange, mainPeriodRange]);
+
+  const effectiveSaftLabel = useMemo(() => {
+    return saftOverridePeriod ? saftPeriodLabel : mainPeriodLabel;
+  }, [saftOverridePeriod, saftPeriodLabel, mainPeriodLabel]);
+
+  // ─── Sync: when main period changes, reset SAF-T override ───
+  useEffect(() => {
+    setSaftOverridePeriod(false);
+  }, [mainPeriodRange]);
+
+  // ─── Main VAT register fetch (re-fetches on main period change) ───
   useEffect(() => {
     if (!initialLoadDone) return;
 
     const fetchVAT = async () => {
       try {
-        // CSV VAT totals: use selected month period
-        const monthStr = selectedMonth.padStart(2, '0');
-        const lastDay = new Date(+selectedYear, +selectedMonth, 0).getDate();
-        const from = `${selectedYear}-${monthStr}-01`;
-        const to = `${selectedYear}-${monthStr}-${lastDay}`;
+        const from = format(mainPeriodRange.start, 'yyyy-MM-dd');
+        const to = format(mainPeriodRange.end, 'yyyy-MM-dd');
 
         const vatResp = await fetch(`/api/vat-register?from=${from}&to=${to}`);
         if (vatResp.ok) {
@@ -253,62 +357,22 @@ export function ExportsPage({ user }: ExportsPageProps) {
     };
 
     fetchVAT();
-  }, [selectedMonth, selectedYear, initialLoadDone]);
+  }, [mainPeriodRange, initialLoadDone]);
 
-  // ─── Helper: compute SAF-T period date range ───
-  const saftPeriodRange = useMemo(() => {
-    const y = parseInt(saftYear);
-    switch (saftPeriodType) {
-      case 'year':
-        return {
-          start: startOfYear(new Date(y, 0, 1)),
-          end: endOfYear(new Date(y, 0, 1)),
-        };
-      case 'quarter':
-        return getQuarterRange(y, saftQuarter);
-      case 'month': {
-        const m = parseInt(saftMonth) - 1;
-        return {
-          start: startOfMonth(new Date(y, m, 1)),
-          end: endOfMonth(new Date(y, m, 1)),
-        };
-      }
-      case 'custom':
-        return {
-          start: saftCustomFrom || startOfMonth(new Date()),
-          end: saftCustomTo || endOfMonth(new Date()),
-        };
-    }
-  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo]);
-
-  // ─── Helper: human-readable label for the current SAF-T period ───
-  const saftPeriodLabel = useMemo(() => {
-    const fmt = (d: Date) => format(d, 'dd/MM/yyyy');
-    switch (saftPeriodType) {
-      case 'year':
-        return `${saftYear} (01/01 – 31/12)`;
-      case 'quarter':
-        return `${saftYear} ${t('saftPeriodQ' + saftQuarter as keyof typeof t) || `Q${saftQuarter}`}`;
-      case 'month': {
-        const m = parseInt(saftMonth) - 1;
-        return format(new Date(parseInt(saftYear), m, 1), language === 'da' ? 'MMMM yyyy' : 'MMMM yyyy');
-      }
-      case 'custom':
-        if (saftCustomFrom && saftCustomTo) {
-          return `${fmt(saftCustomFrom)} – ${fmt(saftCustomTo)}`;
-        }
-        return t('saftPeriodCustom');
-    }
-  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, language, t]);
-
-  // ─── SAF-T VAT register fetch (re-fetches on period change) ───
+  // ─── SAF-T VAT register fetch (only when override is active) ───
   useEffect(() => {
     if (!initialLoadDone) return;
 
+    // When not overriding, SAF-T follows main — reuse main VAT summary
+    if (!saftOverridePeriod) {
+      setVatSummarySAFT(vatSummaryCSV);
+      return;
+    }
+
     const fetchSAFTVAT = async () => {
       try {
-        const from = format(saftPeriodRange.start, 'yyyy-MM-dd');
-        const to = format(saftPeriodRange.end, 'yyyy-MM-dd');
+        const from = format(effectiveSaftRange.start, 'yyyy-MM-dd');
+        const to = format(effectiveSaftRange.end, 'yyyy-MM-dd');
 
         const vatResp = await fetch(`/api/vat-register?from=${from}&to=${to}`);
         if (vatResp.ok) {
@@ -327,30 +391,32 @@ export function ExportsPage({ user }: ExportsPageProps) {
     };
 
     fetchSAFTVAT();
-  }, [saftPeriodRange, initialLoadDone]);
+  }, [saftOverridePeriod, effectiveSaftRange, initialLoadDone, vatSummaryCSV]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 4 }, (_, i) => currentYear - i);
   }, []);
 
+  // ─── Filtered transactions: main period ───
   const filteredTransactions = useMemo(() => {
-    const monthStr = selectedMonth.padStart(2, '0');
-    const filterPrefix = `${selectedYear}-${monthStr}`;
-    return transactions.filter((t) => {
-      const dateStr = t.date?.substring(0, 10) || '';
-      return dateStr.startsWith(filterPrefix);
-    });
-  }, [transactions, selectedMonth, selectedYear]);
-
-  const saftFilteredTransactions = useMemo(() => {
-    const periodStart = saftPeriodRange.start.getTime();
-    const periodEnd = saftPeriodRange.end.getTime();
-    return transactions.filter((t) => {
-      const txDate = new Date(t.date).getTime();
+    const periodStart = mainPeriodRange.start.getTime();
+    const periodEnd = mainPeriodRange.end.getTime();
+    return transactions.filter((tx) => {
+      const txDate = new Date(tx.date).getTime();
       return txDate >= periodStart && txDate <= periodEnd;
     });
-  }, [transactions, saftPeriodRange]);
+  }, [transactions, mainPeriodRange]);
+
+  // ─── Filtered transactions: effective SAF-T period ───
+  const saftFilteredTransactions = useMemo(() => {
+    const periodStart = effectiveSaftRange.start.getTime();
+    const periodEnd = effectiveSaftRange.end.getTime();
+    return transactions.filter((tx) => {
+      const txDate = new Date(tx.date).getTime();
+      return txDate >= periodStart && txDate <= periodEnd;
+    });
+  }, [transactions, effectiveSaftRange]);
 
   // Compute totals — VAT amounts come exclusively from the VAT register
   // (double-entry journal), not from legacy transaction formula.
@@ -392,18 +458,20 @@ export function ExportsPage({ user }: ExportsPageProps) {
   const exportCSV = useCallback(async () => {
     setIsExporting('csv');
     try {
-      const response = await fetch(`/api/transactions/export?month=${selectedYear}-${selectedMonth.padStart(2, '0')}`);
+      const fromStr = format(mainPeriodRange.start, 'yyyy-MM-dd');
+      const toStr = format(mainPeriodRange.end, 'yyyy-MM-dd');
+      const response = await fetch(`/api/transactions/export?startDate=${fromStr}&endDate=${toStr}`);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `transactions-${selectedYear}-${selectedMonth}.csv`;
+      a.download = `transactions-${fromStr}_to_${toStr}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success(language === 'da' ? 'CSV eksporteret' : 'CSV exported', {
         description: language === 'da'
-          ? `posteringer-${selectedYear}-${selectedMonth}.csv er blevet downloadet`
-          : `transactions-${selectedYear}-${selectedMonth}.csv has been downloaded`,
+          ? `posteringer-${fromStr}_to_${toStr}.csv er blevet downloadet`
+          : `transactions-${fromStr}_to_${toStr}.csv has been downloaded`,
       });
     } catch (error) {
       console.error('CSV export failed:', error);
@@ -411,7 +479,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
     } finally {
       setIsExporting(null);
     }
-  }, [selectedMonth, selectedYear, language]);
+  }, [mainPeriodRange, language]);
 
   const exportVATReport = useCallback(() => {
     setIsExporting('vat');
@@ -444,22 +512,27 @@ export function ExportsPage({ user }: ExportsPageProps) {
       const bom = '\uFEFF';
       const csv = bom + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
 
+      const fromStr = format(mainPeriodRange.start, 'yyyy-MM-dd');
+      const toStr = format(mainPeriodRange.end, 'yyyy-MM-dd');
+      const baseName = language === 'da' ? 'momsrapport' : 'vat-report';
+      const fileName = `${baseName}-${fromStr}_to_${toStr}.csv`;
+
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = language === 'da' ? `momsrapport-${selectedYear}-${selectedMonth}.csv` : `vat-report-${selectedYear}-${selectedMonth}.csv`;
+      a.download = fileName;
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success(language === 'da' ? 'Momsrapport eksporteret' : 'VAT report exported', {
         description: language === 'da'
-          ? `momsrapport-${selectedYear}-${selectedMonth}.csv er blevet downloadet`
-          : `vat-report-${selectedYear}-${selectedMonth}.csv has been downloaded`,
+          ? `${fileName} er blevet downloadet`
+          : `${fileName} has been downloaded`,
       });
     } finally {
       setIsExporting(null);
     }
-  }, [filteredTransactions, totals, selectedMonth, selectedYear, language]);
+  }, [filteredTransactions, totals, mainPeriodRange, language]);
 
   const exportAllOIOUBL = useCallback(async () => {
     setIsExporting('oioubl');
@@ -505,9 +578,9 @@ export function ExportsPage({ user }: ExportsPageProps) {
     }
 
     try {
-      // Build API URL — use startDate/endDate for proper period support
-      const fromStr = format(saftPeriodRange.start, 'yyyy-MM-dd');
-      const toStr = format(saftPeriodRange.end, 'yyyy-MM-dd');
+      // Build API URL — use effective SAF-T range
+      const fromStr = format(effectiveSaftRange.start, 'yyyy-MM-dd');
+      const toStr = format(effectiveSaftRange.end, 'yyyy-MM-dd');
       const response = await fetch(`/api/export-saft?startDate=${fromStr}&endDate=${toStr}`);
       
       setExportProgress(80);
@@ -536,8 +609,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
 
       toast.success(language === 'da' ? 'SAF-T fil genereret' : 'SAF-T file generated', {
         description: language === 'da'
-          ? `SAF-T for ${saftPeriodLabel} er klar til download`
-          : `SAF-T for ${saftPeriodLabel} is ready for download`,
+          ? `SAF-T for ${effectiveSaftLabel} er klar til download`
+          : `SAF-T for ${effectiveSaftLabel} is ready for download`,
       });
 
     } catch (error) {
@@ -555,7 +628,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
       });
       setSaftStep('preview');
     }
-  }, [saftPeriodRange, saftTotals.count, language]);
+  }, [effectiveSaftRange, effectiveSaftLabel, saftTotals.count, language]);
 
   const downloadSAFT = useCallback(() => {
     if (!saftPreview) return;
@@ -564,13 +637,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const fromStr = format(saftPeriodRange.start, 'yyyy-MM-dd');
-    const toStr = format(saftPeriodRange.end, 'yyyy-MM-dd');
+    const fromStr = format(effectiveSaftRange.start, 'yyyy-MM-dd');
+    const toStr = format(effectiveSaftRange.end, 'yyyy-MM-dd');
     a.download = `SAF-T-${fromStr}_to_${toStr}.xml`;
     a.click();
     window.URL.revokeObjectURL(url);
     setSaftStep('complete');
-  }, [saftPreview, saftPeriodRange]);
+  }, [saftPreview, effectiveSaftRange]);
 
   const resetSAFTDialog = useCallback(() => {
     setSaftStep('select');
@@ -578,6 +651,188 @@ export function ExportsPage({ user }: ExportsPageProps) {
     setSaftValidation(null);
     setExportProgress(0);
   }, []);
+
+  // ─── Main period control change handlers (reset SAF-T override) ───
+  const handleMainPeriodTypeChange = useCallback((v: string) => {
+    setPeriodType(v as PeriodType);
+  }, []);
+  const handleMainYearChange = useCallback((v: string) => {
+    setPeriodYear(v);
+  }, []);
+  const handleMainMonthChange = useCallback((v: string) => {
+    setPeriodMonth(v);
+  }, []);
+  const handleMainQuarterChange = useCallback((v: string) => {
+    setPeriodQuarter(v as Quarter);
+  }, []);
+
+  // ─── SAF-T period control change handlers (enable override) ───
+  const handleSaftPeriodTypeChange = useCallback((v: string) => {
+    setSaftOverridePeriod(true);
+    setSaftPeriodType(v as PeriodType);
+  }, []);
+  const handleSaftYearChange = useCallback((v: string) => {
+    setSaftOverridePeriod(true);
+    setSaftYear(v);
+  }, []);
+  const handleSaftMonthChange = useCallback((v: string) => {
+    setSaftOverridePeriod(true);
+    setSaftMonth(v);
+  }, []);
+  const handleSaftQuarterChange = useCallback((v: string) => {
+    setSaftOverridePeriod(true);
+    setSaftQuarter(v as Quarter);
+  }, []);
+  const handleSaftCustomFromChange = useCallback((d: Date | undefined) => {
+    setSaftOverridePeriod(true);
+    setSaftCustomFrom(d);
+    if (d && saftCustomTo && d > saftCustomTo) setSaftCustomTo(undefined);
+  }, [saftCustomTo]);
+  const handleSaftCustomToChange = useCallback((d: Date | undefined) => {
+    setSaftOverridePeriod(true);
+    setSaftCustomTo(d);
+  }, []);
+  const handleMainCustomFromChange = useCallback((d: Date | undefined) => {
+    setPeriodCustomFrom(d);
+    if (d && periodCustomTo && d > periodCustomTo) setPeriodCustomTo(undefined);
+  }, [periodCustomTo]);
+  const handleMainCustomToChange = useCallback((d: Date | undefined) => {
+    setPeriodCustomTo(d);
+  }, []);
+
+  // ─── Reusable period selector JSX ───
+  const renderPeriodSelector = (
+    pType: PeriodType,
+    pYear: string,
+    pMonth: string,
+    pQuarter: Quarter,
+    pCustomFrom: Date | undefined,
+    pCustomTo: Date | undefined,
+    onTypeChange: (v: string) => void,
+    onYearChange: (v: string) => void,
+    onMonthChange: (v: string) => void,
+    onQuarterChange: (v: string) => void,
+    onCustomFromChange: (d: Date | undefined) => void,
+    onCustomToChange: (d: Date | undefined) => void,
+  ) => (
+    <div className="flex flex-wrap items-end gap-3">
+      {/* Period type */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodType')}</label>
+        <Select value={pType} onValueChange={onTypeChange}>
+          <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+            <CalendarDays className="h-4 w-4 text-[#0d9488] mr-2" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+            <SelectItem value="year">{t('saftPeriodFullYear')}</SelectItem>
+            <SelectItem value="quarter">{t('saftPeriodQuarter')}</SelectItem>
+            <SelectItem value="month">{t('saftPeriodMonth')}</SelectItem>
+            <SelectItem value="custom">{t('saftPeriodCustom')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Year (always shown) */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('year') || 'År'}</label>
+        <Select value={pYear} onValueChange={onYearChange}>
+          <SelectTrigger className="w-28 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+            {yearOptions.map((year) => (
+              <SelectItem key={year} value={year.toString()}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Quarter (shown when quarter selected) */}
+      {pType === 'quarter' && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodQuarter')}</label>
+          <Select value={pQuarter} onValueChange={onQuarterChange}>
+            <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+              <SelectItem value="1">{t('saftPeriodQ1')}</SelectItem>
+              <SelectItem value="2">{t('saftPeriodQ2')}</SelectItem>
+              <SelectItem value="3">{t('saftPeriodQ3')}</SelectItem>
+              <SelectItem value="4">{t('saftPeriodQ4')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Month (shown when month selected) */}
+      {pType === 'month' && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftSelectMonth')}</label>
+          <Select value={pMonth} onValueChange={onMonthChange}>
+            <SelectTrigger className="w-36 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+              {monthNames.map((m, i) => (
+                <SelectItem key={i} value={(i + 1).toString()}>
+                  {m}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Custom date range (shown when custom selected) */}
+      {pType === 'custom' && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodFrom')}</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                  <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
+                  {pCustomFrom ? format(pCustomFrom, 'dd/MM/yyyy') : '...'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
+                <CalendarUI
+                  mode="single"
+                  selected={pCustomFrom}
+                  onSelect={onCustomFromChange}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodTo')}</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                  <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
+                  {pCustomTo ? format(pCustomTo, 'dd/MM/yyyy') : '...'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
+                <CalendarUI
+                  mode="single"
+                  selected={pCustomTo}
+                  onSelect={onCustomToChange}
+                  disabled={(d) => pCustomFrom ? d < pCustomFrom : false}
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   if (isLoading) {
     return (
@@ -597,39 +852,24 @@ export function ExportsPage({ user }: ExportsPageProps) {
         description={t('forTaxCompliance')}
       />
 
-      {/* Period Selector */}
+      {/* Period Selector — full period type selector */}
       <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
         <CardContent className="p-4 pb-2 lg:pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4">
             <div className="flex items-center gap-4">
-            <Calendar className="h-5 w-5 text-[#0d9488]" />
-            <div className="flex gap-3">
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="w-32 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-gray-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-[#1a1f1e]" align="end">
-                  {monthNames.map((m, i) => (
-                    <SelectItem key={i} value={(i + 1).toString()}>
-                      {m} {selectedYear}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="w-24 bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-gray-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-[#1a1f1e]" align="end">
-                  {yearOptions.map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Calendar className="h-5 w-5 text-[#0d9488]" />
+              <div className="space-y-3">
+                {renderPeriodSelector(
+                  periodType, periodYear, periodMonth, periodQuarter,
+                  periodCustomFrom, periodCustomTo,
+                  handleMainPeriodTypeChange, handleMainYearChange, handleMainMonthChange,
+                  handleMainQuarterChange, handleMainCustomFromChange, handleMainCustomToChange,
+                )}
+              </div>
             </div>
-            </div>
+          </div>
+          <div className="mt-2 ml-9">
+            <p className="text-sm font-semibold text-[#0d9488]">{mainPeriodLabel}</p>
           </div>
         </CardContent>
       </Card>
@@ -689,130 +929,42 @@ export function ExportsPage({ user }: ExportsPageProps) {
                     {t('saftPeriodRange')}
                   </div>
                   <p className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-                    {saftPeriodLabel}
+                    {effectiveSaftLabel}
                   </p>
                 </div>
               </div>
 
-              {/* SAF-T Period Selector */}
+              {/* SAF-T Period Selector — with override toggle */}
               <div className="space-y-3">
-                <div className="flex flex-wrap items-end gap-3">
-                  {/* Period type */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodType')}</label>
-                    <Select value={saftPeriodType} onValueChange={(v) => setSaftPeriodType(v as SaftPeriodType)}>
-                      <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                        <CalendarDays className="h-4 w-4 text-[#0d9488] mr-2" />
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                        <SelectItem value="year">{t('saftPeriodFullYear')}</SelectItem>
-                        <SelectItem value="quarter">{t('saftPeriodQuarter')}</SelectItem>
-                        <SelectItem value="month">{t('saftPeriodMonth')}</SelectItem>
-                        <SelectItem value="custom">{t('saftPeriodCustom')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Year (always shown) */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('year') || 'År'}</label>
-                    <Select value={saftYear} onValueChange={setSaftYear}>
-                      <SelectTrigger className="w-28 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                        {yearOptions.map((year) => (
-                          <SelectItem key={year} value={year.toString()}>
-                            {year}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Quarter (shown when quarter selected) */}
-                  {saftPeriodType === 'quarter' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodQuarter')}</label>
-                      <Select value={saftQuarter} onValueChange={(v) => setSaftQuarter(v as SaftQuarter)}>
-                        <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                          <SelectItem value="1">{t('saftPeriodQ1')}</SelectItem>
-                          <SelectItem value="2">{t('saftPeriodQ2')}</SelectItem>
-                          <SelectItem value="3">{t('saftPeriodQ3')}</SelectItem>
-                          <SelectItem value="4">{t('saftPeriodQ4')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Month (shown when month selected) */}
-                  {saftPeriodType === 'month' && (
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftSelectMonth')}</label>
-                      <Select value={saftMonth} onValueChange={setSaftMonth}>
-                        <SelectTrigger className="w-36 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                          {monthNames.map((m, i) => (
-                            <SelectItem key={i} value={(i + 1).toString()}>
-                              {m}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Custom date range (shown when custom selected) */}
-                  {saftPeriodType === 'custom' && (
-                    <div className="flex flex-wrap items-end gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodFrom')}</label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                              <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
-                              {saftCustomFrom ? format(saftCustomFrom, 'dd/MM/yyyy') : '...'}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
-                            <CalendarUI
-                              mode="single"
-                              selected={saftCustomFrom}
-                              onSelect={(d) => { setSaftCustomFrom(d); if (d && saftCustomTo && d > saftCustomTo) setSaftCustomTo(undefined); }}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodTo')}</label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                              <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
-                              {saftCustomTo ? format(saftCustomTo, 'dd/MM/yyyy') : '...'}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
-                            <CalendarUI
-                              mode="single"
-                              selected={saftCustomTo}
-                              onSelect={(d) => { setSaftCustomTo(d); }}
-                              disabled={(d) => saftCustomFrom ? d < saftCustomFrom : false}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                    </div>
-                  )}
+                {/* Override toggle */}
+                <div className="flex items-center gap-3">
+                  <Switch
+                    id="saft-override"
+                    checked={saftOverridePeriod}
+                    onCheckedChange={(checked) => setSaftOverridePeriod(checked)}
+                  />
+                  <label
+                    htmlFor="saft-override"
+                    className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
+                  >
+                    {saftOverridePeriod ? t('saftOverridePeriod') : t('saftFollowMainPeriod')}
+                  </label>
                 </div>
+
+                {/* SAF-T local selector (only shown when override is active) */}
+                {saftOverridePeriod ? (
+                  renderPeriodSelector(
+                    saftPeriodType, saftYear, saftMonth, saftQuarter,
+                    saftCustomFrom, saftCustomTo,
+                    handleSaftPeriodTypeChange, handleSaftYearChange, handleSaftMonthChange,
+                    handleSaftQuarterChange, handleSaftCustomFromChange, handleSaftCustomToChange,
+                  )
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <Clock className="h-4 w-4 text-[#0d9488]" />
+                    {effectiveSaftLabel}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-3 mt-3">
@@ -836,8 +988,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
                       </DialogTitle>
                       <DialogDescription className="dark:text-gray-400">
                         {language === 'da' 
-                          ? `Skattestyrelsen kompatibel revisionsfil for ${saftPeriodLabel}`
-                          : `Danish Tax Authority compliant audit file for ${saftPeriodLabel}`}
+                          ? `Skattestyrelsen kompatibel revisionsfil for ${effectiveSaftLabel}`
+                          : `Danish Tax Authority compliant audit file for ${effectiveSaftLabel}`}
                       </DialogDescription>
                     </DialogHeader>
 
@@ -855,7 +1007,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
                             <div>
                               <span className="text-gray-500 dark:text-gray-400">{t('saftPeriodRange')}:</span>
                               <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                                {saftPeriodLabel}
+                                {effectiveSaftLabel}
                               </span>
                             </div>
                             <div>
@@ -1154,7 +1306,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h3 className="font-semibold text-lg">
-                {format(new Date(`${selectedYear}-${selectedMonth.padStart(2, '0')}-01`), 'MMMM yyyy')}
+                {mainPeriodLabel}
               </h3>
               <p className="text-white/80">
                 {totals.count} {t('transactionsWord')} • {tc(totals.totalAmount)} {language === 'da' ? 'ialt' : 'total'}
