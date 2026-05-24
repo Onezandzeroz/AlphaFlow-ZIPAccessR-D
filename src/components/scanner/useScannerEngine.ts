@@ -855,8 +855,22 @@ export function useScannerEngine() {
         let resultCanvas: HTMLCanvasElement;
 
         if (currentQuad) {
+          // CRITICAL: Scale quad from video stream resolution to captured image resolution.
+          // ImageCapture.takePhoto() grabs at sensor resolution (e.g., 3000×2000) while
+          // the quad was detected on the video stream (e.g., 1600×900). Without this scaling,
+          // warpPerspective applies the quad to a much larger image, producing a zoomed-in crop.
+          const scaleX = capCanvas.width / video.videoWidth;
+          const scaleY = capCanvas.height / video.videoHeight;
+          const captureQuad: Quad = {
+            tl: { x: currentQuad.tl.x * scaleX, y: currentQuad.tl.y * scaleY },
+            tr: { x: currentQuad.tr.x * scaleX, y: currentQuad.tr.y * scaleY },
+            br: { x: currentQuad.br.x * scaleX, y: currentQuad.br.y * scaleY },
+            bl: { x: currentQuad.bl.x * scaleX, y: currentQuad.bl.y * scaleY },
+          };
+          console.log(`[ScannerEngine] Quad scaled: video ${video.videoWidth}×${video.videoHeight} → capture ${capCanvas.width}×${capCanvas.height} (${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}x)`);
+
           // Dynamic dimensions — computed from quad proportions inside warpAndThreshold
-          resultCanvas = warpAndThreshold(capCanvas, currentQuad);
+          resultCanvas = warpAndThreshold(capCanvas, captureQuad);
         } else {
           resultCanvas = capCanvas;
         }
