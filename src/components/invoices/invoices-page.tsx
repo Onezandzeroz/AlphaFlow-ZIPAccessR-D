@@ -2070,7 +2070,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
                   {/* ── Bank Info ── */}
                   {companyInfo?.bankName && (
-                    <div className="inv-bank-bg" style={{ marginTop: '156px', padding: '14px', borderRadius: '8px' }}>
+                    <div className="inv-bank-bg" style={{ marginTop: '85px', padding: '14px', borderRadius: '8px' }}>
                       <div style={{ marginBottom: '14px' }}>
                         <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankDetailsTitle')}</div>
                         <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
