@@ -95,7 +95,9 @@ interface CameraCandidate {
 // ── Camera caching (skip enumeration on repeat scans) ───────────────
 
 const CAMERA_CACHE_KEY = 'scanner_best_camera';
+const CAMERA_CACHE_VERSION_KEY = 'scanner_camera_cache_ver';
 const CAMERA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+const CAMERA_CACHE_VERSION = 2; // Bump to invalidate stale cache from old selection logic
 
 interface CameraCacheEntry {
   deviceId: string;
@@ -106,6 +108,13 @@ interface CameraCacheEntry {
 
 function getCachedCamera(): CameraCacheEntry | null {
   try {
+    // Check cache version — if selection logic changed, invalidate old cache
+    const ver = localStorage.getItem(CAMERA_CACHE_VERSION_KEY);
+    if (ver !== String(CAMERA_CACHE_VERSION)) {
+      try { localStorage.removeItem(CAMERA_CACHE_KEY); } catch { /* ignore */ }
+      localStorage.setItem(CAMERA_CACHE_VERSION_KEY, String(CAMERA_CACHE_VERSION));
+      return null;
+    }
     const raw = localStorage.getItem(CAMERA_CACHE_KEY);
     if (!raw) return null;
     const entry = JSON.parse(raw) as CameraCacheEntry;
@@ -174,15 +183,21 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     const candidates: CameraCandidate[] = [];
 
     for (const device of videoDevices) {
-      // Skip devices that are clearly not rear-facing (based on label)
+      // Skip devices that are clearly not the main rear camera
       if (device.label) {
         const label = device.label.toLowerCase();
         // Skip front-facing cameras
         if (label.includes('user') || label.includes('front') || label.includes('facetime')) {
           continue;
         }
-        // On Samsung, depth and IR cameras are low-res and useless for scanning
+        // Skip auxiliary cameras: depth, IR, ultrawide, macro, telephoto
         if (label.includes('depth') || label.includes('ir ') || label.includes('infrared')) {
+          continue;
+        }
+        if (label.includes('ultrawide') || label.includes('ultra-wide') || label.includes('ultra wide')) {
+          continue;
+        }
+        if (label.includes('macro') || label.includes('telephoto') || label.includes('tele ')) {
           continue;
         }
       }
@@ -232,13 +247,49 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
       return acquireStreamBasic();
     }
 
-    // Step 4: Pick the camera with the highest max resolution (main sensor)
-    candidates.sort((a, b) => (b.maxResW * b.maxResH) - (a.maxResW * a.maxResH));
-    const best = candidates[0];
+    // Step 4: Pick the best camera for document scanning.
+    //
+    // Key insight: the main camera on virtually all phones has a 4:3 aspect ratio,
+    // while ultrawide cameras are 16:9 or wider. On Samsung mid-range phones,
+    // the main (50MP binned to 12.5MP) and ultrawide (12MP) report nearly
+    // identical resolutions. Using aspect ratio as tiebreaker reliably selects
+    // the main sensor.
+    //
+    // Sort by: megapixel count (desc), then aspect ratio closeness to 4:3 (asc).
+    // When resolutions are within 20% of each other, prefer 4:3 (main sensor).
+    const MAIN_ASPECT = 4 / 3; // Target aspect ratio for main camera
+    candidates.sort((a, b) => {
+      const aPixels = a.maxResW * a.maxResH;
+      const bPixels = b.maxResW * b.maxResH;
+      const ratio = Math.max(aPixels, bPixels) / Math.min(aPixels, bPixels);
 
-    console.log(`[ScannerCamera] Selected: ${best.label} (${best.maxResW}×${best.maxResH})`);
+      if (ratio < 1.2) {
+        // Resolutions within 20% — use aspect ratio tiebreaker
+        // Prefer 4:3 (main sensor) over wider ratios (ultrawide)
+        const aAspect = a.maxResW / a.maxResH;
+        const bAspect = b.maxResW / b.maxResH;
+        const aDist = Math.abs(aAspect - MAIN_ASPECT);
+        const bDist = Math.abs(bAspect - MAIN_ASPECT);
+        // If aspect ratios are close, fall back to resolution
+        if (Math.abs(aDist - bDist) < 0.1) {
+          return bPixels - aPixels;
+        }
+        return aDist - bDist; // Closer to 4:3 wins
+      }
+
+      // Significant resolution difference — higher resolution wins
+      return bPixels - aPixels;
+    });
+
+    const best = candidates[0];
+    const bestAspect = (best.maxResW / best.maxResH).toFixed(2);
+
+    console.log(`[ScannerCamera] Selected: ${best.label} (${best.maxResW}×${best.maxResH}, ratio ${bestAspect})`);
     if (candidates.length > 1) {
-      console.log(`[ScannerCamera] Rejected: ${candidates.slice(1).map(c => `${c.label} (${c.maxResW}×${c.maxResH})`).join(', ')}`);
+      console.log(`[ScannerCamera] Rejected: ${candidates.slice(1).map(c => {
+        const r = (c.maxResW / c.maxResH).toFixed(2);
+        return `${c.label} (${c.maxResW}×${c.maxResH}, ratio ${r})`;
+      }).join(', ')}`);
     }
 
     // Cache for next time (skips enumeration on repeat scans)
