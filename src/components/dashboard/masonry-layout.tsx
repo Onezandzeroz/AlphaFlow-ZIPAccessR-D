@@ -462,7 +462,7 @@ export function MasonryLayout({
 
 export function getWidgetPixelWidth(size: WidgetSize, containerWidth: number): number {
   const fractions: Record<WidgetSize, number> = {
-    full: 1, half: 0.5, third: 1 / 3, quarter: 0.25,
+    full: 1, 'two-thirds': 2 / 3, half: 0.5, third: 1 / 3, quarter: 0.25,
   };
   const gap = 12;
   const padding = 16;
