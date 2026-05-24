@@ -94,8 +94,8 @@ export const NAV_SECTIONS: NavSectionDef[] = [
     icon: FolderOpen,
     items: [
       { id: 'dashboard', nameDa: 'Kontrolpanel', nameEn: 'Dashboard', icon: LayoutDashboard },
-      { id: 'transactions', nameDa: 'Indkøb & Kvittering', nameEn: 'Purchases & Receipts', icon: Receipt },
       { id: 'invoices', nameDa: 'Salg & Faktura', nameEn: 'Sales & Invoice', icon: FileText },
+      { id: 'transactions', nameDa: 'Indkøb & Kvittering', nameEn: 'Purchases & Receipts', icon: Receipt },
       { id: 'contacts', nameDa: 'Kontakter', nameEn: 'Contacts', icon: Users },
     ],
   },
