@@ -303,7 +303,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
   }, [periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo]);
 
   const mainPeriodLabel = useMemo(() => {
-    return computePeriodLabel(periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo, t, language);
+    return computePeriodLabel(periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo, t as (key: string) => string, language);
   }, [periodType, periodYear, periodMonth, periodQuarter, periodCustomFrom, periodCustomTo, language, t]);
 
   // ─── SAF-T period computed values ───
@@ -312,7 +312,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
   }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo]);
 
   const saftPeriodLabel = useMemo(() => {
-    return computePeriodLabel(saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, t, language);
+    return computePeriodLabel(saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, t as (key: string) => string, language);
   }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, language, t]);
 
   // ─── Effective SAF-T values ───
