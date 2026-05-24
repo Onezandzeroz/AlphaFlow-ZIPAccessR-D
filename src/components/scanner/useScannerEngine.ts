@@ -837,12 +837,16 @@ export function useScannerEngine() {
       } catch { /* Focus lock not supported — continue with continuous AF */ }
     }
 
+    // Save video dimensions NOW — stopCamera() will zero videoWidth/videoHeight
+    const videoW = video.videoWidth;
+    const videoH = video.videoHeight;
+
     // High-quality capture: try ImageCapture API first, fall back to canvas.
     // ImageCapture can grab at sensor's full resolution (much higher than stream),
     // hardware-processed — no GPU decode overhead. Capped at CAPTURE_MAX_DIM.
     const CAPTURE_MAX_DIM = 3000;
     const capCanvas = await captureHighQualityFrame(video, track, CAPTURE_MAX_DIM);
-    console.log(`[ScannerEngine] Captured at ${capCanvas.width}×${capCanvas.height}`);
+    console.log(`[ScannerEngine] Captured at ${capCanvas.width}×${capCanvas.height} (stream was ${videoW}×${videoH})`);
 
     // Flash animation delay
     setTimeout(() => {
@@ -855,19 +859,44 @@ export function useScannerEngine() {
         let resultCanvas: HTMLCanvasElement;
 
         if (currentQuad) {
-          // CRITICAL: Scale quad from video stream resolution to captured image resolution.
-          // ImageCapture.takePhoto() grabs at sensor resolution (e.g., 3000×2000) while
-          // the quad was detected on the video stream (e.g., 1600×900). Without this scaling,
-          // warpPerspective applies the quad to a much larger image, producing a zoomed-in crop.
-          const scaleX = capCanvas.width / video.videoWidth;
-          const scaleY = capCanvas.height / video.videoHeight;
+          // Scale quad from video stream coordinates to captured image coordinates.
+          //
+          // IMPORTANT: ImageCapture.takePhoto() may capture at a DIFFERENT aspect ratio
+          // than the video stream (e.g., stream = 16:9, sensor = 4:3). The video stream
+          // is center-cropped from the sensor. We must map quad coordinates through the
+          // same center crop so they reference the correct physical area in the photo.
+          //
+          // Strategy:
+          //   1. Compute the sensor crop that matches the stream's aspect ratio (centered)
+          //   2. Scale quad from stream pixel space into that crop's pixel space
+          //   3. Offset into the full captured image coordinates
+          const capW = capCanvas.width;
+          const capH = capCanvas.height;
+          const streamAspect = videoW / videoH;
+          const capAspect = capW / capH;
+
+          let cropX = 0, cropY = 0, cropW = capW, cropH = capH;
+          if (capAspect > streamAspect) {
+            // Capture is wider than stream → pillarbox (side crop)
+            cropW = capH * streamAspect;
+            cropX = (capW - cropW) / 2;
+          } else if (capAspect < streamAspect) {
+            // Capture is taller than stream → letterbox (top/bottom crop)
+            cropH = capW / streamAspect;
+            cropY = (capH - cropH) / 2;
+          }
+
+          // Map quad corners from stream → captured image
+          const mapX = (sx: number) => cropX + (sx / videoW) * cropW;
+          const mapY = (sy: number) => cropY + (sy / videoH) * cropH;
+
           const captureQuad: Quad = {
-            tl: { x: currentQuad.tl.x * scaleX, y: currentQuad.tl.y * scaleY },
-            tr: { x: currentQuad.tr.x * scaleX, y: currentQuad.tr.y * scaleY },
-            br: { x: currentQuad.br.x * scaleX, y: currentQuad.br.y * scaleY },
-            bl: { x: currentQuad.bl.x * scaleX, y: currentQuad.bl.y * scaleY },
+            tl: { x: mapX(currentQuad.tl.x), y: mapY(currentQuad.tl.y) },
+            tr: { x: mapX(currentQuad.tr.x), y: mapY(currentQuad.tr.y) },
+            br: { x: mapX(currentQuad.br.x), y: mapY(currentQuad.br.y) },
+            bl: { x: mapX(currentQuad.bl.x), y: mapY(currentQuad.bl.y) },
           };
-          console.log(`[ScannerEngine] Quad scaled: video ${video.videoWidth}×${video.videoHeight} → capture ${capCanvas.width}×${capCanvas.height} (${scaleX.toFixed(2)}x, ${scaleY.toFixed(2)}x)`);
+          console.log(`[ScannerEngine] Quad mapped: stream ${videoW}×${videoH} → capture ${capW}×${capH}, crop ${Math.round(cropW)}×${Math.round(cropH)} at (${Math.round(cropX)},${Math.round(cropY)})`);
 
           // Dynamic dimensions — computed from quad proportions inside warpAndThreshold
           resultCanvas = warpAndThreshold(capCanvas, captureQuad);
