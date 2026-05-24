@@ -988,8 +988,11 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 pt-2">
-
+          <form
+            onSubmit={(e) => e.preventDefault()}
+            autoComplete="on"
+            className="space-y-4 pt-2"
+          >
             {/* Error message */}
             {formError && (
               <div className="text-sm text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800/50 rounded-lg px-3 py-2">
@@ -1004,6 +1007,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
               </Label>
               <Input
                 id="contact-name"
+                name="name"
+                autoComplete="organization"
                 value={formData.name}
                 onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                 placeholder={isDanish ? 'Firma- eller personnavn' : 'Business or person name'}
@@ -1053,6 +1058,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
               </Label>
               <Input
                 id="contact-cvr"
+                name="cvr"
+                autoComplete="off"
                 value={formData.cvrNumber}
                 onChange={(e) => setFormData((prev) => ({ ...prev, cvrNumber: e.target.value }))}
                 placeholder={isDanish ? 'fx 12345678' : 'e.g. 12345678'}
@@ -1068,7 +1075,9 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 </Label>
                 <Input
                   id="contact-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
                   value={formData.email}
                   onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
                   placeholder="email@example.com"
@@ -1081,7 +1090,9 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 </Label>
                 <Input
                   id="contact-phone"
+                  name="phone"
                   type="tel"
+                  autoComplete="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
                   placeholder="+45 12 34 56 78"
@@ -1097,6 +1108,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
               </Label>
               <Input
                 id="contact-address"
+                name="street-address"
+                autoComplete="street-address"
                 value={formData.address}
                 onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
                 placeholder={isDanish ? 'Gadenavn og husnummer' : 'Street name and number'}
@@ -1112,6 +1125,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 </Label>
                 <Input
                   id="contact-postal"
+                  name="postal-code"
+                  autoComplete="postal-code"
                   value={formData.postalCode}
                   onChange={(e) => setFormData((prev) => ({ ...prev, postalCode: e.target.value }))}
                   placeholder={isDanish ? '1234' : '1234'}
@@ -1124,6 +1139,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 </Label>
                 <Input
                   id="contact-city"
+                  name="city"
+                  autoComplete="address-level2"
                   value={formData.city}
                   onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
                   placeholder={isDanish ? 'København' : 'Copenhagen'}
@@ -1136,6 +1153,8 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 </Label>
                 <Input
                   id="contact-country"
+                  name="country"
+                  autoComplete="country-name"
                   value={formData.country}
                   onChange={(e) => setFormData((prev) => ({ ...prev, country: e.target.value }))}
                   placeholder="Danmark"
@@ -1158,22 +1177,23 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
                 rows={3}
               />
             </div>
-          </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-100 dark:border-gray-800">
-            <Button
-              variant="outline"
-              onClick={() => setIsFormOpen(false)}
-              className="dark:bg-white/5 dark:text-gray-300"
-            >
-              {isDanish ? 'Annuller' : 'Cancel'}
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !formData.name.trim()}
-              className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white gap-2"
-            >
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-gray-100 dark:border-gray-800">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsFormOpen(false)}
+                className="dark:bg-white/5 dark:text-gray-300"
+              >
+                {isDanish ? 'Annuller' : 'Cancel'}
+              </Button>
+              <Button
+                type="submit"
+                onClick={handleSave}
+                disabled={isSaving || !formData.name.trim()}
+                className="bg-[#0d9488] hover:bg-[#0d9488]/90 text-white gap-2"
+              >
               {isSaving ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -1185,6 +1205,7 @@ export function ContactsPage({ user, autoOpenCreate, onAutoCreateConsumed }: Con
               )}
             </Button>
           </div>
+          </form>
         </DialogContent>
       </Dialog>
 
