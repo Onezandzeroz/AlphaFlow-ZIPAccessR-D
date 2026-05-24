@@ -47,12 +47,15 @@ const LOCK_MAX_AGE = 60;                // 60 × 80ms = 4.8 seconds of persisten
 // EMA smoothing for corner positions (lower = smoother but slower to follow)
 const CORNER_SMOOTH_ALPHA = 0.35;
 
-// Camera constraints with fallbacks (v6: higher resolution for capture quality)
+// Camera constraints for STREAM (used for detection preview only).
+// 1280×720 — lowest practical: decent preview, minimal GPU decode.
+// 0.9M pixels vs 2.1M at 1080p → ~2.3× less GPU work per frame.
+// High-quality capture uses ImageCapture API (see doCapture).
 const CONSTRAINTS_FULL: MediaStreamConstraints = {
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 2560, min: 1280 },
-    height: { ideal: 1920, min: 720 },
+    width: { ideal: 1280, min: 640 },
+    height: { ideal: 720, min: 480 },
     frameRate: { ideal: 30 },
   },
   audio: false,
@@ -61,8 +64,8 @@ const CONSTRAINTS_FULL: MediaStreamConstraints = {
 const CONSTRAINTS_RELAXED: MediaStreamConstraints = {
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 1024 },
-    height: { ideal: 720 },
+    width: { ideal: 640 },
+    height: { ideal: 480 },
   },
   audio: false,
 };
@@ -137,8 +140,8 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
       const cachedStream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: cached.deviceId },
-          width: { ideal: Math.min(cached.maxResW, 3840), min: 1280 },
-          height: { ideal: Math.min(cached.maxResH, 2160), min: 720 },
+          width: { ideal: 1280, min: 640 },
+          height: { ideal: 720, min: 480 },
           frameRate: { ideal: 30 },
         },
         audio: false,
@@ -240,13 +243,14 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     // Cache for next time (skips enumeration on repeat scans)
     setCachedCamera(best.deviceId, best.maxResW, best.maxResH);
 
-    // Step 5: Open stream on the selected camera at highest practical resolution
-    // Capped at 3840×2160 to avoid switching to photo-mode on some devices
+    // Step 5: Open stream on the selected camera at 1280×720.
+    // Lowest practical resolution for detection — minimal GPU decode.
+    // High-quality capture uses ImageCapture API (see doCapture).
     const bestStream = await navigator.mediaDevices.getUserMedia({
       video: {
         deviceId: { exact: best.deviceId },
-        width: { ideal: Math.min(best.maxResW, 3840), min: 1280 },
-        height: { ideal: Math.min(best.maxResH, 2160), min: 720 },
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 },
         frameRate: { ideal: 30 },
       },
       audio: false,
@@ -325,6 +329,73 @@ function isEdgeQuad(dp: Pt[], dw: number, dh: number): boolean {
     p.x < dw * edgeMargin || p.x > dw * (1 - edgeMargin) ||
     p.y < dh * edgeMargin || p.y > dh * (1 - edgeMargin)
   );
+}
+
+// ── High-quality frame capture ───────────────────────────────────────
+
+/**
+ * Capture a high-quality frame from the camera for post-processing.
+ *
+ * Strategy:
+ *   1. Try ImageCapture API (Chrome/Android) — grabs at the camera sensor's
+ *      full resolution, hardware-processed. Much higher quality than stream
+ *      resolution with no GPU decode overhead.
+ *   2. Fall back to canvas drawImage from the video stream — uses whatever
+ *      resolution the stream provides (typically 1920×1080).
+ *
+ * The result is capped at `maxDim` longest side to keep post-processing fast
+ * (median denoise at 3000×4000 ≈ 1s on mobile — acceptable).
+ */
+async function captureHighQualityFrame(
+  video: HTMLVideoElement,
+  track: MediaStreamTrack | undefined,
+  maxDim: number,
+): Promise<HTMLCanvasElement> {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Try ImageCapture API — available in Chrome 59+, Edge 79+, Opera 46+
+  if (track && typeof ImageCapture !== 'undefined') {
+    try {
+      const imageCapture = new ImageCapture(track);
+      const blob = await imageCapture.takePhoto();
+
+      // Create bitmap from the photo blob (hardware-decoded, efficient)
+      const img = await createImageBitmap(blob);
+      const srcW = img.width;
+      const srcH = img.height;
+
+      // Cap at maxDim longest side to keep post-processing manageable
+      let w = srcW;
+      let h = srcH;
+      const longestSide = Math.max(w, h);
+      if (longestSide > maxDim) {
+        const scale = maxDim / longestSide;
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+
+      canvas.width = w;
+      canvas.height = h;
+      if (ctx) ctx.drawImage(img, 0, 0, w, h);
+
+      // Free bitmap memory immediately
+      img.close();
+
+      console.log(`[ScannerCapture] ImageCapture: ${srcW}×${srcH} → ${w}×${h}`);
+      return canvas;
+    } catch (err) {
+      console.warn('[ScannerCapture] ImageCapture failed, falling back to canvas:', err);
+    }
+  }
+
+  // Fallback: canvas drawImage from the video stream at stream resolution
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  if (ctx) ctx.drawImage(video, 0, 0);
+
+  console.log(`[ScannerCapture] Canvas fallback: ${video.videoWidth}×${video.videoHeight}`);
+  return canvas;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -765,14 +836,12 @@ export function useScannerEngine() {
       } catch { /* Focus lock not supported — continue with continuous AF */ }
     }
 
-    // Capture a FULL-RES frame from the video (at stream's native resolution)
-    const capCanvas = document.createElement('canvas');
-    capCanvas.width = video.videoWidth;
-    capCanvas.height = video.videoHeight;
-    const capCtx = capCanvas.getContext('2d');
-    if (capCtx) capCtx.drawImage(video, 0, 0);
-
-    console.log(`[ScannerEngine] Captured at ${video.videoWidth}×${video.videoHeight}`);
+    // High-quality capture: try ImageCapture API first, fall back to canvas.
+    // ImageCapture can grab at sensor's full resolution (much higher than stream),
+    // hardware-processed — no GPU decode overhead. Capped at CAPTURE_MAX_DIM.
+    const CAPTURE_MAX_DIM = 3000;
+    const capCanvas = await captureHighQualityFrame(video, track, CAPTURE_MAX_DIM);
+    console.log(`[ScannerEngine] Captured at ${capCanvas.width}×${capCanvas.height}`);
 
     // Flash animation delay
     setTimeout(() => {
