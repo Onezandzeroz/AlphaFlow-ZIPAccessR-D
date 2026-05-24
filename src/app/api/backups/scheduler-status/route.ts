@@ -26,8 +26,8 @@ export async function GET(request: NextRequest) {
 
     const companyId = ctx.activeCompanyId;
 
-    // Per-company cron health
-    const cronHealth = getCronHealth(companyId);
+    // Per-company cron health (async — queries DB for existing backups)
+    const cronHealth = await getCronHealth(companyId);
 
     // Global scheduler status
     const schedulerInfo = getSchedulerStatus();

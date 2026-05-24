@@ -115,13 +115,13 @@ function updateCompanyCronHealthSkipped(companyId: string, type: BackupType): vo
  * - healthy:   At least one backup succeeded, no errors.
  * - unhealthy: Scheduler has errors for this tenant.
  */
-export function getCronHealth(companyId: string): {
+export async function getCronHealth(companyId: string): Promise<{
   status: 'idle' | 'pending' | 'healthy' | 'unhealthy';
   entries: CronHealthEntry[];
   schedulerRunning: boolean;
   lastCheckedAt: string;
   summary: string;
-} {
+}> {
   const schedulerRunning = scheduledTasks.length > 0;
 
   // Get or create entries for all backup types for this company
@@ -139,18 +139,30 @@ export function getCronHealth(companyId: string): {
 
   const anyBackupSucceeded = entries.some((e) => e.lastStatus === 'success');
 
+  // Check DB for existing completed automatic backups as the authoritative source
+  // This survives server restarts and is independent of in-memory state.
+  const existingBackups = await db.backup.count({
+    where: { companyId, triggerType: 'automatic', status: 'completed' },
+  }).catch(() => 0);
+
+  // If DB has backups but in-memory doesn't know about this company,
+  // restore the triggered state so cron health is consistent.
+  if (existingBackups > 0 && !TRIGGERED_COMPANIES.has(companyId)) {
+    markCompanyTriggered(companyId);
+  }
+
   // Determine state — each tenant is evaluated independently
   let status: 'idle' | 'pending' | 'healthy' | 'unhealthy';
   let summary: string;
 
-  if (!TRIGGERED_COMPANIES.has(companyId)) {
-    // This company has never had a transaction — idle
+  if (!TRIGGERED_COMPANIES.has(companyId) && existingBackups === 0) {
+    // This company has never had data or a backup — truly idle
     status = 'idle';
     summary = 'Waiting for first transaction';
   } else if (hasError) {
     status = 'unhealthy';
     summary = `${errorMessages.length} schedule(s) with errors`;
-  } else if (!anyBackupSucceeded) {
+  } else if (!anyBackupSucceeded && existingBackups === 0) {
     // Triggered by transaction but backups still in progress
     status = 'pending';
     summary = 'Creating initial backups...';
@@ -255,6 +267,7 @@ async function runScheduledBackupCycle(backupType: BackupType, bypassCooldown = 
         await runAutomaticBackup(userId, companyId, backupType);
         LAST_AUTO_BACKUP.set(`${companyId}:${backupType}`, Date.now());
         updateCompanyCronHealthSuccess(companyId, backupType);
+        markCompanyTriggered(companyId);
         totalSuccess++;
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -284,6 +297,12 @@ export function startBackupScheduler(): void {
   }
 
   logger.info('[BACKUP-SCHEDULER] Starting backup automation...');
+
+  // Hydrate TRIGGERED_COMPANIES from database so companies with existing
+  // backups are not incorrectly shown as "idle" after a server restart.
+  hydrateTriggeredCompanies().catch((err) => {
+    logger.error('[BACKUP-SCHEDULER] Failed to hydrate triggered companies:', err);
+  });
 
   for (const { type, cron: cronExpr, label } of SCHEDULES) {
     if (!cron.validate(cronExpr)) {
@@ -430,6 +449,30 @@ export function getSchedulerStatus(): {
       return { ...s, humanReadable };
     }),
   };
+}
+
+/**
+ * Hydrate TRIGGERED_COMPANIES from the database.
+ * Queries for all companies that have at least one completed automatic backup.
+ * This ensures that after server restarts, existing tenants with backup history
+ * are not incorrectly reported as "idle" (waiting for first transaction).
+ */
+async function hydrateTriggeredCompanies(): Promise<void> {
+  try {
+    const companiesWithBackups = await db.backup.findMany({
+      where: { triggerType: 'automatic', status: 'completed' },
+      select: { companyId: true },
+      distinct: ['companyId'],
+    });
+    for (const { companyId } of companiesWithBackups) {
+      TRIGGERED_COMPANIES.add(companyId);
+    }
+    logger.info(
+      `[BACKUP-SCHEDULER] Hydrated ${companiesWithBackups.length} companies with existing backups into triggered state`,
+    );
+  } catch (error) {
+    logger.error('[BACKUP-SCHEDULER] hydrateTriggeredCompanies error:', error);
+  }
 }
 
 // ─── Lazy-start singleton ─────────────────────────────────────────────────
