@@ -48,14 +48,15 @@ const LOCK_MAX_AGE = 60;                // 60 × 80ms = 4.8 seconds of persisten
 const CORNER_SMOOTH_ALPHA = 0.35;
 
 // Camera constraints for STREAM (used for detection preview only).
-// 1280×720 — lowest practical: decent preview, minimal GPU decode.
-// 0.9M pixels vs 2.1M at 1080p → ~2.3× less GPU work per frame.
+// 1600×900 — safe middle ground: less GPU work than 1080p, universally supported.
+// 1.44M pixels vs 2.07M at 1080p → ~30% less GPU work per frame.
+// Detection quality is unaffected (always uses 480px offscreen canvas).
 // High-quality capture uses ImageCapture API (see doCapture).
 const CONSTRAINTS_FULL: MediaStreamConstraints = {
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 1280, min: 640 },
-    height: { ideal: 720, min: 480 },
+    width: { ideal: 1600, min: 1280 },
+    height: { ideal: 900, min: 720 },
     frameRate: { ideal: 30 },
   },
   audio: false,
@@ -64,8 +65,8 @@ const CONSTRAINTS_FULL: MediaStreamConstraints = {
 const CONSTRAINTS_RELAXED: MediaStreamConstraints = {
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 640 },
-    height: { ideal: 480 },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
   },
   audio: false,
 };
@@ -140,8 +141,8 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
       const cachedStream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: cached.deviceId },
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 },
+          width: { ideal: 1600, min: 1280 },
+          height: { ideal: 900, min: 720 },
           frameRate: { ideal: 30 },
         },
         audio: false,
@@ -243,14 +244,14 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     // Cache for next time (skips enumeration on repeat scans)
     setCachedCamera(best.deviceId, best.maxResW, best.maxResH);
 
-    // Step 5: Open stream on the selected camera at 1280×720.
-    // Lowest practical resolution for detection — minimal GPU decode.
+    // Step 5: Open stream on the selected camera at 1600×900.
+    // Safe middle ground for detection — minimal GPU decode, universal camera support.
     // High-quality capture uses ImageCapture API (see doCapture).
     const bestStream = await navigator.mediaDevices.getUserMedia({
       video: {
         deviceId: { exact: best.deviceId },
-        width: { ideal: 1280, min: 640 },
-        height: { ideal: 720, min: 480 },
+        width: { ideal: 1600, min: 1280 },
+        height: { ideal: 900, min: 720 },
         frameRate: { ideal: 30 },
       },
       audio: false,
@@ -929,9 +930,27 @@ export function useScannerEngine() {
         setTimeout(resolve, 2000);
       });
 
+      // Wait for video to actually produce frames (readyState >= 2 = HAVE_CURRENT_DATA).
+      // Some Samsung camera HALs deliver the stream at certain resolutions but
+      // never decode a frame, causing readyState to stay at 1 (metadata only).
+      // Without this check, the detection loop silently skips every frame.
       const currentVideo = videoRef.current;
+      if (currentVideo && currentVideo.readyState < 2) {
+        console.log(`[ScannerCamera] Waiting for frames (readyState=${currentVideo.readyState})...`);
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            const v = videoRef.current;
+            if (!v || v.readyState >= 2) { resolve(); return; }
+            requestAnimationFrame(check);
+          };
+          requestAnimationFrame(check);
+          setTimeout(resolve, 3000); // Hard timeout — start anyway after 3s
+        });
+      }
+
       const vw = currentVideo?.videoWidth || 640;
       const vh = currentVideo?.videoHeight || 480;
+      console.log(`[ScannerCamera] Stream ready: ${vw}×${vh}, readyState=${currentVideo?.readyState}`);
 
       // Downscale detection canvas for SPEED (uses adaptive dim from P3-a)
       const detectDim = detectMaxDimRef.current;
