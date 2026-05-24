@@ -7,14 +7,19 @@
  *   - OpenCV.js: ONLY used for perspective warp (getPerspectiveTransform + warpPerspective)
  *   - Canvas 2D API: ALL enhancement (brightness, contrast, sharpen)
  *
- * Pipeline (v6 — reordered for scanner-quality output):
+ * Pipeline (v7 — scanner-quality with Sauvola binarization):
  *   1. Perspective warp (OpenCV INTER_CUBIC) — correct skew, minimum 2000px longest side
  *   2. Grayscale conversion — FIRST (eliminates 3-channel work from every subsequent step)
  *   3. Median denoise — SECOND (remove sensor noise BEFORE any value manipulation)
  *   4. Contrast stretch (1st–99th percentile) — wider dynamic range, natural text contrast
  *   5. Adaptive brightness (target mean ~215) — consistent luminance across all lighting
- *   6. Two-pass sharpening — always LAST (sharpen clean edges, not amplified noise)
+ *   6. Two-pass sharpening — crisp text edges
  *   7. Paper whitening — lift near-white pixels to pure white for photocopy/scanner aesthetic
+ *   8. Sauvola binarization — pure B&W output for maximum OCR accuracy
+ *
+ * v6 → v7 changes:
+ *   - Added Sauvola local binarization as final step (pure black text on white paper)
+ *   - Sauvola handles uneven illumination better than global Otsu for receipt documents
  *
  * v5 → v6 changes:
  *   - Reordered pipeline: denoise BEFORE brightness/contrast (noise no longer amplified)
@@ -22,6 +27,7 @@
  *   - Widened contrast percentiles from 2nd–98th to 1st–99th for natural tonal range
  *   - Added paper whitening step for scanner-quality white backgrounds
  *   - JPEG quality raised to 90% for better text preservation
+ *   - Pipeline: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten → Binarize
  */
 
 declare const cv: any;
@@ -253,6 +259,84 @@ function sharpenTwoPass(gray: Uint8Array, w: number, h: number): void {
   unsharpMaskPass(gray, w, h, 1, 0.6);
 }
 
+// ── Sauvola local binarization ───────────────────────────────────────
+
+/**
+ * Sauvola binarization: produces pure B&W output (black text on white paper).
+ * Superior to global Otsu for documents with uneven illumination.
+ *
+ * Formula: T(x,y) = mean(x,y) * (1 + k * (std(x,y) / R - 1))
+ *
+ * Uses integral images for O(1) mean/variance computation per pixel.
+ * This is the standard approach used in production document scanners.
+ */
+function sauvolaBinarize(gray: Uint8Array, w: number, h: number): void {
+  const K = 0.2;     // Controls threshold sensitivity (0.2 = standard for documents)
+  const R = 128;      // Dynamic range of standard deviation (normalization constant)
+  const halfWin = 15; // Window half-size (31×31 window — large enough to capture local context)
+
+  // Build integral images for mean and mean-of-squares
+  // integral[i] = sum of gray[0..i]
+  // integralSq[i] = sum of gray[0..i]^2
+  const n = w * h;
+  const integral = new Float64Array(n + 1);
+  const integralSq = new Float64Array(n + 1);
+
+  // Row 0
+  let rowSum = 0;
+  let rowSqSum = 0;
+  for (let x = 0; x < w; x++) {
+    const v = gray[x];
+    rowSum += v;
+    rowSqSum += v * v;
+    integral[x + 1] = rowSum;
+    integralSq[x + 1] = rowSqSum;
+  }
+
+  // Remaining rows
+  for (let y = 1; y < h; y++) {
+    const rowOff = y * w;
+    rowSum = 0;
+    rowSqSum = 0;
+    for (let x = 0; x < w; x++) {
+      const v = gray[rowOff + x];
+      rowSum += v;
+      rowSqSum += v * v;
+      const idx = rowOff + x + 1;
+      integral[idx] = integral[idx - w] + rowSum;
+      integralSq[idx] = integralSq[idx - w] + rowSqSum;
+    }
+  }
+
+  // Apply Sauvola threshold to each pixel
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const y1 = Math.max(0, y - halfWin);
+      const y2 = Math.min(h - 1, y + halfWin);
+      const x1 = Math.max(0, x - halfWin);
+      const x2 = Math.min(w - 1, x + halfWin);
+
+      const area = (x2 - x1 + 1) * (y2 - y1 + 1);
+
+      // Sum from integral images: sum = II(x2,y2) - II(x1-1,y2) - II(x2,y1-1) + II(x1-1,y1-1)
+      const iy2 = y2 + 1;
+      const ix2 = x2 + 1;
+      const iy1 = y1;
+      const ix1 = x1;
+
+      const sum = integral[iy2 * w + ix2] - integral[iy2 * w + ix1] - integral[iy1 * w + ix2] + integral[iy1 * w + ix1];
+      const sumSq = integralSq[iy2 * w + ix2] - integralSq[iy2 * w + ix1] - integralSq[iy1 * w + ix2] + integralSq[iy1 * w + ix1];
+
+      const mean = sum / area;
+      const variance = sumSq / area - mean * mean;
+      const std = Math.sqrt(Math.max(0, variance));
+
+      const threshold = mean * (1 + K * (std / R - 1));
+      gray[y * w + x] = (gray[y * w + x] > threshold) ? 255 : 0;
+    }
+  }
+}
+
 // ── Paper whitening ─────────────────────────────────────────────────
 
 /**
@@ -282,7 +366,7 @@ function whitenPaper(gray: Uint8Array): void {
  * manipulation. In v5, the fixed +64 brightness boost amplified sensor noise
  * before the median filter cleaned it up. Now noise is removed first.
  *
- * Order: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten
+ * Order: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten → Binarize
  */
 function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
@@ -327,6 +411,12 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
     whitenPaper(gray);
     console.log('[perspectiveWarp] ✓ Paper whitening');
   } catch (e) { console.warn('[perspectiveWarp] Whitening failed:', e); }
+
+  // STEP 7: Sauvola binarization (pure B&W for maximum OCR accuracy)
+  try {
+    sauvolaBinarize(gray, w, h);
+    console.log('[perspectiveWarp] ✓ Sauvola binarization');
+  } catch (e) { console.warn('[perspectiveWarp] Binarization failed:', e); }
 
   // Write back to ImageData (R=G=B=gray, A=255)
   writeGrayscale(imageData, gray);

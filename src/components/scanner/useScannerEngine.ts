@@ -24,12 +24,17 @@ import { useLanguageStore } from '@/lib/language-store';
 
 // ── Tuning constants ───────────────────────────────────────────────
 
-// Detection interval: ~20fps (faster = more responsive)
+// Detection interval fallback for browsers without requestVideoFrameCallback
 const DETECT_INTERVAL_MS = 50;
 
 // Detection canvas max dimension — keep SMALL for speed
 // 480px wide = ~260K pixels vs 2M at 1080p → ~8× faster OpenCV
-const DETECT_MAX_DIM = 480;
+const DETECT_MAX_DIM_DEFAULT = 480;
+const DETECT_MAX_DIM_MIN = 256;     // Floor — never go below this (detection quality suffers)
+const DETECT_MAX_DIM_STEP = 32;     // Reduce by this amount when over budget
+const FRAME_TIME_BUDGET_MS = 45;    // Target: leave headroom for 20fps
+const FRAME_TIME_SMOOTH = 0.3;      // EMA for measured frame time
+const ADAPTIVE_CHECK_INTERVAL = 5;  // Check every N frames whether to adapt
 
 // Stillness: allow MORE movement (relaxed from 0.025)
 const STILL_THRESHOLD = 0.06;          // 6% avg pixel shift = "still enough"
@@ -334,8 +339,15 @@ export function useScannerEngine() {
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const stillnessCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rvfcIdRef = useRef<number | null>(null);  // requestVideoFrameCallback handle
   const streamRef = useRef<MediaStream | null>(null);
   const mountedRef = useRef(true);
+
+  // Adaptive detection resolution state
+  const detectMaxDimRef = useRef(DETECT_MAX_DIM_DEFAULT);
+  const frameTimeEmaRef = useRef(0);
+  const frameCountRef = useRef(0);
+  const frameBusyRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('loading');
   const [quad, setQuad] = useState<Quad | null>(null);
@@ -396,6 +408,13 @@ export function useScannerEngine() {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
+    }
+    if (rvfcIdRef.current !== null) {
+      const video = videoRef.current;
+      if (video && typeof (video as any).cancelVideoFrameCallback === 'function') {
+        (video as any).cancelVideoFrameCallback(rvfcIdRef.current);
+      }
+      rvfcIdRef.current = null;
     }
 
     if (streamRef.current) {
@@ -485,27 +504,35 @@ export function useScannerEngine() {
     }
   }, []);
 
-  // ── Detection loop ───────────────────────────────────────────────
+  // ── Detection loop (shared core logic) ───────────────────────────
 
-  const startDetectionLoop = useCallback(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
+  /**
+   * Core detection tick — runs one frame of: stillness check + OpenCV detect + overlay.
+   * Extracted so both setInterval and requestVideoFrameCallback can call it.
+   */
+  const detectTick = useCallback(() => {
+    // Guard: don't run if unmounted, capturing, or previous frame still processing
+    if (!mountedRef.current || capturingRef.current || frameBusyRef.current) return;
+    frameBusyRef.current = true;
 
-    intervalRef.current = setInterval(() => {
-      // Guard: don't run if unmounted or capturing
-      if (!mountedRef.current || capturingRef.current) return;
+    const t0 = performance.now();
 
+    try {
       const video = videoRef.current;
       const overlay = overlayCanvasRef.current;
       const frame = frameCanvasRef.current;
       const stillCanvas = stillnessCanvasRef.current;
-      if (!video || !overlay || !frame || !stillCanvas || video.readyState < 2) return;
+      if (!video || !overlay || !frame || !stillCanvas || video.readyState < 2) {
+        frameBusyRef.current = false;
+        return;
+      }
 
       // Size overlay canvas to match its CSS display size (once)
       if (!overlaySizedRef.current) {
         const dpr = window.devicePixelRatio || 1;
         const cw = overlay.clientWidth;
         const ch = overlay.clientHeight;
-        if (cw === 0 || ch === 0) return;
+        if (cw === 0 || ch === 0) { frameBusyRef.current = false; return; }
         overlay.width = cw * dpr;
         overlay.height = ch * dpr;
         const ctx = overlay.getContext('2d');
@@ -516,11 +543,11 @@ export function useScannerEngine() {
 
       const { dw, dh } = displayDimsRef.current;
       const overlayCtx = overlay.getContext('2d');
-      if (!overlayCtx) return;
+      if (!overlayCtx) { frameBusyRef.current = false; return; }
 
       // Draw frame to offscreen detection canvas (already at small size)
       const fctx = frame.getContext('2d');
-      if (!fctx) return;
+      if (!fctx) { frameBusyRef.current = false; return; }
       fctx.drawImage(video, 0, 0, frame.width, frame.height);
 
       // ── Stillness check (graduated — not hard reset) ──────────
@@ -539,13 +566,10 @@ export function useScannerEngine() {
           const avgSad = sad / (64 * 48) / 255;
 
           if (avgSad < STILL_THRESHOLD) {
-            // Still enough → increment
             stillnessCountRef.current = stillnessCountRef.current + 1;
           } else if (avgSad < STILL_HARD_THRESHOLD) {
-            // Slight movement → gentle decay (don't kill progress)
             stillnessCountRef.current = Math.max(0, stillnessCountRef.current - 1);
           } else {
-            // Large movement → faster decay but still not instant reset
             stillnessCountRef.current = Math.max(0, stillnessCountRef.current - 3);
           }
         }
@@ -577,9 +601,7 @@ export function useScannerEngine() {
         let hasTracking = false;
 
         if (freshQuad) {
-          // Fresh detection — lock on or update
           if (lockedQuadRef.current) {
-            // Smooth with EMA for stable tracking
             displayQuad = smoothQuad(lockedQuadRef.current, freshQuad, CORNER_SMOOTH_ALPHA);
           } else {
             displayQuad = freshQuad;
@@ -588,18 +610,15 @@ export function useScannerEngine() {
           lockAgeRef.current = 0;
           hasTracking = true;
         } else if (lockedQuadRef.current) {
-          // No fresh detection but we have a lock — keep showing it
           lockAgeRef.current += 1;
           if (lockAgeRef.current < LOCK_MAX_AGE) {
             displayQuad = lockedQuadRef.current;
             hasTracking = true;
           } else {
-            // Lost tracking for too long — release lock
             lockedQuadRef.current = null;
           }
         }
 
-        // Update React state for UI indicators
         setQuad(displayQuad);
         const newStatus = hasTracking
           ? (isCurrentlyStable ? 'stable' : 'found')
@@ -607,7 +626,6 @@ export function useScannerEngine() {
         setScanStatus(newStatus);
         setIsStable(hasTracking && isCurrentlyStable);
 
-        // Draw overlay using the (possibly locked) quad
         drawOverlay(overlayCtx, dw, dh, video, displayQuad, stillnessCountRef.current, hasTracking && lockAgeRef.current > 0);
 
         // ── Auto-capture: stillness + locked quad ──────────────
@@ -621,7 +639,6 @@ export function useScannerEngine() {
           setTimeout(() => doCaptureRef.current(), 0);
         }
       } catch {
-        // On error, keep the locked quad if we had one
         if (lockedQuadRef.current) {
           lockAgeRef.current += 1;
           if (lockAgeRef.current < LOCK_MAX_AGE) {
@@ -643,8 +660,88 @@ export function useScannerEngine() {
           overlayCtx.clearRect(0, 0, dw, dh);
         }
       }
-    }, DETECT_INTERVAL_MS);
+
+      // ── Adaptive detection resolution ────────────────────────
+      // Measure frame time and scale down detection canvas if over budget
+      const dt = performance.now() - t0;
+      frameCountRef.current += 1;
+
+      // Exponential moving average for frame time
+      if (frameTimeEmaRef.current === 0) {
+        frameTimeEmaRef.current = dt;
+      } else {
+        frameTimeEmaRef.current = frameTimeEmaRef.current * (1 - FRAME_TIME_SMOOTH) + dt * FRAME_TIME_SMOOTH;
+      }
+
+      // Check every N frames whether to adapt
+      if (frameCountRef.current % ADAPTIVE_CHECK_INTERVAL === 0 && frameTimeEmaRef.current > FRAME_TIME_BUDGET_MS) {
+        const currentDim = detectMaxDimRef.current;
+        if (currentDim > DETECT_MAX_DIM_MIN) {
+          const newDim = Math.max(DETECT_MAX_DIM_MIN, currentDim - DETECT_MAX_DIM_STEP);
+          detectMaxDimRef.current = newDim;
+          console.log(`[ScannerEngine] Frame time ${frameTimeEmaRef.current.toFixed(1)}ms > ${FRAME_TIME_BUDGET_MS}ms budget → reducing detection to ${newDim}px`);
+
+          // Resize the detection canvas
+          const video2 = videoRef.current;
+          if (video2 && video2.videoWidth) {
+            const vw = video2.videoWidth;
+            const vh = video2.videoHeight;
+            const maxDim = Math.max(vw, vh);
+            const detectScale = maxDim > newDim ? newDim / maxDim : 1;
+            const ndw = Math.round(vw * detectScale);
+            const ndh = Math.round(vh * detectScale);
+            if (frameCanvasRef.current) {
+              frameCanvasRef.current.width = ndw;
+              frameCanvasRef.current.height = ndh;
+              frameCanvasRef.current.dataset.scale = String(detectScale);
+            }
+          }
+        }
+      }
+    } finally {
+      frameBusyRef.current = false;
+    }
   }, [drawOverlay]);
+
+  // ── Detection loop entry point ───────────────────────────────────────
+
+  const startDetectionLoop = useCallback(() => {
+    // Clear any existing loop
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+    if (rvfcIdRef.current !== null) {
+      const video = videoRef.current;
+      if (video && typeof (video as any).cancelVideoFrameCallback === 'function') {
+        (video as any).cancelVideoFrameCallback(rvfcIdRef.current);
+      }
+      rvfcIdRef.current = null;
+    }
+
+    // Reset adaptive state for each new scan session
+    detectMaxDimRef.current = DETECT_MAX_DIM_DEFAULT;
+    frameTimeEmaRef.current = 0;
+    frameCountRef.current = 0;
+    frameBusyRef.current = false;
+
+    const video = videoRef.current;
+    // Prefer requestVideoFrameCallback (Chrome 83+) — fires exactly on new camera frames
+    if (video && typeof (video as any).requestVideoFrameCallback === 'function') {
+      const scheduleNext = () => {
+        if (!mountedRef.current || capturingRef.current) return;
+        rvfcIdRef.current = (video as any).requestVideoFrameCallback(() => {
+          detectTick();
+          if (mountedRef.current && !capturingRef.current) {
+            scheduleNext();
+          }
+        });
+      };
+      scheduleNext();
+      console.log('[ScannerEngine] Detection: requestVideoFrameCallback (frame-synced)');
+    } else {
+      // Fallback: setInterval for browsers without RVFC
+      intervalRef.current = setInterval(detectTick, DETECT_INTERVAL_MS);
+      console.log('[ScannerEngine] Detection: setInterval fallback');
+    }
+  }, [detectTick]);
 
   useEffect(() => { startDetectionLoopRef.current = startDetectionLoop; }, [startDetectionLoop]);
 
@@ -767,9 +864,10 @@ export function useScannerEngine() {
       const vw = currentVideo?.videoWidth || 640;
       const vh = currentVideo?.videoHeight || 480;
 
-      // Downscale detection canvas for SPEED (480px max dim)
+      // Downscale detection canvas for SPEED (uses adaptive dim from P3-a)
+      const detectDim = detectMaxDimRef.current;
       const maxDim = Math.max(vw, vh);
-      const detectScale = maxDim > DETECT_MAX_DIM ? DETECT_MAX_DIM / maxDim : 1;
+      const detectScale = maxDim > detectDim ? detectDim / maxDim : 1;
       const dw = Math.round(vw * detectScale);
       const dh = Math.round(vh * detectScale);
 
