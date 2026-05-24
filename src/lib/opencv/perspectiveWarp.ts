@@ -7,28 +7,22 @@
  *   - OpenCV.js: ONLY used for perspective warp (getPerspectiveTransform + warpPerspective)
  *   - Canvas 2D API: ALL enhancement (brightness, contrast, sharpen)
  *
- * Pipeline (v9 — photocopy-quality output):
+ * Pipeline (v10 — clean document scan):
  *   1. Perspective warp (OpenCV INTER_CUBIC) — correct skew, minimum 2000px longest side
  *   2. Grayscale conversion — eliminates 3-channel work from every subsequent step
  *   3. Median denoise — remove sensor noise before any manipulation
- *   4. Contrast stretch (2nd–98th percentile) — widen dynamic range
- *   5. Single-pass sharpening — crisp text edges before tonal mapping
- *   6. Sigmoid S-curve (photocopy contrast) — pushes darks→black, lights→white
- *   7. Paper whitening — lift near-white pixels to pure white
+ *   4. Contrast stretch (1st–99th percentile) — gentle dynamic range normalization
+ *   5. Mild sharpening — crisp text edges without introducing halos
+ *   6. Gentle S-curve — subtle contrast boost, preserves natural tonal gradations
+ *   7. Paper whitening — lift near-white pixels to clean white background
  *
- * v8 → v9 changes (PHOTOCOPY QUALITY):
- *   - REMOVED adaptive brightness normalization (was pushing mean to 200, washing out text)
- *   - ADDED sigmoid S-curve (photocopy contrast): maps pixel values through a tunable
- *     S-shaped curve that separates text from paper, creating a true photocopy look
- *   - S-curve midpoint auto-adapts to the image's natural brightness distribution
- *   - Steepness tuned for strong text/paper separation without destroying edge detail
- *   - Reordered sharpen BEFORE S-curve (sharpen works on natural tones, better edges)
- *   - Tightened paper whiten threshold: 230 → 235 (only already-near-white pixels)
- *
- * v7 → v8 changes (OVEREXPOSURE FIX):
- *   - REMOVED Sauvola binarization — it destroyed detail on brightened images
- *   - Changed brightness from additive to gamma correction (preserves blacks)
- *   - Raised paper whitening threshold: 190 → 230
+ * v9 → v10 changes (CLEAN SCAN, NOT PHOTOCOPY):
+ *   - REDUCED S-curve steepness from 8 → 4 (preserves natural shading)
+ *   - REMOVED text darkening step (was crushing shadows artificially)
+ *   - RELAXED contrast stretch from 2nd-98th → 1st-99th (prevents darkening of darker areas)
+ *   - REDUCED sharpen strength from 0.7 → 0.5 (fewer halos on mid-tone text)
+ *   - LOWERED paper whiten threshold from 235 → 225 (cleaner white background)
+ *   - Result: looks like a real flatbed scanner, not a harsh photocopy
  */
 
 declare const cv: any;
@@ -113,27 +107,22 @@ function writeGrayscale(imageData: ImageData, gray: Uint8Array): void {
 }
 
 /**
- * Photocopy contrast using a sigmoid S-curve.
+ * Gentle S-curve contrast boost — produces a clean scanner look.
  *
- * The S-curve maps pixel values through a sigmoid function:
- *   output = 255 / (1 + exp(-steepness * (x/255 - midpoint/255)))
+ * Uses a sigmoid function with LOW steepness to subtly boost contrast:
+ *   - Dark pixels (text) get gently darker
+ *   - Light pixels (paper) get gently brighter
+ *   - Mid-tones are preserved — no harsh photocopy effect
  *
- * This naturally separates the two brightness clusters in a receipt:
- *   - Dark pixels (text) → pushed toward 0 (black)
- *   - Light pixels (paper) → pushed toward 255 (white)
- *   - Mid-tones → compressed around the midpoint
- *
- * The midpoint is auto-adapted from the image's brightness distribution,
+ * The midpoint is auto-adapted from the image's median brightness,
  * so it works correctly regardless of original lighting.
  *
  * Uses a precomputed 256-entry LUT — O(n) application, very fast.
  */
-function photocopyContrast(gray: Uint8Array): void {
+function gentleSCurve(gray: Uint8Array): void {
   const n = gray.length;
 
   // Find midpoint: use the image's median brightness.
-  // The median naturally falls between the text cluster and paper cluster.
-  // This auto-adapts to any lighting condition.
   const histogram = new Uint32Array(256);
   for (let i = 0; i < n; i++) histogram[gray[i]]++;
   let cum = 0;
@@ -143,12 +132,9 @@ function photocopyContrast(gray: Uint8Array): void {
     if (cum >= n / 2) { median = i; break; }
   }
 
-  // Steepness controls how aggressive the photocopy effect is.
-  // 4 = moderate (subtle enhancement)
-  // 6 = medium (noticeable separation)
-  // 8 = strong (clear photocopy look — recommended for receipts)
-  // 10 = very strong (approaches pure binarization)
-  const STEEPNESS = 8;
+  // Steepness 4 = subtle contrast boost (clean scanner look).
+  // Higher values approach photocopy; lower values are nearly linear.
+  const STEEPNESS = 4;
 
   // Precompute 256-entry LUT
   const lut = new Uint8Array(256);
@@ -167,9 +153,9 @@ function photocopyContrast(gray: Uint8Array): void {
 }
 
 /**
- * Contrast stretch using 2nd and 98th percentiles.
- * Clips the extreme 2% tails (sensor outliers, pure black borders, hot pixels).
- * Tighter than 1st–99th — prevents over-stretching which causes washed-out whites.
+ * Contrast stretch using 1st and 99th percentiles.
+ * Clips only the extreme 1% tails (sensor outliers, pure black borders).
+ * Gentler than 2nd–98th — preserves natural shading in darker areas.
  */
 function stretchContrast(gray: Uint8Array): void {
   const n = gray.length;
@@ -180,9 +166,9 @@ function stretchContrast(gray: Uint8Array): void {
 
   let lo = 0, hi = 255;
   let cum = 0;
-  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.02) { lo = i; break; } }
+  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.01) { lo = i; break; } }
   cum = 0;
-  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.02) { hi = i; break; } }
+  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.01) { hi = i; break; } }
 
   const range = hi - lo;
   if (range <= 20) return; // Already high contrast
@@ -287,12 +273,12 @@ function unsharpMaskPass(gray: Uint8Array, w: number, h: number, radius: number,
 
 /**
  * Single-pass sharpening for crisp text edges.
- * Moderate strength (0.7) at radius 1 — sharpens text without creating
- * visible halos or amplifying noise.
+ * Mild strength (0.5) at radius 1 — sharpens text without creating
+ * visible halos on mid-tone areas.
  * Applied BEFORE the S-curve so sharpening works on natural tonal values.
  */
 function sharpenPass(gray: Uint8Array, w: number, h: number): void {
-  unsharpMaskPass(gray, w, h, 1, 0.7);
+  unsharpMaskPass(gray, w, h, 1, 0.5);
 }
 
 // ── Sauvola local binarization ───────────────────────────────────────
@@ -396,13 +382,12 @@ function darkenText(gray: Uint8Array): void {
 
 /**
  * Paper whitening: lift near-white pixels toward pure white.
- * Threshold 235 means only pixels very close to white get boosted.
- * Works in conjunction with the S-curve — pixels that the S-curve
- * pushed near white get cleaned up to pure white for a clean paper look.
+ * Threshold 225 catches pixels that are already quite bright.
+ * Uses a linear ramp (not quadratic) for a natural, non-harsh result.
  */
 function whitenPaper(gray: Uint8Array): void {
-  const THRESHOLD = 235;
-  const RANGE = 255 - THRESHOLD; // 20
+  const THRESHOLD = 225;
+  const RANGE = 255 - THRESHOLD; // 30
   for (let i = 0; i < gray.length; i++) {
     if (gray[i] > THRESHOLD) {
       const t = (gray[i] - THRESHOLD) / RANGE; // 0 → 1
@@ -414,19 +399,21 @@ function whitenPaper(gray: Uint8Array): void {
 // ── Main enhancement pipeline ──────────────────────────────────────
 
 /**
- * v9 enhancement pipeline — photocopy quality output.
+ * v10 enhancement pipeline — clean document scan.
  *
- * v9 key changes (photocopy quality):
- *   - REMOVED adaptive brightness normalization (was washing out text to gray).
- *   - ADDED sigmoid S-curve (photocopyContrast): pushes darks→black, lights→white.
- *     This is what creates the true photocopy/photocopier aesthetic.
- *   - S-curve auto-adapts midpoint to the image's brightness distribution (median).
- *   - Steepness 8 for strong text/paper separation with edge detail preservation.
- *   - Text darkening step (below 50) complements paper whitening for full photocopy effect.
- *   - Reordered: sharpen BEFORE S-curve (works on natural tones, better edge quality).
- *   - Paper whitening threshold 235 (only cleans up near-white S-curve output).
+ * v10 key changes (clean scan, not photocopy):
+ *   - REMOVED text darkening step (was crushing shadows on unevenly-lit receipts).
+ *   - REPLACED photocopyContrast (steepness=8) with gentleSCurve (steepness=4):
+ *     subtle contrast boost that preserves natural tonal gradations.
+ *   - RELAXED contrast stretch from 2nd-98th to 1st-99th percentile:
+ *     prevents darkening of darker receipt areas (shadows, colored ink).
+ *   - REDUCED sharpen from 0.7 to 0.5: fewer halos on mid-tone text.
+ *   - LOWERED paper whiten threshold from 235 to 225: cleaner white background.
  *
- * Order: Gray → Denoise → Contrast → Sharpen → S-curve → Darken text → Whiten
+ * Result: looks like a real flatbed scanner — clean whites, readable text,
+ * natural shading preserved. No harsh photocopy contrast.
+ *
+ * Order: Gray → Denoise → Contrast → Sharpen → S-curve → Whiten
  */
 function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
@@ -436,7 +423,7 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const h = canvas.height;
   const imageData = ctx.getImageData(0, 0, w, h);
 
-  console.log(`[perspectiveWarp] v9 enhancing ${w}×${h}`);
+  console.log(`[perspectiveWarp] v10 enhancing ${w}×${h}`);
 
   // STEP 1: Grayscale
   const gray = extractGrayscale(imageData);
@@ -448,31 +435,25 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
     console.log('[perspectiveWarp] ✓ Median denoise');
   } catch (e) { console.warn('[perspectiveWarp] Denoise failed:', e); }
 
-  // STEP 3: Contrast stretch (2nd–98th percentile — normalize dynamic range)
+  // STEP 3: Contrast stretch (1st–99th percentile — gentle normalization)
   try {
     stretchContrast(gray);
     console.log('[perspectiveWarp] ✓ Contrast stretch');
   } catch (e) { console.warn('[perspectiveWarp] Contrast failed:', e); }
 
-  // STEP 4: Sharpen (on natural tones, BEFORE S-curve — better edge detection)
+  // STEP 4: Sharpen (on natural tones, BEFORE S-curve)
   try {
     sharpenPass(gray, w, h);
     console.log('[perspectiveWarp] ✓ Sharpen');
   } catch (e) { console.warn('[perspectiveWarp] Sharpen failed:', e); }
 
-  // STEP 5: Photocopy S-curve (pushes darks→black, lights→white)
+  // STEP 5: Gentle S-curve (subtle contrast boost — scanner look, not photocopy)
   try {
-    photocopyContrast(gray);
-    console.log('[perspectiveWarp] ✓ Photocopy contrast');
-  } catch (e) { console.warn('[perspectiveWarp] Photocopy contrast failed:', e); }
+    gentleSCurve(gray);
+    console.log('[perspectiveWarp] ✓ Gentle S-curve');
+  } catch (e) { console.warn('[perspectiveWarp] S-curve failed:', e); }
 
-  // STEP 6: Text darkening (push dark text toward pure black — photocopy effect)
-  try {
-    darkenText(gray);
-    console.log('[perspectiveWarp] ✓ Text darkening');
-  } catch (e) { console.warn('[perspectiveWarp] Text darkening failed:', e); }
-
-  // STEP 7: Paper whitening (clean up near-white pixels to pure white)
+  // STEP 6: Paper whitening (clean up near-white pixels to pure white)
   try {
     whitenPaper(gray);
     console.log('[perspectiveWarp] ✓ Paper whitening');
@@ -504,7 +485,7 @@ export function warpAndThreshold(
     outputHeight = dims.height;
   }
 
-  console.log(`[perspectiveWarp] v9 output: ${outputWidth}×${outputHeight}`);
+  console.log(`[perspectiveWarp] v10 output: ${outputWidth}×${outputHeight}`);
 
   if (typeof cv !== 'undefined' && cv.Mat) {
     try {
