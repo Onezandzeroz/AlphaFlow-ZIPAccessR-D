@@ -225,14 +225,14 @@ export function ReceiptScanner({
             </h3>
           </div>
 
-          {/* Scrollable image area */}
-          <div className="flex-1 overflow-auto p-4">
-            <div className="w-full max-w-lg mx-auto">
+          {/* Scrollable image area — min-w-0 prevents flex child overflow on small screens */}
+          <div className="flex-1 min-w-0 min-h-0 overflow-auto p-4">
+            <div className="w-full max-w-full mx-auto">
               <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-gray-900/50 shadow-sm">
                 <img
                   src={scannedUrl}
                   alt={t('scannedReceipt')}
-                  className="w-full h-auto"
+                  className="block w-full h-auto max-w-full"
                 />
               </div>
             </div>
@@ -240,7 +240,7 @@ export function ReceiptScanner({
 
           {/* Action buttons — explicitly positioned with touch-manipulation for mobile */}
           <div className="shrink-0 relative z-10 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-[#1a1f1e] px-3 sm:px-4 pt-3 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-            <div className="flex items-center gap-2 sm:gap-3 max-w-lg mx-auto">
+            <div className="flex items-center gap-2 sm:gap-3 max-w-full mx-auto min-w-0">
               <button
                 type="button"
                 onClick={handleDismiss}

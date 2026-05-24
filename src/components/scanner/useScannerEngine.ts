@@ -90,6 +90,8 @@ interface CameraCandidate {
   label: string;
   maxResW: number;
   maxResH: number;
+  zoomMin: number;
+  zoomMax: number;
 }
 
 // ── Camera caching (skip enumeration on repeat scans) ───────────────
@@ -97,7 +99,7 @@ interface CameraCandidate {
 const CAMERA_CACHE_KEY = 'scanner_best_camera';
 const CAMERA_CACHE_VERSION_KEY = 'scanner_camera_cache_ver';
 const CAMERA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
-const CAMERA_CACHE_VERSION = 2; // Bump to invalidate stale cache from old selection logic
+const CAMERA_CACHE_VERSION = 3; // Bump to invalidate stale cache from old selection logic
 
 interface CameraCacheEntry {
   deviceId: string;
@@ -174,32 +176,58 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
+    console.log(`[ScannerCamera] Found ${videoDevices.length} video devices total`);
+
     if (videoDevices.length <= 1) {
       // Single camera device — nothing to choose, use what we have
       return initialStream;
     }
 
-    // Step 3: Test each device to find the best rear camera
+    // Step 3: Test each device to find the best rear camera.
+    //
+    // CRITICAL: Don't rely on device labels for camera type detection.
+    // Samsung (and many OEMs) use generic labels like "camera2 1, facing back"
+    // that contain no useful type info (ultrawide, macro, telephoto).
+    // Instead, use the zoom capability as a hardware-level signal:
+    //   - Main camera: zoom range includes 1.0 (typically 1.0–8.0 or 1.0–10.0)
+    //   - Ultrawide: zoom max ≤ 1.0 (typically 0.5–1.0)
+    //   - Telephoto: zoom min > 1.0 (typically 2.0–10.0)
+    //   - Macro: similar to main but very low max resolution
+    //
+    // When zoom capability is not available (some browsers), fall back to
+    // resolution + aspect ratio heuristics.
     const candidates: CameraCandidate[] = [];
+    const skippedDevices: string[] = [];
 
     for (const device of videoDevices) {
-      // Skip devices that are clearly not the main rear camera
+      // Step 3a: Label-based pre-filter (only for cameras with descriptive labels)
+      // This catches obvious non-main cameras on devices that DO expose labels.
+      // Samsung devices typically don't have descriptive labels, so this filter
+      // is intentionally permissive — it only catches clearly named cameras.
+      let labelFiltered = false;
       if (device.label) {
         const label = device.label.toLowerCase();
-        // Skip front-facing cameras
+        // Skip front-facing cameras (these are reliable labels)
         if (label.includes('user') || label.includes('front') || label.includes('facetime')) {
-          continue;
+          labelFiltered = true;
         }
-        // Skip auxiliary cameras: depth, IR, ultrawide, macro, telephoto
+        // Skip auxiliary cameras: depth, IR (reliable labels)
         if (label.includes('depth') || label.includes('ir ') || label.includes('infrared')) {
-          continue;
+          labelFiltered = true;
         }
+        // Only filter ultrawide/macro/telephoto if the label is explicit enough
+        // Samsung generic labels like "camera2 2, facing back" are NOT filtered here
+        // — they'll be handled by the zoom-based logic below.
         if (label.includes('ultrawide') || label.includes('ultra-wide') || label.includes('ultra wide')) {
-          continue;
+          labelFiltered = true;
         }
         if (label.includes('macro') || label.includes('telephoto') || label.includes('tele ')) {
-          continue;
+          labelFiltered = true;
         }
+      }
+      if (labelFiltered) {
+        skippedDevices.push(`${device.label || 'unnamed'} (label-filtered)`);
+        continue;
       }
 
       try {
@@ -216,27 +244,55 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
         const settings = track.getSettings();
         let maxW = settings.width || 0;
         let maxH = settings.height || 0;
+        let zoomMin = 1.0;
+        let zoomMax = 1.0;
+        let hasZoom = false;
 
-        // Check capabilities for the true maximum resolution
+        // Check capabilities for the true maximum resolution AND zoom range
         try {
-          const caps = track.getCapabilities() as { width?: { max: number }; height?: { max: number } };
+          const caps = track.getCapabilities() as {
+            width?: { max: number };
+            height?: { max: number };
+            zoom?: { min: number; max: number };
+          };
           if (caps.width?.max && caps.width.max > maxW) maxW = caps.width.max;
           if (caps.height?.max && caps.height.max > maxH) maxH = caps.height.max;
+          if (caps.zoom) {
+            zoomMin = caps.zoom.min;
+            zoomMax = caps.zoom.max;
+            hasZoom = true;
+          }
         } catch { /* getCapabilities not supported on some browsers */ }
 
         // Stop test stream immediately
         testStream.getTracks().forEach(t => t.stop());
+
+        const aspect = maxW / maxH;
+        const megapixels = Math.round(maxW * maxH / 1_000_000);
+
+        console.log(
+          `[ScannerCamera] Candidate: ${device.label || 'unnamed'} | ` +
+          `${maxW}×${maxH} (${megapixels}MP, ${aspect.toFixed(2)}:1) | ` +
+          `zoom: ${hasZoom ? `${zoomMin}–${zoomMax}` : 'N/A'}`
+        );
 
         candidates.push({
           deviceId: device.deviceId,
           label: device.label || `camera-${device.deviceId.slice(0, 8)}`,
           maxResW: maxW,
           maxResH: maxH,
+          zoomMin,
+          zoomMax,
         });
       } catch {
         // Can't open this device — skip it
+        skippedDevices.push(`${device.label || 'unnamed'} (open-failed)`);
         continue;
       }
+    }
+
+    if (skippedDevices.length > 0) {
+      console.log(`[ScannerCamera] Skipped ${skippedDevices.length} devices: ${skippedDevices.join('; ')}`);
     }
 
     // Stop the initial stream
@@ -249,15 +305,74 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
 
     // Step 4: Pick the best camera for document scanning.
     //
-    // Key insight: the main camera on virtually all phones has a 4:3 aspect ratio,
-    // while ultrawide cameras are 16:9 or wider. On Samsung mid-range phones,
-    // the main (50MP binned to 12.5MP) and ultrawide (12MP) report nearly
-    // identical resolutions. Using aspect ratio as tiebreaker reliably selects
-    // the main sensor.
+    // Strategy (in priority order):
     //
-    // Sort by: megapixel count (desc), then aspect ratio closeness to 4:3 (asc).
-    // When resolutions are within 20% of each other, prefer 4:3 (main sensor).
+    // A) ZOOM-BASED (most reliable on multi-lens phones):
+    //    The main camera's zoom range ALWAYS includes 1.0x.
+    //    - Main: zoom range [1.0, N]  (where N > 1.0)
+    //    - Ultrawide: zoom range [M, 1.0]  (where M < 1.0)
+    //    - Telephoto: zoom range [N, M]  (where N > 1.0, typically 2.0+)
+    //    Among all candidates whose zoom range includes 1.0, pick highest resolution.
+    //
+    // B) RESOLUTION + ASPECT RATIO (fallback when zoom unavailable):
+    //    The main camera on virtually all phones has a 4:3 aspect ratio,
+    //    while ultrawide cameras are 16:9 or wider. On Samsung mid-range phones,
+    //    the main (50MP binned to 12.5MP) and ultrawide (12MP) report nearly
+    //    identical resolutions. Using aspect ratio as tiebreaker reliably selects
+    //    the main sensor.
+    //
+    // C) DEVICE ORDER (last resort):
+    //    On some devices, getCapabilities() returns no zoom or resolution info.
+    //    The first enumerated rear-facing device is typically the main camera.
+
     const MAIN_ASPECT = 4 / 3; // Target aspect ratio for main camera
+
+    // Check if any candidates have zoom capability
+    const hasZoomInfo = candidates.some(c => c.zoomMax !== c.zoomMin || c.zoomMin !== 1.0);
+
+    if (hasZoomInfo) {
+      // ── Strategy A: Zoom-based selection ──
+      // A camera is "main" if its zoom range includes 1.0.
+      // score = how close zoom 1.0 is to the center of the camera's zoom range.
+      // Main cameras have 1.0 at or near the min of their range.
+      // We prefer: zoom includes 1.0, then highest resolution.
+      console.log('[ScannerCamera] Using zoom-based selection strategy');
+
+      const mainCandidates = candidates.filter(c => {
+        const includesOne = c.zoomMin <= 1.0 && c.zoomMax >= 1.0;
+        const isNotUltrawide = c.zoomMax > 1.0; // ultrawide max is exactly 1.0
+        return includesOne && isNotUltrawide;
+      });
+
+      if (mainCandidates.length > 0) {
+        // Among main-camera candidates, pick highest resolution
+        mainCandidates.sort((a, b) => {
+          const aPixels = a.maxResW * a.maxResH;
+          const bPixels = b.maxResW * b.maxResH;
+          return bPixels - aPixels;
+        });
+
+        const best = mainCandidates[0];
+        const rejected = candidates.filter(c => c !== best);
+
+        console.log(`[ScannerCamera] [ZOOM] Selected: ${best.label} (${best.maxResW}×${best.maxResH}, zoom ${best.zoomMin}–${best.zoomMax})`);
+        if (rejected.length > 0) {
+          console.log(`[ScannerCamera] [ZOOM] Rejected: ${rejected.map(c =>
+            `${c.label} (${c.maxResW}×${c.maxResH}, zoom ${c.zoomMin}–${c.zoomMax})`
+          ).join('; ')}`);
+        }
+
+        setCachedCamera(best.deviceId, best.maxResW, best.maxResH);
+        return await openSelectedCamera(best);
+      }
+
+      // No candidate has zoom range including 1.0 — fall through to resolution-based
+      console.log('[ScannerCamera] No zoom-main candidate found, falling back to resolution strategy');
+    }
+
+    // ── Strategy B: Resolution + Aspect ratio ──
+    console.log('[ScannerCamera] Using resolution+aspect selection strategy');
+
     candidates.sort((a, b) => {
       const aPixels = a.maxResW * a.maxResH;
       const bPixels = b.maxResW * b.maxResH;
@@ -284,31 +399,16 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     const best = candidates[0];
     const bestAspect = (best.maxResW / best.maxResH).toFixed(2);
 
-    console.log(`[ScannerCamera] Selected: ${best.label} (${best.maxResW}×${best.maxResH}, ratio ${bestAspect})`);
+    console.log(`[ScannerCamera] [RES] Selected: ${best.label} (${best.maxResW}×${best.maxResH}, ratio ${bestAspect}, zoom ${best.zoomMin}–${best.zoomMax})`);
     if (candidates.length > 1) {
-      console.log(`[ScannerCamera] Rejected: ${candidates.slice(1).map(c => {
+      console.log(`[ScannerCamera] [RES] Rejected: ${candidates.slice(1).map(c => {
         const r = (c.maxResW / c.maxResH).toFixed(2);
-        return `${c.label} (${c.maxResW}×${c.maxResH}, ratio ${r})`;
-      }).join(', ')}`);
+        return `${c.label} (${c.maxResW}×${c.maxResH}, ratio ${r}, zoom ${c.zoomMin}–${c.zoomMax})`;
+      }).join('; ')}`);
     }
 
-    // Cache for next time (skips enumeration on repeat scans)
     setCachedCamera(best.deviceId, best.maxResW, best.maxResH);
-
-    // Step 5: Open stream on the selected camera at 1600×900.
-    // Safe middle ground for detection — minimal GPU decode, universal camera support.
-    // High-quality capture uses ImageCapture API (see doCapture).
-    const bestStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        deviceId: { exact: best.deviceId },
-        width: { ideal: 1600, min: 1280 },
-        height: { ideal: 900, min: 720 },
-        frameRate: { ideal: 30 },
-      },
-      audio: false,
-    });
-
-    return bestStream;
+    return await openSelectedCamera(best);
 
   } catch (err) {
     console.warn('[ScannerCamera] Smart selection failed, using fallback:', err);
@@ -316,6 +416,25 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
     initialStream.getTracks().forEach(t => t.stop());
     return acquireStreamBasic();
   }
+}
+
+/**
+ * Open a stream on the selected camera at 1600×900.
+ * Safe middle ground for detection — minimal GPU decode, universal camera support.
+ * High-quality capture uses ImageCapture API (see doCapture).
+ */
+async function openSelectedCamera(candidate: CameraCandidate): Promise<MediaStream> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      deviceId: { exact: candidate.deviceId },
+      width: { ideal: 1600, min: 1280 },
+      height: { ideal: 900, min: 720 },
+      frameRate: { ideal: 30 },
+    },
+    audio: false,
+  });
+  console.log(`[ScannerCamera] Stream opened on: ${candidate.label} (sensor ${candidate.maxResW}×${candidate.maxResH})`);
+  return stream;
 }
 
 /**
@@ -942,22 +1061,18 @@ export function useScannerEngine() {
     const videoH = video.videoHeight;
 
     // High-quality capture: try ImageCapture API first, fall back to canvas.
-    // ImageCapture can grab at sensor's full resolution (much higher than stream),
-    // hardware-processed — no GPU decode overhead.
-    // Let the device decide its best resolution: use track capabilities as cap,
-    // fall back to 4000px safety limit only if capabilities are unavailable.
-    // This ensures consistent quality across different devices and sensor sizes.
-    let captureMaxDim = 4000; // Safety upper bound (prevents 48MP/64MP monsters)
-    if (track) {
-      try {
-        const caps = track.getCapabilities() as { width?: { max: number }; height?: { max: number } } | undefined;
-        if (caps?.width?.max && caps?.height?.max) {
-          const trackMax = Math.max(caps.width.max, caps.height.max);
-          captureMaxDim = Math.min(trackMax, 4000); // Cap at 4000 to keep post-processing fast
-          console.log(`[ScannerEngine] Track max resolution: ${caps.width.max}×${caps.height.max} → capture cap: ${captureMaxDim}px`);
-        }
-      } catch { /* getCapabilities not supported — use 4000 default */ }
-    }
+    // ImageCapture grabs at sensor's full resolution, hardware-processed.
+    // We scale down to CAPTURE_MAX_DIM (3000px) for consistent quality & speed.
+    //
+    // FIXED RESOLUTION STRATEGY (v3):
+    // Previously we used track.getCapabilities().max as the capture dimension,
+    // which varied wildly between devices (J7: 3264px, A56: 8160px). This caused:
+    //   - J7 (old): too high resolution → slow post-processing on weak CPU
+    //   - A56 (new): wrong resolution if wrong camera selected → poor quality
+    // A fixed 3000px cap ensures consistent, predictable quality on ALL devices.
+    // 3000px is the sweet spot: sharp enough for OCR, fast enough for post-processing.
+    const captureMaxDim = 3000;
+    console.log(`[ScannerEngine] Capture target: ${captureMaxDim}px (fixed for consistent quality across devices)`);
     const capCanvas = await captureHighQualityFrame(video, track, captureMaxDim);
     console.log(`[ScannerEngine] Captured at ${capCanvas.width}×${capCanvas.height} (stream was ${videoW}×${videoH})`);
 
