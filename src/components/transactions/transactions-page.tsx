@@ -179,10 +179,19 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
   const fetchTransactions = useCallback(async () => {
     try {
       // Fetch transactions, invoices, and VAT register in parallel
+      // NOTE: Use local date formatting (YYYY-MM-DD) instead of toISOString().split('T')[0]
+      // to avoid timezone issues — toISOString() converts to UTC which can shift dates
+      // by ±1 day depending on timezone (e.g., Copenhagen UTC+1 → Jan 1 local = Dec 31 UTC).
+      const now = new Date();
+      const yearStart = new Date(now.getFullYear(), 0, 1);
+      const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const vatFrom = formatDate(yearStart);
+      const vatTo = formatDate(now);
+
       const [txResponse, invResponse, vatResponse] = await Promise.all([
         fetch('/api/transactions'),
         fetch('/api/invoices'),
-        fetch(`/api/vat-register?from=${new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`),
+        fetch(`/api/vat-register?from=${vatFrom}&to=${vatTo}`),
       ]);
 
       if (!txResponse.ok) console.error('Transactions API error:', txResponse.status);
@@ -194,11 +203,14 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
       // Store VAT register data as the authoritative VAT source
       if (vatResponse.ok) {
         const vatData = await vatResponse.json();
+        console.log(`[TransactionsPage] VAT register (${vatFrom} → ${vatTo}): input=${vatData.totalInputVAT}, output=${vatData.totalOutputVAT}, net=${vatData.netVATPayable}`);
         setVatSummary({
           totalOutputVAT: vatData.totalOutputVAT || 0,
           totalInputVAT: vatData.totalInputVAT || 0,
           netVATPayable: vatData.netVATPayable || 0,
         });
+      } else {
+        console.error('[TransactionsPage] VAT register API error:', vatResponse.status, vatResponse.statusText);
       }
 
       const allTransactions: Transaction[] = txData.transactions || [];
@@ -512,7 +524,9 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
     const salesAmount = sales.reduce((sum, t) => sum + Number(t.amount), 0);
     const purchasesAmount = purchases.reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // Use VAT register as the single source of truth for VAT amounts
+    // Use VAT register as the single source of truth for VAT amounts.
+    // If vatSummary is null (API fetch failed or not yet loaded), show 0
+    // rather than falling back to the legacy formula.
     const outputVAT = vatSummary?.totalOutputVAT ?? 0;
     const inputVAT = vatSummary?.totalInputVAT ?? 0;
     
