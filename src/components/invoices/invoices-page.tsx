@@ -1951,7 +1951,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                   minHeight: '138.9%',
                 }}
               >
-                <div className="invoice-preview-content" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '28px 32px' }}>
+                <div className="invoice-preview-content" style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '36px 40px' }}>
 
                   {/* ── Header ── */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '32px' }}>
@@ -2074,7 +2074,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
 
                   {/* ── Bank Info ── */}
                   {companyInfo?.bankName && (
-                    <div className="inv-bank-bg" style={{ marginTop: '32px', padding: '14px', borderRadius: '8px' }}>
+                    <div className="inv-bank-bg" style={{ marginTop: '52px', padding: '14px', borderRadius: '8px' }}>
                       <div style={{ marginBottom: '14px' }}>
                         <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '5px', fontWeight: 600 }}>{t('bankDetailsTitle')}</div>
                         <div style={{ fontSize: '12px', lineHeight: '1.6' }}>
