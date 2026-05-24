@@ -339,11 +339,15 @@ async function acquireStream(): Promise<MediaStream | null> {
   return acquireBestCameraStream();
 }
 
-// ── Video → display coordinate mapping (object-cover) ───────────────
+// ── Video ↔ display coordinate mapping (object-cover) ───────────────
 
 interface Pt { x: number; y: number; }
 
-function videoToDisplay(pt: Pt, video: HTMLVideoElement, dw: number, dh: number): Pt {
+/**
+ * Compute the object-cover rendering parameters: the region of the video
+ * that is actually visible on screen, and its offset.
+ */
+function getCoverParams(video: HTMLVideoElement, dw: number, dh: number) {
   const va = video.videoWidth / video.videoHeight;
   const da = dw / dh;
   let rw: number, rh: number, ox: number, oy: number;
@@ -352,9 +356,47 @@ function videoToDisplay(pt: Pt, video: HTMLVideoElement, dw: number, dh: number)
   } else {
     rw = dw; rh = dw / va; ox = 0; oy = (dh - rh) / 2;
   }
+  return { rw, rh, ox, oy };
+}
+
+function videoToDisplay(pt: Pt, video: HTMLVideoElement, dw: number, dh: number): Pt {
+  const { rw, rh, ox, oy } = getCoverParams(video, dw, dh);
   return {
     x: (pt.x / video.videoWidth) * rw + ox,
     y: (pt.y / video.videoHeight) * rh + oy,
+  };
+}
+
+function displayToVideo(pt: Pt, video: HTMLVideoElement, dw: number, dh: number): Pt {
+  const { rw, rh, ox, oy } = getCoverParams(video, dw, dh);
+  return {
+    x: ((pt.x - ox) / rw) * video.videoWidth,
+    y: ((pt.y - oy) / rh) * video.videoHeight,
+  };
+}
+
+/**
+ * Clamp all quad corners to the visible viewport area.
+ *
+ * object-cover crops the video to fill the screen, so parts of the video
+ * extend beyond the viewport edges. Detection runs on the full frame and
+ * can return quads that include off-screen areas. Without clamping, the
+ * captured result would include content the user couldn't see in the preview.
+ *
+ * Strategy: map each corner to display coords, clamp to visible bounds,
+ * then map back to video coords. This keeps the quad entirely within
+ * the visible preview on ALL devices regardless of aspect ratio.
+ */
+function clampQuadToViewport(quad: Quad, video: HTMLVideoElement, dw: number, dh: number): Quad {
+  const MARGIN = 4; // 4px safety margin from screen edge
+  const clampX = (x: number) => Math.max(MARGIN, Math.min(dw - MARGIN, x));
+  const clampY = (y: number) => Math.max(MARGIN, Math.min(dh - MARGIN, y));
+
+  return {
+    tl: displayToVideo({ x: clampX(videoToDisplay(quad.tl, video, dw, dh).x), y: clampY(videoToDisplay(quad.tl, video, dw, dh).y) }, video, dw, dh),
+    tr: displayToVideo({ x: clampX(videoToDisplay(quad.tr, video, dw, dh).x), y: clampY(videoToDisplay(quad.tr, video, dw, dh).y) }, video, dw, dh),
+    br: displayToVideo({ x: clampX(videoToDisplay(quad.br, video, dw, dh).x), y: clampY(videoToDisplay(quad.br, video, dw, dh).y) }, video, dw, dh),
+    bl: displayToVideo({ x: clampX(videoToDisplay(quad.bl, video, dw, dh).x), y: clampY(videoToDisplay(quad.bl, video, dw, dh).y) }, video, dw, dh),
   };
 }
 
@@ -717,6 +759,12 @@ export function useScannerEngine() {
               bl: { x: freshQuad.bl.x / s, y: freshQuad.bl.y / s },
             };
           }
+
+          // Clamp quad to the visible viewport area.
+          // object-cover crops the video, so parts of the frame extend beyond
+          // the screen. Without clamping, the user would see an overlay that
+          // extends off-screen, and the capture would include invisible content.
+          freshQuad = clampQuadToViewport(freshQuad, video, dw, dh);
         }
 
         quadRef.current = freshQuad;
