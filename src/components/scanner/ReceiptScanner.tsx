@@ -31,6 +31,7 @@ import {
   Loader2,
   CheckCircle,
   RotateCcw,
+  Zap,
 } from 'lucide-react';
 
 // ─── Props (drop-in compatible with old AutoReceiptCameraScanner) ───
@@ -63,6 +64,9 @@ export function ReceiptScanner({
     discardScan,
     retake,
     retry,
+    torchOn,
+    torchSupported,
+    toggleTorch,
   } = useScannerEngine();
 
   // Callback refs (stable references, no stale closures)
@@ -134,6 +138,21 @@ export function ReceiptScanner({
             >
               <X className="h-5 w-5" />
             </button>
+
+            {/* Torch toggle (only shown when supported by hardware) */}
+            {torchSupported && (
+              <button
+                onClick={toggleTorch}
+                className={`absolute top-4 right-4 z-20 flex items-center justify-center w-12 h-12 rounded-full backdrop-blur-sm transition-colors active:scale-95 ${
+                  torchOn
+                    ? 'bg-amber-500/70 text-white shadow-lg shadow-amber-500/40'
+                    : 'bg-black/40 text-white/80 hover:text-white hover:bg-black/60'
+                }`}
+                aria-label={torchOn ? 'Flash off' : 'Flash on'}
+              >
+                <Zap className={`h-5 w-5 ${torchOn ? 'fill-current' : ''}`} />
+              </button>
+            )}
 
             {/* Status indicator — auto-capture only, no manual button */}
             <div className="absolute bottom-0 inset-x-0 z-20 pb-8 pt-16 bg-gradient-to-t from-black/60 to-transparent">

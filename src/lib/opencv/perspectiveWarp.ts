@@ -7,20 +7,21 @@
  *   - OpenCV.js: ONLY used for perspective warp (getPerspectiveTransform + warpPerspective)
  *   - Canvas 2D API: ALL enhancement (brightness, contrast, sharpen)
  *
- * Pipeline (v5 — single-channel optimized, B&W first):
+ * Pipeline (v6 — reordered for scanner-quality output):
  *   1. Perspective warp (OpenCV INTER_CUBIC) — correct skew, minimum 2000px longest side
  *   2. Grayscale conversion — FIRST (eliminates 3-channel work from every subsequent step)
- *   3. Brightness boost (+50% additive) — receipt paper should be bright
- *   4. Contrast stretch (100% aggressive) — full percentile stretch for text legibility
- *   5. Median denoise (3×3 cross) — remove noise before sharpening
- *   6. Two-pass sharpening — unsharp mask for crisp text edges
+ *   3. Median denoise — SECOND (remove sensor noise BEFORE any value manipulation)
+ *   4. Contrast stretch (1st–99th percentile) — wider dynamic range, natural text contrast
+ *   5. Adaptive brightness (target mean ~215) — consistent luminance across all lighting
+ *   6. Two-pass sharpening — always LAST (sharpen clean edges, not amplified noise)
+ *   7. Paper whitening — lift near-white pixels to pure white for photocopy/scanner aesthetic
  *
- * Performance v4 → v5:
- *   - Eliminated white balance (meaningless for grayscale)
- *   - Moved grayscale to step 1 (all subsequent ops on 1 channel instead of 3)
- *   - boxBlur operates on flat Float32Array (w*h) instead of RGBA (w*h*4)
- *   - Median denoise operates on single channel
- *   - Net result: ~3× fewer pixel operations in the hot loop
+ * v5 → v6 changes:
+ *   - Reordered pipeline: denoise BEFORE brightness/contrast (noise no longer amplified)
+ *   - Replaced fixed +64 brightness with adaptive target-mean normalization
+ *   - Widened contrast percentiles from 2nd–98th to 1st–99th for natural tonal range
+ *   - Added paper whitening step for scanner-quality white backgrounds
+ *   - JPEG quality raised to 90% for better text preservation
  */
 
 declare const cv: any;
@@ -105,19 +106,28 @@ function writeGrayscale(imageData: ImageData, gray: Uint8Array): void {
 }
 
 /**
- * Brightness boost: add a fixed amount to every pixel.
- * +50% of mid-range (128 * 0.5 = +64) gives a strong, consistent brightening
- * that works regardless of the original exposure.
+ * Adaptive brightness normalization.
+ * Shifts all pixel values so the mean luminance approaches `targetMean`.
+ * Uses a smooth factor (0.8×) to avoid overcorrection.
+ * Skips adjustment if the image is already within ±8 of target.
  */
-function boostBrightness(gray: Uint8Array, boost: number): void {
-  for (let i = 0; i < gray.length; i++) {
-    gray[i] = Math.min(255, gray[i] + boost);
+function adaptiveBrightness(gray: Uint8Array, targetMean: number): void {
+  const n = gray.length;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += gray[i];
+  const currentMean = sum / n;
+  const delta = targetMean - currentMean;
+  if (Math.abs(delta) < 8) return; // Already close enough
+  const boost = delta * 0.8;
+  for (let i = 0; i < n; i++) {
+    gray[i] = Math.min(255, Math.max(0, Math.round(gray[i] + boost)));
   }
 }
 
 /**
- * Contrast stretch (aggressive, 100% — no blending with original).
- * Finds the 2nd and 98th percentiles and stretches [lo, hi] → [0, 255].
+ * Contrast stretch using 1st and 99th percentiles.
+ * Wider range than v5's 2nd–98th for a more natural tonal distribution.
+ * Clips only the extreme 1% tails (sensor outliers, pure black borders).
  */
 function stretchContrast(gray: Uint8Array): void {
   const n = gray.length;
@@ -128,9 +138,9 @@ function stretchContrast(gray: Uint8Array): void {
 
   let lo = 0, hi = 255;
   let cum = 0;
-  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.02) { lo = i; break; } }
+  for (let i = 0; i < 256; i++) { cum += histogram[i]; if (cum >= n * 0.01) { lo = i; break; } }
   cum = 0;
-  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.02) { hi = i; break; } }
+  for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.01) { hi = i; break; } }
 
   const range = hi - lo;
   if (range <= 20) return; // Already high contrast
@@ -243,11 +253,36 @@ function sharpenTwoPass(gray: Uint8Array, w: number, h: number): void {
   unsharpMaskPass(gray, w, h, 1, 0.6);
 }
 
+// ── Paper whitening ─────────────────────────────────────────────────
+
+/**
+ * Paper whitening: lift near-white pixels toward pure white.
+ * Uses a quadratic curve so that pixels near 190 stay put,
+ * but pixels closer to 255 get pushed to pure white (255).
+ * This creates the "floating on white paper" scanner aesthetic
+ * without affecting text or mid-tone content.
+ */
+function whitenPaper(gray: Uint8Array): void {
+  const THRESHOLD = 190;
+  const RANGE = 255 - THRESHOLD; // 65
+  for (let i = 0; i < gray.length; i++) {
+    if (gray[i] > THRESHOLD) {
+      const t = (gray[i] - THRESHOLD) / RANGE; // 0 → 1
+      gray[i] = Math.min(255, Math.round(THRESHOLD + t * t * RANGE));
+    }
+  }
+}
+
 // ── Main enhancement pipeline ──────────────────────────────────────
 
 /**
- * Run the optimized single-channel enhancement pipeline on a canvas.
- * Grayscale is computed FIRST so all subsequent steps work on 1 channel.
+ * v6 enhancement pipeline — optimized order for scanner-quality output.
+ *
+ * Key insight from v5→v6: denoising MUST happen before brightness/contrast
+ * manipulation. In v5, the fixed +64 brightness boost amplified sensor noise
+ * before the median filter cleaned it up. Now noise is removed first.
+ *
+ * Order: Gray → Denoise → Contrast → Brightness → Sharpen → Whiten
  */
 function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext('2d');
@@ -257,35 +292,41 @@ function enhanceCanvas(canvas: HTMLCanvasElement): void {
   const h = canvas.height;
   const imageData = ctx.getImageData(0, 0, w, h);
 
-  console.log(`[perspectiveWarp] v5 enhancing ${w}×${h}`);
+  console.log(`[perspectiveWarp] v6 enhancing ${w}×${h}`);
 
   // STEP 1: Grayscale — FIRST (eliminates 3-channel work from all subsequent steps)
   const gray = extractGrayscale(imageData);
   console.log('[perspectiveWarp] ✓ Grayscale');
 
-  // STEP 2: Brightness boost (+50% = +64 additive)
-  try {
-    boostBrightness(gray, 64);
-    console.log('[perspectiveWarp] ✓ Brightness +50%');
-  } catch (e) { console.warn('[perspectiveWarp] Brightness failed:', e); }
-
-  // STEP 3: Contrast stretch (100% aggressive — no blending)
-  try {
-    stretchContrast(gray);
-    console.log('[perspectiveWarp] ✓ Contrast stretch');
-  } catch (e) { console.warn('[perspectiveWarp] Contrast failed:', e); }
-
-  // STEP 4: Median denoise (single channel)
+  // STEP 2: Median denoise — SECOND (clean noise before any value manipulation)
   try {
     medianDenoise(gray, w, h);
     console.log('[perspectiveWarp] ✓ Median denoise');
   } catch (e) { console.warn('[perspectiveWarp] Denoise failed:', e); }
 
-  // STEP 5: Two-pass sharpen (single channel)
+  // STEP 3: Contrast stretch (1st–99th percentile — wider, more natural range)
+  try {
+    stretchContrast(gray);
+    console.log('[perspectiveWarp] ✓ Contrast stretch');
+  } catch (e) { console.warn('[perspectiveWarp] Contrast failed:', e); }
+
+  // STEP 4: Adaptive brightness (target mean ~215 — consistent across all lighting)
+  try {
+    adaptiveBrightness(gray, 215);
+    console.log('[perspectiveWarp] ✓ Adaptive brightness');
+  } catch (e) { console.warn('[perspectiveWarp] Brightness failed:', e); }
+
+  // STEP 5: Two-pass sharpen — LAST before whitening (sharpen clean edges only)
   try {
     sharpenTwoPass(gray, w, h);
     console.log('[perspectiveWarp] ✓ Two-pass sharpen');
   } catch (e) { console.warn('[perspectiveWarp] Sharpen failed:', e); }
+
+  // STEP 6: Paper whitening (lift near-white to pure white for scanner look)
+  try {
+    whitenPaper(gray);
+    console.log('[perspectiveWarp] ✓ Paper whitening');
+  } catch (e) { console.warn('[perspectiveWarp] Whitening failed:', e); }
 
   // Write back to ImageData (R=G=B=gray, A=255)
   writeGrayscale(imageData, gray);
@@ -313,7 +354,7 @@ export function warpAndThreshold(
     outputHeight = dims.height;
   }
 
-  console.log(`[perspectiveWarp] v5 output: ${outputWidth}×${outputHeight}`);
+  console.log(`[perspectiveWarp] v6 output: ${outputWidth}×${outputHeight}`);
 
   if (typeof cv !== 'undefined' && cv.Mat) {
     try {

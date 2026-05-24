@@ -42,13 +42,13 @@ const LOCK_MAX_AGE = 60;                // 60 × 80ms = 4.8 seconds of persisten
 // EMA smoothing for corner positions (lower = smoother but slower to follow)
 const CORNER_SMOOTH_ALPHA = 0.35;
 
-// Camera constraints with fallbacks
+// Camera constraints with fallbacks (v6: higher resolution for capture quality)
 const CONSTRAINTS_FULL: MediaStreamConstraints = {
   video: {
     facingMode: { ideal: 'environment' },
-    width: { ideal: 1920, min: 640 },
-    height: { ideal: 1080, min: 480 },
-    frameRate: { ideal: 30, max: 30 },
+    width: { ideal: 2560, min: 1280 },
+    height: { ideal: 1920, min: 720 },
+    frameRate: { ideal: 30 },
   },
   audio: false,
 };
@@ -83,6 +83,34 @@ interface CameraCandidate {
   maxResH: number;
 }
 
+// ── Camera caching (skip enumeration on repeat scans) ───────────────
+
+const CAMERA_CACHE_KEY = 'scanner_best_camera';
+const CAMERA_CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface CameraCacheEntry {
+  deviceId: string;
+  maxResW: number;
+  maxResH: number;
+  ts: number;
+}
+
+function getCachedCamera(): CameraCacheEntry | null {
+  try {
+    const raw = localStorage.getItem(CAMERA_CACHE_KEY);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as CameraCacheEntry;
+    if (Date.now() - entry.ts > CAMERA_CACHE_TTL) return null;
+    return entry;
+  } catch { return null; }
+}
+
+function setCachedCamera(deviceId: string, maxResW: number, maxResH: number): void {
+  try {
+    localStorage.setItem(CAMERA_CACHE_KEY, JSON.stringify({ deviceId, maxResW, maxResH, ts: Date.now() }));
+  } catch { /* localStorage may be full or blocked */ }
+}
+
 /**
  * On multi-lens phones (e.g. Galaxy A53 with 4 rear cameras),
  * `facingMode: 'environment'` often selects the ultrawide or macro lens
@@ -97,6 +125,27 @@ interface CameraCandidate {
  * Falls back to simple facingMode if enumeration isn't supported.
  */
 async function acquireBestCameraStream(): Promise<MediaStream | null> {
+  // Step 0: Try cached camera first (skip 2-6s enumeration on repeat scans)
+  const cached = getCachedCamera();
+  if (cached) {
+    try {
+      const cachedStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: cached.deviceId },
+          width: { ideal: Math.min(cached.maxResW, 3840), min: 1280 },
+          height: { ideal: Math.min(cached.maxResH, 2160), min: 720 },
+          frameRate: { ideal: 30 },
+        },
+        audio: false,
+      });
+      console.log(`[ScannerCamera] Using cached: ${cached.deviceId.slice(0, 8)} (${cached.maxResW}×${cached.maxResH})`);
+      return cachedStream;
+    } catch {
+      // Cached camera no longer available — fall through to full selection
+      try { localStorage.removeItem(CAMERA_CACHE_KEY); } catch { /* ignore */ }
+    }
+  }
+
   // Step 1: Get initial stream to trigger permission grant
   // (enumerateDevices() returns empty labels without permission)
   const initialStream = await acquireStreamBasic();
@@ -183,13 +232,17 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
       console.log(`[ScannerCamera] Rejected: ${candidates.slice(1).map(c => `${c.label} (${c.maxResW}×${c.maxResH})`).join(', ')}`);
     }
 
-    // Step 5: Open stream on the selected camera with ideal resolution
+    // Cache for next time (skips enumeration on repeat scans)
+    setCachedCamera(best.deviceId, best.maxResW, best.maxResH);
+
+    // Step 5: Open stream on the selected camera at highest practical resolution
+    // Capped at 3840×2160 to avoid switching to photo-mode on some devices
     const bestStream = await navigator.mediaDevices.getUserMedia({
       video: {
         deviceId: { exact: best.deviceId },
-        width: { ideal: 1920, min: 640 },
-        height: { ideal: 1080, min: 480 },
-        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: Math.min(best.maxResW, 3840), min: 1280 },
+        height: { ideal: Math.min(best.maxResH, 2160), min: 720 },
+        frameRate: { ideal: 30 },
       },
       audio: false,
     });
@@ -291,6 +344,8 @@ export function useScannerEngine() {
   const [error, setError] = useState<ScannerError | null>(null);
   const [scannedUrl, setScannedUrl] = useState<string | null>(null);
   const [scannedFile, setScannedFile] = useState<File | null>(null);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
 
   // Detection state refs
   const quadRef = useRef<Quad | null>(null);         // Latest raw detection result
@@ -302,13 +357,38 @@ export function useScannerEngine() {
   const scannedUrlRef = useRef<string | null>(null);
   const overlaySizedRef = useRef(false);
   const displayDimsRef = useRef({ dw: 0, dh: 0 });
+  const torchOnRef = useRef(false);
 
   // Function refs (break circular dependencies)
   const stopCameraRef = useRef<() => void>(() => {});
-  const doCaptureRef = useRef<() => void>(() => {});
+  const doCaptureRef = useRef<() => Promise<void>>(async () => {});
   const startDetectionLoopRef = useRef<() => void>(() => {});
 
   useEffect(() => { scannedUrlRef.current = scannedUrl; }, [scannedUrl]);
+
+  // ── Torch (LED flash) control ────────────────────────────────────
+
+  const toggleTorch = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+
+    try {
+      const caps = track.getCapabilities?.() as { torch?: boolean } | undefined;
+      const hasTorch = caps?.torch === true;
+      setTorchSupported(hasTorch);
+
+      if (!hasTorch) return;
+
+      const newState = !torchOnRef.current;
+      await track.applyConstraints({ advanced: [{ torch: newState }] } as MediaTrackConstraintSet);
+      torchOnRef.current = newState;
+      setTorchOn(newState);
+      console.log(`[ScannerCamera] Torch ${newState ? 'ON' : 'OFF'}`);
+    } catch {
+      // Torch not supported on this device/browser
+      setTorchSupported(false);
+    }
+  }, []);
 
   // ── Stop camera (comprehensive cleanup) ──────────────────────────
 
@@ -340,6 +420,8 @@ export function useScannerEngine() {
     stillnessCountRef.current = 0;
     prevFrameRef.current = null;
     capturingRef.current = false;
+    torchOnRef.current = false;
+    setTorchOn(false);
   }, []);
 
   useEffect(() => { stopCameraRef.current = stopCamera; }, [stopCamera]);
@@ -568,7 +650,7 @@ export function useScannerEngine() {
 
   // ── Capture + warp ───────────────────────────────────────────────
 
-  const doCapture = useCallback(() => {
+  const doCapture = useCallback(async () => {
     const video = videoRef.current;
     const currentQuad = lockedQuadRef.current || quadRef.current;
     if (!video || !video.videoWidth) return;
@@ -577,12 +659,23 @@ export function useScannerEngine() {
 
     setPhase('capturing');
 
-    // Capture a FULL-RES frame from the video
+    // Focus lock before capture: prevent AF hunting during the grab moment
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (track) {
+      try {
+        await track.applyConstraints({ advanced: [{ focusMode: 'manual', focusDistance: 0 }] } as MediaTrackConstraintSet);
+        await new Promise(r => setTimeout(r, 200)); // Let lens settle
+      } catch { /* Focus lock not supported — continue with continuous AF */ }
+    }
+
+    // Capture a FULL-RES frame from the video (at stream's native resolution)
     const capCanvas = document.createElement('canvas');
     capCanvas.width = video.videoWidth;
     capCanvas.height = video.videoHeight;
     const capCtx = capCanvas.getContext('2d');
     if (capCtx) capCtx.drawImage(video, 0, 0);
+
+    console.log(`[ScannerEngine] Captured at ${video.videoWidth}×${video.videoHeight}`);
 
     // Flash animation delay
     setTimeout(() => {
@@ -601,8 +694,8 @@ export function useScannerEngine() {
           resultCanvas = capCanvas;
         }
 
-        // The enhanceCanvas pipeline (v5) already produces grayscale output.
-        // Just export directly — no redundant pixel pass needed.
+        // The enhanceCanvas pipeline (v6) already produces grayscale output.
+        // Export at 90% JPEG for better text preservation.
         resultCanvas.toBlob(
           (blob) => {
             if (!mountedRef.current) return;
@@ -619,7 +712,7 @@ export function useScannerEngine() {
             setPhase('result');
           },
           'image/jpeg',
-          0.82
+          0.90
         );
       } catch (err) {
         console.error('[ScannerEngine] Processing failed:', err);
@@ -644,6 +737,15 @@ export function useScannerEngine() {
       }
 
       streamRef.current = stream;
+
+      // Probe for torch (LED flash) support
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        try {
+          const caps = videoTrack.getCapabilities?.() as { torch?: boolean } | undefined;
+          setTorchSupported(caps?.torch === true);
+        } catch { /* getCapabilities not supported */ }
+      }
 
       const video = videoRef.current;
       if (video) {
@@ -811,5 +913,8 @@ export function useScannerEngine() {
     retake,
     retry,
     stopCamera,
+    torchOn,
+    torchSupported,
+    toggleTorch,
   };
 }
