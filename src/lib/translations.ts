@@ -955,12 +955,12 @@ export const translations = {
     en: 'Cancel Invoice',
   },
   from: {
-    da: 'Fra',
-    en: 'From',
+    da: 'Sælger',
+    en: 'Seller',
   },
   to: {
-    da: 'Til',
-    en: 'To',
+    da: 'Køber',
+    en: 'Buyer',
   },
   bankDetails: {
     da: 'Bankoplysninger',

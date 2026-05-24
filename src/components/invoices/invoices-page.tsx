@@ -1507,7 +1507,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                   </div>
                 </div>
 
-                {/* From / To */}
+                {/* Seller / Buyer */}
                 <div className="grid grid-cols-2 gap-8 mb-6">
                   <div>
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('from')}</p>
@@ -1968,7 +1968,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
                     </div>
                   </div>
 
-                  {/* ── From / To info grid ── */}
+                  {/* ── Seller / Buyer info grid ── */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px', marginBottom: '28px' }}>
                     <div>
                       <div className="inv-muted" style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>{t('from')}</div>

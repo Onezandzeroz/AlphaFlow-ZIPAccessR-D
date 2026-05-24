@@ -216,18 +216,18 @@ export async function generateInvoicePDF(inv: InvoiceWithDetails): Promise<Uint8
   // Both columns start at the same Y
   const colStartY = y;
 
-  // LEFT: FRA
+  // LEFT: SÆLGER
   let ly = colStartY;
-  txt(pg, 'FRA', C1, ly, fB, 9, C.textMid); ly -= 15;
+  txt(pg, 'SÆLGER', C1, ly, fB, 9, C.textMid); ly -= 15;
   txt(pg, co?.companyName || '', C1, ly, fB, 12, C.text); ly -= 13;
   const coInfo = [co?.address, co?.phone, co?.email, co?.cvrNumber ? `CVR: ${co.cvrNumber}` : null].filter(Boolean) as string[];
   for (const d of coInfo) {
     for (const line of d.split('\n').filter(Boolean)) { txt(pg, line, C1, ly, fR, 9, C.textMid); ly -= 11; }
   }
 
-  // RIGHT: TIL
+  // RIGHT: KØBER
   let ry = colStartY;
-  txt(pg, 'TIL', C2, ry, fB, 9, C.textMid); ry -= 15;
+  txt(pg, 'KØBER', C2, ry, fB, 9, C.textMid); ry -= 15;
   txt(pg, inv.customerName, C2, ry, fB, 12, C.text); ry -= 13;
   const cuInfo = [inv.customerAddress, inv.customerPhone, inv.customerEmail, inv.customerCvr ? `CVR: ${inv.customerCvr}` : null].filter(Boolean) as string[];
   for (const d of cuInfo) {

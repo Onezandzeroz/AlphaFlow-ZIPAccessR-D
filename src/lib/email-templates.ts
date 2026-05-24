@@ -284,7 +284,7 @@ export function invoiceEmailHtml(
           ${invoiceNumber}
         </td>
         <td style="padding:16px 20px; font-size:13px; color:${TEXT_DARK};">
-          <strong style="display:block; margin-bottom:4px; color:${TEXT_MUTED}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">${language === 'da' ? 'Fra' : 'From'}</strong>
+          <strong style="display:block; margin-bottom:4px; color:${TEXT_MUTED}; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">${language === 'da' ? 'Sælger' : 'Seller'}</strong>
           ${companyName}
         </td>
       </tr>
