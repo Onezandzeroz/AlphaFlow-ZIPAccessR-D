@@ -2,7 +2,7 @@
 // Dashboard widget definitions — shared between client hook and server API
 // ---------------------------------------------------------------------------
 
-export type WidgetSize = 'full' | 'half' | 'third' | 'quarter';
+export type WidgetSize = 'full' | 'half' | 'two-thirds' | 'third' | 'quarter';
 
 export interface DashboardWidget {
   id: string;
@@ -18,7 +18,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   // ── DEFAULT VISIBLE: Column 0 (Left) ─────────────────────────
   { id: 'activity-feed',        labelDa: 'Seneste Aktivitet',        labelEn: 'Activity Feed',          icon: 'Activity',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
   { id: 'active-accounts',      labelDa: 'Mest Aktive Konti',        labelEn: 'Most Active Accounts',   icon: 'BookOpen',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
-  { id: 'invoice-overview',     labelDa: 'Fakturaoversigt',          labelEn: 'Invoice Overview',       icon: 'FileText',      defaultVisible: true,  defaultSize: 'half',    section: 'details' },
+  { id: 'invoice-overview',     labelDa: 'Fakturaoversigt',          labelEn: 'Invoice Overview',       icon: 'FileText',      defaultVisible: true,  defaultSize: 'two-thirds',    section: 'details' },
 
   // ── DEFAULT VISIBLE: Column 1 (Middle) ───────────────────────
   { id: 'vat-output',           labelDa: 'Udgående moms',           labelEn: 'Output VAT',             icon: 'ArrowUpCircle', defaultVisible: true,  defaultSize: 'quarter', section: 'indicators' },
@@ -56,7 +56,7 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
 // ─── Defaults version ──────────────────────────────────────────
 // Bump this when code-level defaults change (visibility, order, column layout).
 // The Zustand store compares this against localStorage to detect stale cache.
-export const WIDGET_DEFAULTS_VERSION = 2;
+export const WIDGET_DEFAULTS_VERSION = 3;
 
 export function getDefaultVisibilityMap(): Record<string, boolean> {
   const map: Record<string, boolean> = {};
@@ -80,6 +80,7 @@ export function getDefaultSizesMap(): Record<string, WidgetSize> {
 const SIZE_SPAN_MAP: Record<WidgetSize, number> = {
   full: 12,
   half: 6,
+  'two-thirds': 8,
   third: 4,
   quarter: 3,
 };
@@ -102,15 +103,19 @@ export function getWidgetGridSpanById(widgetId: string, sizesMap?: Record<string
 // With N items per row and (N-1) gaps of G pixels:
 //   item_width = (100% - (N-1)*G) / N
 //
-// full    = 100%              (1 per row, 0 gaps)
-// half    = calc(50% - 6px)   (2 per row, 1 gap of 12px)
-// third   = calc(33.333% - 8px) (3 per row, 2 gaps of 12px)
-// quarter = calc(25% - 9px)   (4 per row, 3 gaps of 12px)
+// full        = 100%                  (1 per row, 0 gaps)
+// two-thirds  = calc(66.666% - 4px)   (1.5 per row, ~1 gap of 12px)
+// half        = calc(50% - 6px)       (2 per row, 1 gap of 12px)
+// third       = calc(33.333% - 8px)   (3 per row, 2 gaps of 12px)
+// quarter     = calc(25% - 9px)       (4 per row, 3 gaps of 12px)
 
 export function getGridSpanClasses(size: WidgetSize): string {
   switch (size) {
     case 'full':
       return 'w-full shrink-0';
+    case 'two-thirds':
+      // Mobile: full width | sm+: 2/3 width (fits with a 1/3 widget beside it)
+      return 'w-full sm:w-[calc(66.666%-4px)] shrink-0';
     case 'half':
       // Mobile: full width | sm+: 2-col (gap-3=12px)
       return 'w-full sm:w-[calc(50%-6px)] shrink-0';
@@ -127,7 +132,7 @@ export function getGridSpanClasses(size: WidgetSize): string {
 
 // ─── Size cycling helper (kept for backwards compat but not used in UI) ───
 
-const SIZE_CYCLE: WidgetSize[] = ['full', 'half', 'third', 'quarter'];
+const SIZE_CYCLE: WidgetSize[] = ['full', 'two-thirds', 'half', 'third', 'quarter'];
 
 export function cycleSize(current: WidgetSize): WidgetSize {
   const idx = SIZE_CYCLE.indexOf(current);
