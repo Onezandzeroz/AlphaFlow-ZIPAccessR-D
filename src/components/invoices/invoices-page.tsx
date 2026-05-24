@@ -1907,7 +1907,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
       </Card>
 
         {/* ── Live Invoice Preview Card ── */}
-        <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5 flex flex-col">
+        <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
           <CardHeader className="pb-3">
             <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0">
@@ -1916,8 +1916,8 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
               {language === 'da' ? 'Faktura forhåndsvisning' : 'Invoice Preview'}
             </CardTitle>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col min-h-0">
-            <div className="flex-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#141918] overflow-hidden flex flex-col min-h-0">
+          <CardContent className="flex flex-col">
+            <div className="rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#141918] overflow-hidden">
               <style>{`
                 .inv-prev { color: #1f2937; }
                 .dark .inv-prev { color: #e5e7eb; }
@@ -1942,7 +1942,7 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
               `}</style>
               {/* Mini invoice — mirrors print template design exactly */}
               <div
-                className="flex-1 overflow-y-auto inv-prev"
+                className="overflow-y-auto inv-prev"
                 style={{
                   padding: '0',
                   transformOrigin: 'top left',
