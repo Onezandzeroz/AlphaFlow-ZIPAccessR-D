@@ -1676,22 +1676,25 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
         }
       />
 
-      {/* ── Customer Info Card ── */}
-      <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#14b8a6] to-[#0d9488] flex items-center justify-center shrink-0">
-              <Users className="h-4 w-4 text-white" />
-            </div>
-            {language === 'da' ? 'Kundeoplysninger' : 'Customer Information'}
-          </CardTitle>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {language === 'da'
-              ? 'Vælg en eksisterende kontakt eller indtast kundeoplysninger manuelt'
-              : 'Select an existing contact or enter customer details manually'}
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      {/* ── Two-column: Customer Info + Live Invoice Preview ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+
+        {/* ── Customer Info Card ── */}
+        <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#14b8a6] to-[#0d9488] flex items-center justify-center shrink-0">
+                <Users className="h-4 w-4 text-white" />
+              </div>
+              {language === 'da' ? 'Kundeoplysninger' : 'Customer Information'}
+            </CardTitle>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {language === 'da'
+                ? 'Vælg en eksisterende kontakt eller indtast kundeoplysninger manuelt'
+                : 'Select an existing contact or enter customer details manually'}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
           {/* Contact selector row */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {/* Contact type filter */}
@@ -1902,6 +1905,133 @@ export function InvoicesPage({ user, initialView, onInitialViewConsumed }: Invoi
           </div>
         </CardContent>
       </Card>
+
+        {/* ── Live Invoice Preview Card ── */}
+        <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5 flex flex-col">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#6366f1] to-[#8b5cf6] flex items-center justify-center shrink-0">
+                <Eye className="h-4 w-4 text-white" />
+              </div>
+              {language === 'da' ? 'Faktura forhåndsvisning' : 'Invoice Preview'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-[#141918] overflow-hidden flex flex-col min-h-0">
+              {/* Mini invoice document */}
+              <div className="flex-1 p-3 sm:p-4 overflow-y-auto text-[10px] sm:text-[11px] leading-relaxed text-gray-700 dark:text-gray-300" style={{ zoom: 0.72, MozTransform: 'scale(0.72)', transformOrigin: 'top left' }}>
+
+                {/* Invoice header */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <div className="text-sm sm:text-base font-bold text-gray-900 dark:text-white">
+                      {companyInfo?.companyName || (language === 'da' ? 'Dit Firma' : 'Your Company')}
+                    </div>
+                    {companyInfo?.address && <div className="mt-0.5 whitespace-pre-line">{companyInfo.address}</div>}
+                    {companyInfo?.cvrNumber && <div>CVR: {companyInfo.cvrNumber}</div>}
+                    {companyInfo?.email && <div>{companyInfo.email}</div>}
+                    {companyInfo?.phone && <div>{companyInfo.phone}</div>}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm sm:text-base font-bold text-[#0d9488] dark:text-[#2dd4bf]">
+                      {language === 'da' ? 'FAKTURA' : 'INVOICE'}
+                    </div>
+                    <div className="font-semibold text-gray-900 dark:text-white mt-0.5">{nextInvoiceNumber}</div>
+                  </div>
+                </div>
+
+                {/* Dates */}
+                <div className="flex gap-6 mb-3 text-[10px]">
+                  <div>
+                    <span className="text-gray-400">{language === 'da' ? 'Dato' : 'Date'}:</span>{' '}
+                    <span className="font-medium">{invoiceForm.issueDate || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-400">{language === 'da' ? 'Forfalder' : 'Due'}:</span>{' '}
+                    <span className="font-medium">{invoiceForm.dueDate || '—'}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
+
+                {/* Customer */}
+                <div className="mb-3">
+                  <div className="text-[9px] uppercase tracking-wider text-gray-400 mb-1">
+                    {language === 'da' ? 'Faktureres til' : 'Bill to'}
+                  </div>
+                  <div className="font-semibold text-gray-900 dark:text-white">
+                    {invoiceForm.customerName || (language === 'da' ? 'Kundenavn...' : 'Customer name...')}
+                  </div>
+                  {invoiceForm.customerAddress && <div className="whitespace-pre-line">{invoiceForm.customerAddress}</div>}
+                  {(invoiceForm.customerCvr || invoiceForm.customerEmail) && (
+                    <div>
+                      {invoiceForm.customerCvr && <div>CVR: {invoiceForm.customerCvr}</div>}
+                      {invoiceForm.customerEmail && <div>{invoiceForm.customerEmail}</div>}
+                    </div>
+                  )}
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
+
+                {/* Line items table */}
+                <table className="w-full mb-3">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-gray-700 text-left text-[9px] uppercase tracking-wider text-gray-400">
+                      <th className="pb-1.5 pr-2">{language === 'da' ? 'Beskrivelse' : 'Description'}</th>
+                      <th className="pb-1.5 text-right w-12">{language === 'da' ? 'Antal' : 'Qty'}</th>
+                      <th className="pb-1.5 text-right w-16">{language === 'da' ? 'Pris' : 'Price'}</th>
+                      <th className="pb-1.5 text-right w-10">{language === 'da' ? 'Moms' : 'VAT'}</th>
+                      <th className="pb-1.5 text-right w-16">{language === 'da' ? 'Beløb' : 'Amt'}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoiceForm.lineItems.map((item, idx) => (
+                      <tr key={idx} className="border-b border-gray-100 dark:border-gray-800 last:border-b-0">
+                        <td className="py-1.5 pr-2 font-medium text-gray-900 dark:text-white">
+                          {item.description || (language === 'da' ? '—' : '—')}
+                        </td>
+                        <td className="py-1.5 text-right">{item.quantity}</td>
+                        <td className="py-1.5 text-right">{tc(item.unitPrice)}</td>
+                        <td className="py-1.5 text-right">{item.vatPercent}%</td>
+                        <td className="py-1.5 text-right font-medium">{tc(item.quantity * item.unitPrice)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Totals */}
+                <div className="flex justify-end">
+                  <div className="w-48 space-y-1">
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-gray-400">{t('subtotal')}</span>
+                      <span className="font-medium">{tc(calculatedTotals.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-gray-400">{t('vatTotalLabel')}</span>
+                      <span className="font-medium">{tc(calculatedTotals.vatTotal)}</span>
+                    </div>
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
+                      <div className="flex justify-between">
+                        <span className="font-bold text-gray-900 dark:text-white text-xs">{t('grandTotal')}</span>
+                        <span className="font-bold text-[#0d9488] dark:text-[#2dd4bf] text-xs">{tc(calculatedTotals.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                {invoiceForm.notes && (
+                  <>
+                    <div className="border-t border-gray-200 dark:border-gray-700 my-3" />
+                    <div className="text-[9px] text-gray-400 whitespace-pre-line">{invoiceForm.notes}</div>
+                  </>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+      </div>{/* end two-column grid */}
 
       {/* ── Line Items Card ── */}
       <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
