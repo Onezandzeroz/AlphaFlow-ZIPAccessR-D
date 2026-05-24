@@ -541,6 +541,64 @@ export const translations = {
     en: 'Total VAT',
   },
 
+  // SAF-T Period types
+  saftPeriodType: {
+    da: 'Periodetype',
+    en: 'Period Type',
+  },
+  saftPeriodFullYear: {
+    da: 'Hele regnskabsåret',
+    en: 'Full Fiscal Year',
+  },
+  saftPeriodQuarter: {
+    da: 'Kvartal',
+    en: 'Quarter',
+  },
+  saftPeriodMonth: {
+    da: 'Enkelt måned',
+    en: 'Single Month',
+  },
+  saftPeriodCustom: {
+    da: 'Brugerdefineret',
+    en: 'Custom',
+  },
+  saftPeriodQ1: {
+    da: '1. kvartal (jan-mar)',
+    en: 'Q1 (Jan-Mar)',
+  },
+  saftPeriodQ2: {
+    da: '2. kvartal (apr-jun)',
+    en: 'Q2 (Apr-Jun)',
+  },
+  saftPeriodQ3: {
+    da: '3. kvartal (jul-sep)',
+    en: 'Q3 (Jul-Sep)',
+  },
+  saftPeriodQ4: {
+    da: '4. kvartal (okt-dec)',
+    en: 'Q4 (Oct-Dec)',
+  },
+  saftSelectQuarter: {
+    da: 'Vælg kvartal',
+    en: 'Select quarter',
+  },
+  saftSelectMonth: {
+    da: 'Vælg måned',
+    en: 'Select month',
+  },
+  saftPeriodFrom: {
+    da: 'Fra',
+    en: 'From',
+  },
+  saftPeriodTo: {
+    da: 'Til',
+    en: 'To',
+  },
+  saftPeriodRange: {
+    da: 'Regnskabsperiode',
+    en: 'Accounting Period',
+  },
+
   // Auth
   signIn: {
     da: 'Log ind',

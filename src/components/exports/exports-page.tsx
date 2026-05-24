@@ -33,6 +33,7 @@ import {
   FileSpreadsheet,
   Loader2,
   Calendar,
+  CalendarDays,
   FileDown,
   Archive,
   Shield,
@@ -49,7 +50,23 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { da } from 'date-fns/locale';
+import { Calendar as CalendarUI } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+// SAF-T period type options
+type SaftPeriodType = 'year' | 'quarter' | 'month' | 'custom';
+type SaftQuarter = '1' | '2' | '3' | '4';
+
+// Quarter date ranges (calendar year based)
+function getQuarterRange(year: number, quarter: SaftQuarter): { start: Date; end: Date } {
+  const qStart = (parseInt(quarter) - 1) * 3;
+  return {
+    start: new Date(year, qStart, 1),
+    end: new Date(year, qStart + 3, 0, 23, 59, 59, 999),
+  };
+}
 
 interface Transaction {
   id: string;
@@ -122,8 +139,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
   const currentDate = new Date();
   const [selectedMonth, setSelectedMonth] = useState((currentDate.getMonth() + 1).toString());
   const [selectedYear, setSelectedYear] = useState(currentDate.getFullYear().toString());
-  const [saftMonth, setSaftMonth] = useState((currentDate.getMonth() + 1).toString());
+  // SAF-T period state — supports full year, quarter, month, and custom date ranges
+  const [saftPeriodType, setSaftPeriodType] = useState<SaftPeriodType>('year');
   const [saftYear, setSaftYear] = useState(currentDate.getFullYear().toString());
+  const [saftMonth, setSaftMonth] = useState((currentDate.getMonth() + 1).toString());
+  const [saftQuarter, setSaftQuarter] = useState<SaftQuarter>('1');
+  const [saftCustomFrom, setSaftCustomFrom] = useState<Date | undefined>(undefined);
+  const [saftCustomTo, setSaftCustomTo] = useState<Date | undefined>(undefined);
 
   // VAT register data (single source of truth for VAT totals)
   const [vatSummaryCSV, setVatSummaryCSV] = useState<VATRegisterSummary | null>(null);
@@ -233,16 +255,60 @@ export function ExportsPage({ user }: ExportsPageProps) {
     fetchVAT();
   }, [selectedMonth, selectedYear, initialLoadDone]);
 
-  // ─── SAF-T VAT register fetch (re-fetches on saft month/year change) ───
+  // ─── Helper: compute SAF-T period date range ───
+  const saftPeriodRange = useMemo(() => {
+    const y = parseInt(saftYear);
+    switch (saftPeriodType) {
+      case 'year':
+        return {
+          start: startOfYear(new Date(y, 0, 1)),
+          end: endOfYear(new Date(y, 0, 1)),
+        };
+      case 'quarter':
+        return getQuarterRange(y, saftQuarter);
+      case 'month': {
+        const m = parseInt(saftMonth) - 1;
+        return {
+          start: startOfMonth(new Date(y, m, 1)),
+          end: endOfMonth(new Date(y, m, 1)),
+        };
+      }
+      case 'custom':
+        return {
+          start: saftCustomFrom || startOfMonth(new Date()),
+          end: saftCustomTo || endOfMonth(new Date()),
+        };
+    }
+  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo]);
+
+  // ─── Helper: human-readable label for the current SAF-T period ───
+  const saftPeriodLabel = useMemo(() => {
+    const fmt = (d: Date) => format(d, 'dd/MM/yyyy');
+    switch (saftPeriodType) {
+      case 'year':
+        return `${saftYear} (01/01 – 31/12)`;
+      case 'quarter':
+        return `${saftYear} ${t('saftPeriodQ' + saftQuarter as keyof typeof t) || `Q${saftQuarter}`}`;
+      case 'month': {
+        const m = parseInt(saftMonth) - 1;
+        return format(new Date(parseInt(saftYear), m, 1), language === 'da' ? 'MMMM yyyy' : 'MMMM yyyy');
+      }
+      case 'custom':
+        if (saftCustomFrom && saftCustomTo) {
+          return `${fmt(saftCustomFrom)} – ${fmt(saftCustomTo)}`;
+        }
+        return t('saftPeriodCustom');
+    }
+  }, [saftPeriodType, saftYear, saftMonth, saftQuarter, saftCustomFrom, saftCustomTo, language, t]);
+
+  // ─── SAF-T VAT register fetch (re-fetches on period change) ───
   useEffect(() => {
     if (!initialLoadDone) return;
 
     const fetchSAFTVAT = async () => {
       try {
-        const monthStr = saftMonth.padStart(2, '0');
-        const lastDay = new Date(+saftYear, +saftMonth, 0).getDate();
-        const from = `${saftYear}-${monthStr}-01`;
-        const to = `${saftYear}-${monthStr}-${lastDay}`;
+        const from = format(saftPeriodRange.start, 'yyyy-MM-dd');
+        const to = format(saftPeriodRange.end, 'yyyy-MM-dd');
 
         const vatResp = await fetch(`/api/vat-register?from=${from}&to=${to}`);
         if (vatResp.ok) {
@@ -261,7 +327,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
     };
 
     fetchSAFTVAT();
-  }, [saftMonth, saftYear, initialLoadDone]);
+  }, [saftPeriodRange, initialLoadDone]);
 
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
@@ -278,13 +344,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
   }, [transactions, selectedMonth, selectedYear]);
 
   const saftFilteredTransactions = useMemo(() => {
-    const monthStr = saftMonth.padStart(2, '0');
-    const filterPrefix = `${saftYear}-${monthStr}`;
+    const periodStart = saftPeriodRange.start.getTime();
+    const periodEnd = saftPeriodRange.end.getTime();
     return transactions.filter((t) => {
-      const dateStr = t.date?.substring(0, 10) || '';
-      return dateStr.startsWith(filterPrefix);
+      const txDate = new Date(t.date).getTime();
+      return txDate >= periodStart && txDate <= periodEnd;
     });
-  }, [transactions, saftMonth, saftYear]);
+  }, [transactions, saftPeriodRange]);
 
   // Compute totals — VAT amounts come exclusively from the VAT register
   // (double-entry journal), not from legacy transaction formula.
@@ -418,24 +484,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
 
   // SAF-T Export with progress
   const generateSAFT = useCallback(async () => {
-    // Check if there are transactions for the selected period
-    if (saftTotals.count === 0) {
-      setSaftValidation({
-        hasErrors: true,
-        hasWarnings: false,
-        errors: 1,
-        warnings: 0,
-        details: [{
-          field: 'transactions',
-          message: language === 'da' 
-            ? 'Ingen posteringer i den valgte periode. Vælg en anden måned eller tilføj posteringer.'
-            : 'No transactions in the selected period. Please select a different month or add transactions.',
-          severity: 'error',
-        }],
-      });
-      setSaftStep('preview');
-      return;
-    }
+    // Note: Zero-balance periods are allowed — a company may have no activity
+    // in a given period and a valid empty SAF-T file is still required.
 
     setSaftStep('validating');
     setExportProgress(0);
@@ -455,8 +505,10 @@ export function ExportsPage({ user }: ExportsPageProps) {
     }
 
     try {
-      const monthStr = saftMonth.padStart(2, '0');
-      const response = await fetch(`/api/export-saft?month=${saftYear}-${monthStr}`);
+      // Build API URL — use startDate/endDate for proper period support
+      const fromStr = format(saftPeriodRange.start, 'yyyy-MM-dd');
+      const toStr = format(saftPeriodRange.end, 'yyyy-MM-dd');
+      const response = await fetch(`/api/export-saft?startDate=${fromStr}&endDate=${toStr}`);
       
       setExportProgress(80);
 
@@ -484,8 +536,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
 
       toast.success(language === 'da' ? 'SAF-T fil genereret' : 'SAF-T file generated', {
         description: language === 'da'
-          ? `SAF-T-${saftYear}-${saftMonth.padStart(2, '0')}.xml er klar til download`
-          : `SAF-T-${saftYear}-${saftMonth.padStart(2, '0')}.xml is ready for download`,
+          ? `SAF-T for ${saftPeriodLabel} er klar til download`
+          : `SAF-T for ${saftPeriodLabel} is ready for download`,
       });
 
     } catch (error) {
@@ -503,7 +555,7 @@ export function ExportsPage({ user }: ExportsPageProps) {
       });
       setSaftStep('preview');
     }
-  }, [saftMonth, saftYear, saftTotals.count, language]);
+  }, [saftPeriodRange, saftTotals.count, language]);
 
   const downloadSAFT = useCallback(() => {
     if (!saftPreview) return;
@@ -512,11 +564,13 @@ export function ExportsPage({ user }: ExportsPageProps) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `SAF-T-${saftYear}-${saftMonth.padStart(2, '0')}.xml`;
+    const fromStr = format(saftPeriodRange.start, 'yyyy-MM-dd');
+    const toStr = format(saftPeriodRange.end, 'yyyy-MM-dd');
+    a.download = `SAF-T-${fromStr}_to_${toStr}.xml`;
     a.click();
     window.URL.revokeObjectURL(url);
     setSaftStep('complete');
-  }, [saftPreview, saftYear, saftMonth]);
+  }, [saftPreview, saftPeriodRange]);
 
   const resetSAFTDialog = useCallback(() => {
     setSaftStep('select');
@@ -632,39 +686,136 @@ export function ExportsPage({ user }: ExportsPageProps) {
                 <div className="bg-gray-50 dark:bg-white/5 rounded-lg p-2 sm:p-3">
                   <div className="flex items-center gap-1 sm:gap-2 text-gray-500 dark:text-gray-400 text-xs sm:text-sm mb-0.5 sm:mb-1">
                     <Clock className="h-3 w-3 sm:h-4 sm:w-4" />
-                    {t('period')}
+                    {t('saftPeriodRange')}
                   </div>
                   <p className="text-base sm:text-lg font-bold text-gray-900 dark:text-white">
-                    {saftMonth.padStart(2, '0')}/{saftYear}
+                    {saftPeriodLabel}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Select value={saftMonth} onValueChange={setSaftMonth}>
-                  <SelectTrigger className="w-32 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                    {monthNames.map((m, i) => (
-                      <SelectItem key={i} value={(i + 1).toString()}>
-                        {m} {saftYear}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={saftYear} onValueChange={setSaftYear}>
-                  <SelectTrigger className="w-24 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white dark:bg-[#1a1f1e]">
-                    {yearOptions.map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              {/* SAF-T Period Selector */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-end gap-3">
+                  {/* Period type */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodType')}</label>
+                    <Select value={saftPeriodType} onValueChange={(v) => setSaftPeriodType(v as SaftPeriodType)}>
+                      <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                        <CalendarDays className="h-4 w-4 text-[#0d9488] mr-2" />
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+                        <SelectItem value="year">{t('saftPeriodFullYear')}</SelectItem>
+                        <SelectItem value="quarter">{t('saftPeriodQuarter')}</SelectItem>
+                        <SelectItem value="month">{t('saftPeriodMonth')}</SelectItem>
+                        <SelectItem value="custom">{t('saftPeriodCustom')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Year (always shown) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('year') || 'År'}</label>
+                    <Select value={saftYear} onValueChange={setSaftYear}>
+                      <SelectTrigger className="w-28 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+                        {yearOptions.map((year) => (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Quarter (shown when quarter selected) */}
+                  {saftPeriodType === 'quarter' && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodQuarter')}</label>
+                      <Select value={saftQuarter} onValueChange={(v) => setSaftQuarter(v as SaftQuarter)}>
+                        <SelectTrigger className="w-44 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+                          <SelectItem value="1">{t('saftPeriodQ1')}</SelectItem>
+                          <SelectItem value="2">{t('saftPeriodQ2')}</SelectItem>
+                          <SelectItem value="3">{t('saftPeriodQ3')}</SelectItem>
+                          <SelectItem value="4">{t('saftPeriodQ4')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Month (shown when month selected) */}
+                  {saftPeriodType === 'month' && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftSelectMonth')}</label>
+                      <Select value={saftMonth} onValueChange={setSaftMonth}>
+                        <SelectTrigger className="w-36 bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+                          {monthNames.map((m, i) => (
+                            <SelectItem key={i} value={(i + 1).toString()}>
+                              {m}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Custom date range (shown when custom selected) */}
+                  {saftPeriodType === 'custom' && (
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodFrom')}</label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                              <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
+                              {saftCustomFrom ? format(saftCustomFrom, 'dd/MM/yyyy') : '...'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
+                            <CalendarUI
+                              mode="single"
+                              selected={saftCustomFrom}
+                              onSelect={(d) => { setSaftCustomFrom(d); if (d && saftCustomTo && d > saftCustomTo) setSaftCustomTo(undefined); }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-500 dark:text-gray-400">{t('saftPeriodTo')}</label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" className="w-36 justify-start text-left font-normal bg-white dark:bg-[#1a1f1e] border-gray-200 dark:border-gray-700">
+                              <Calendar className="mr-2 h-4 w-4 text-[#0d9488]" />
+                              {saftCustomTo ? format(saftCustomTo, 'dd/MM/yyyy') : '...'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0 bg-white dark:bg-[#1a1f1e]" align="start">
+                            <CalendarUI
+                              mode="single"
+                              selected={saftCustomTo}
+                              onSelect={(d) => { setSaftCustomTo(d); }}
+                              disabled={(d) => saftCustomFrom ? d < saftCustomFrom : false}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3 mt-3">
                 <Dialog open={showSAFTDialog} onOpenChange={(open) => {
                   setShowSAFTDialog(open);
                   if (!open) resetSAFTDialog();
@@ -672,7 +823,6 @@ export function ExportsPage({ user }: ExportsPageProps) {
                   <DialogTrigger asChild>
                     <Button 
                       className="btn-gradient text-white gap-2"
-                      disabled={saftTotals.count === 0}
                     >
                       <FileCode className="h-4 w-4" />
                       {t('generateSAFT')}
@@ -686,8 +836,8 @@ export function ExportsPage({ user }: ExportsPageProps) {
                       </DialogTitle>
                       <DialogDescription className="dark:text-gray-400">
                         {language === 'da' 
-                          ? `Skattestyrelsen kompatibel revisionsfil for ${saftMonth.padStart(2, '0')}/${saftYear}`
-                          : `Danish Tax Authority compliant audit file for ${saftMonth.padStart(2, '0')}/${saftYear}`}
+                          ? `Skattestyrelsen kompatibel revisionsfil for ${saftPeriodLabel}`
+                          : `Danish Tax Authority compliant audit file for ${saftPeriodLabel}`}
                       </DialogDescription>
                     </DialogHeader>
 
@@ -703,9 +853,9 @@ export function ExportsPage({ user }: ExportsPageProps) {
                           </h4>
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
-                              <span className="text-gray-500 dark:text-gray-400">{t('period')}:</span>
+                              <span className="text-gray-500 dark:text-gray-400">{t('saftPeriodRange')}:</span>
                               <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                                {format(new Date(`${saftYear}-${saftMonth.padStart(2, '0')}-01`), language === 'da' ? 'MMMM yyyy' : 'MMMM yyyy', { locale: undefined })}
+                                {saftPeriodLabel}
                               </span>
                             </div>
                             <div>
@@ -727,6 +877,17 @@ export function ExportsPage({ user }: ExportsPageProps) {
                           <CheckCircle2 className="h-4 w-4 text-[#0d9488]" />
                           {t('compliantWith')}
                         </div>
+
+                        {saftTotals.count === 0 && (
+                          <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                            <span>
+                              {language === 'da'
+                                ? 'Den valgte periode indeholder ingen posteringer. Der vil blive genereret et nulregnskab, som er gyldigt ifølge Skattestyrelsens krav.'
+                                : 'The selected period has no transactions. A zero-balance SAF-T file will be generated, which is valid per Danish Tax Authority requirements.'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
 
