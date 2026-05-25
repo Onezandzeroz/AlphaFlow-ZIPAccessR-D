@@ -347,11 +347,14 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
     try {
       let ocrResult;
+      const isPdf = receiptFile.type === 'application/pdf' || receiptFile.name?.toLowerCase().endsWith('.pdf');
 
-      if (receiptFile.type === 'application/pdf') {
-        // For PDFs, send to backend API which uses VLM vision AI
+      if (isPdf || !receiptFile.type.startsWith('image/')) {
+        // For PDFs and other non-image files, send to backend VLM API
         const formData = new FormData();
         formData.append('file', receiptFile);
+
+        console.log('[OCR] Sending to backend VLM:', receiptFile.name, receiptFile.type, `${(receiptFile.size / 1024).toFixed(1)}KB`);
 
         const res = await fetch('/api/ocr/pdf', {
           method: 'POST',
@@ -360,15 +363,16 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
         if (!res.ok) {
           const errBody = await res.text().catch(() => '');
-          console.error('[OCR] PDF OCR failed:', res.status, errBody);
-          throw new Error(`PDF OCR failed (${res.status}): ${errBody}`);
+          console.error('[OCR] Backend OCR failed:', res.status, errBody);
+          throw new Error(`OCR failed (${res.status}): ${errBody}`);
         }
 
         const data = await res.json();
-        ocrResult = data as Awaited<ReturnType<typeof scanReceipt>>;
+        ocrResult = data;
         setOcrProgress(100);
       } else {
         // For images, use client-side Tesseract OCR
+        console.log('[OCR] Using client-side Tesseract for image:', receiptFile.name);
         ocrResult = await scanReceipt(receiptFile, (progress) => {
           setOcrProgress(progress);
         });

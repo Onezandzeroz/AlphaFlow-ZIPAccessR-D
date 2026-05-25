@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
 
 /**
  * POST /api/ocr/pdf
- * Uses AI vision (VLM) to extract structured data from PDF purchase invoices.
- * Step 1: Renders PDF pages to images using pdfjs-dist
- * Step 2: Sends images to z-ai-web-dev-sdk VLM for analysis
+ * Uses AI vision (VLM) to extract structured data from purchase documents.
+ * For PDFs: renders pages to images first, then sends to VLM.
+ * For images: sends directly to VLM.
  */
 export const maxDuration = 60;
 
@@ -17,51 +18,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    if (file.type !== 'application/pdf') {
-      return NextResponse.json({ error: 'Only PDF files are supported' }, { status: 400 });
-    }
-
     if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: 'File size must be less than 10MB' }, { status: 400 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    console.log(`[PDF OCR] Processing ${file.name}, ${(file.size / 1024).toFixed(1)}KB`);
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
 
-    // Step 1: Render PDF pages to PNG images using pdfjs-dist
-    const pdfjsLib = await import('pdfjs-dist');
+    console.log(`[OCR] Processing ${file.name}, type=${file.type}, ${(file.size / 1024).toFixed(1)}KB, isPdf=${isPdf}`);
 
-    // In Node.js, disable the worker (runs on main thread)
-    const pdfjsLibAny = pdfjsLib as any;
-    pdfjsLibAny.GlobalWorkerOptions.workerSrc = '';
+    let pageImages: string[] = [];
 
-    const pdf = await pdfjsLibAny.getDocument({ data: new Uint8Array(arrayBuffer), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
-    const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
-    const pageImages: string[] = [];
+    if (isPdf) {
+      // ── PDF: Render pages to images using pdfjs-dist + canvas ──
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const pdfjsLibAny = pdfjsLib as any;
 
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdf.getPage(i);
-      const scale = 2.0;
-      const viewport = page.getViewport({ scale });
+      // Set worker path explicitly for Node.js
+      const workerPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+      pdfjsLibAny.GlobalWorkerOptions.workerSrc = workerPath;
 
-      // Create offscreen canvas to render the page
-      const canvas = await createCanvas(viewport.width, viewport.height);
-      const ctx = canvas.getContext('2d');
+      const standardFontDataPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/standard_fonts');
 
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      const pdf = await pdfjsLibAny.getDocument({
+        data: new Uint8Array(arrayBuffer),
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true,
+        standardFontDataUrl: standardFontDataPath + '/',
+      }).promise;
 
-      // Get PNG as base64
-      const pngBase64 = canvas.toDataURL('image/png');
-      pageImages.push(pngBase64);
+      const numPages = Math.min(pdf.numPages, 5);
+
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const scale = 2.0;
+        const viewport = page.getViewport({ scale });
+
+        const { createCanvas } = await import('canvas');
+        const canvas = createCanvas(viewport.width, viewport.height);
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const pngBase64 = canvas.toDataURL('image/png');
+        pageImages.push(pngBase64);
+      }
+
+      console.log(`[OCR] Rendered ${pageImages.length} PDF pages to images`);
+    } else {
+      // ── Image: Convert directly to data URL ──
+      const mimeType = file.type || 'image/png';
+      pageImages.push(`data:${mimeType};base64,${base64}`);
     }
 
-    console.log(`[PDF OCR] Rendered ${pageImages.length} pages to images`);
+    if (pageImages.length === 0) {
+      return NextResponse.json({ error: 'No pages/images to analyze' }, { status: 400 });
+    }
 
-    // Step 2: Send rendered images to VLM for analysis
+    // ── Step 2: Send to VLM ──
+    console.log(`[OCR] Sending ${pageImages.length} image(s) to VLM...`);
+
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
 
-    // Build content array: text prompt + all page images
     const content: Array<{
       type: string;
       text?: string;
@@ -69,7 +89,7 @@ export async function POST(request: NextRequest) {
     }> = [
       {
         type: 'text',
-        text: `Analyze this purchase invoice/receipt document (page ${pageImages.length > 1 ? '1 of ' + pageImages.length : ''}). Extract the following information and return ONLY valid JSON (no markdown, no backticks):
+        text: `Analyze this purchase invoice/receipt document${pageImages.length > 1 ? ` (${pageImages.length} pages)` : ''}. Extract the following information and return ONLY valid JSON (no markdown, no backticks):
 
 {
   "amount": <total amount as number, or null>,
@@ -116,7 +136,7 @@ Rules:
     });
 
     const resultContent = response.choices[0]?.message?.content || '';
-    console.log(`[PDF OCR] VLM response length: ${resultContent.length}`);
+    console.log(`[OCR] VLM response (${resultContent.length} chars): ${resultContent.substring(0, 150)}...`);
 
     // Parse JSON from response
     let parsed: {
@@ -138,7 +158,7 @@ Rules:
       if (!jsonMatch) throw new Error('No JSON found in response');
       parsed = JSON.parse(jsonMatch[0]);
     } catch {
-      console.error('[PDF OCR] Failed to parse VLM response:', resultContent.substring(0, 200));
+      console.error('[OCR] Failed to parse VLM response:', resultContent.substring(0, 200));
       return NextResponse.json({
         text: resultContent,
         amount: null,
@@ -149,7 +169,7 @@ Rules:
       });
     }
 
-    // Build raw lines from the extracted data for compatibility
+    // Build raw lines for compatibility
     const rawLines: string[] = [];
     if (parsed.description) rawLines.push(parsed.description);
     if (parsed.amount) rawLines.push(`Total: ${parsed.amount} ${parsed.currency || 'DKK'}`);
@@ -170,22 +190,17 @@ Rules:
       vlmDescription: parsed.description || null,
     };
 
-    console.log(`[PDF OCR] Extracted: amount=${ocrResult.amount}, date=${ocrResult.date}, vat=${ocrResult.vatPercent}%, lines=${(parsed.lines || []).length}`);
+    console.log(`[OCR] SUCCESS: amount=${ocrResult.amount}, date=${ocrResult.date}, vat=${ocrResult.vatPercent}%, lines=${(parsed.lines || []).length}`);
 
     return NextResponse.json(ocrResult);
   } catch (error) {
-    console.error('[PDF OCR] Error:', error instanceof Error ? error.stack : error);
+    const msg = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : '';
+    console.error('[OCR] ERROR:', msg);
+    console.error('[OCR] Stack:', stack);
     return NextResponse.json(
-      { error: `Failed to process PDF: ${error instanceof Error ? error.message : 'Unknown error'}` },
+      { error: `OCR failed: ${msg}` },
       { status: 500 }
     );
   }
-}
-
-/**
- * Creates a node-canvas for server-side PDF rendering.
- */
-async function createCanvas(width: number, height: number) {
-  const { createCanvas } = await import('canvas');
-  return createCanvas(width, height);
 }
