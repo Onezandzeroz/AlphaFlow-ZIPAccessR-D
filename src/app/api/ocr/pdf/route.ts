@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import path from 'path';
+import type { VisionMultimodalContentItem } from 'z-ai-web-dev-sdk';
 
 /**
  * POST /api/ocr/pdf
@@ -31,19 +33,15 @@ export async function POST(request: NextRequest) {
 
     if (isPdf) {
       // ── PDF: Render pages to images using pdfjs-dist + node-canvas ──
-      // Fully dynamic require paths to avoid Turbopack resolution at build time
-      const nodePath = await import('path');
-      const cwd = process.cwd();
-      const pdfjsPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs');
-      const workerPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
-      const fontPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'standard_fonts');
-      const canvasPath = nodePath.join(cwd, 'node_modules', 'canvas');
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const pdfjs = pdfjsLib as any;
 
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfjsLib = require(pdfjsPath) as any;
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+      const workerPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
 
-      const pdf = await pdfjsLib.getDocument({
+      const fontPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts');
+
+      const pdf = await pdfjs.getDocument({
         data: new Uint8Array(arrayBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
@@ -52,9 +50,7 @@ export async function POST(request: NextRequest) {
       }).promise;
 
       const numPages = Math.min(pdf.numPages, 5);
-
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { createCanvas } = require(canvasPath);
+      const { createCanvas } = await import('canvas');
 
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
@@ -63,8 +59,7 @@ export async function POST(request: NextRequest) {
         const canvas = createCanvas(viewport.width, viewport.height);
         const ctx = canvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport }).promise;
-        const pngBase64 = canvas.toDataURL('image/png');
-        pageImages.push(pngBase64);
+        pageImages.push(canvas.toDataURL('image/png'));
       }
 
       console.log(`[OCR] Rendered ${pageImages.length} PDF pages to images`);
@@ -110,20 +105,15 @@ Rules:
 - If no line items are visible, return empty lines array
 - Return ONLY the JSON object, nothing else`;
 
-    const content: any[] = [{ type: 'text' as const, text: prompt }];
-    for (const imgDataUrl of pageImages) {
-      content.push({ type: 'image_url' as const, image_url: { url: imgDataUrl } });
-    }
+    const content: VisionMultimodalContentItem[] = [
+      { type: 'text', text: prompt },
+      ...pageImages.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+    ];
 
     const response = await zai.chat.completions.createVision({
       model: 'claude-sonnet-4-20250514',
-      messages: [
-        {
-          role: 'user',
-          content,
-        }
-      ],
-      thinking: { type: 'disabled' }
+      messages: [{ role: 'user', content }],
+      thinking: { type: 'disabled' },
     });
 
     const resultContent = response.choices[0]?.message?.content || '';
@@ -136,12 +126,7 @@ Rules:
       vatPercent: number | null;
       currency: string;
       description: string | null;
-      lines: Array<{
-        description: string;
-        quantity: number;
-        unitPrice: number;
-        vatPercent: number;
-      }>;
+      lines: Array<{ description: string; quantity: number; unitPrice: number; vatPercent: number }>;
     };
 
     try {
@@ -186,9 +171,8 @@ Rules:
     return NextResponse.json(ocrResult);
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : '';
     console.error('[OCR] ERROR:', msg);
-    console.error('[OCR] Stack:', stack);
+    if (error instanceof Error) console.error('[OCR] Stack:', error.stack);
     return NextResponse.json(
       { error: `OCR failed: ${msg}` },
       { status: 500 }
