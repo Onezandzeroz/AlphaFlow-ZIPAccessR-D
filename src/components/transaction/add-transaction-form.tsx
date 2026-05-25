@@ -275,21 +275,43 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     if (file.type === 'application/pdf') {
-      // Render PDF first page as image for clean preview
+      // Render PDF first page as image for clean preview (client-side via CDN)
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await fetch('/api/ocr/render', { method: 'POST', body: formData });
-        if (res.ok) {
-          const blob = await res.blob();
-          const previewUrl = URL.createObjectURL(blob);
-          receiptPreviewUrlRef.current = previewUrl;
-          setReceiptPreview(previewUrl);
-        } else {
-          // Fallback: show generic placeholder
-          setReceiptPreview('pdf-fallback');
+        setReceiptPreview('loading');
+        
+        // Load pdf.js from CDN if not already loaded
+        if (!(window as any).pdfjsLib) {
+          await new Promise<void>((resolve, reject) => {
+            // Load pdf.js library
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          // Set worker
+          (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
+
+        const pdfjsLib = (window as any).pdfjsLib;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+
+        const scale = 2.0;
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        const dataUrl = canvas.toDataURL('image/png');
+        receiptPreviewUrlRef.current = null; // data URL doesn't need revoke
+        setReceiptPreview(dataUrl);
       } catch {
+        // Fallback: show generic placeholder
         setReceiptPreview('pdf-fallback');
       }
     } else {
@@ -364,34 +386,51 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         setIncludesVAT(true);
       }
 
-      // Generate line items from raw OCR lines that contain amounts
-      const newLines: PurchaseLineItem[] = [];
-      const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
+      // Use VLM structured line items if available (from PDF OCR)
+      const vlmLines = (ocrResult as any).vlmLines;
+      const vlmDescription = (ocrResult as any).vlmDescription;
+      
+      if (vlmDescription && !description) {
+        setDescription(vlmDescription);
+      }
 
-      for (const rawLine of ocrResult.rawLines) {
-        const trimmed = rawLine.trim();
-        if (!trimmed) continue;
+      let newLines: PurchaseLineItem[] = [];
 
-        const match = trimmed.match(amountPattern);
-        if (match) {
-          const lineAmount = parseFloat(match[1].replace(',', '.'));
-          // Skip if this looks like a total/sum line
-          const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
-          if (isTotalLine) continue;
-          // Skip VAT-only lines
-          const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
-          if (isVatLine && !amount) continue;
+      if (vlmLines && Array.isArray(vlmLines) && vlmLines.length > 0) {
+        // Use structured VLM line items directly
+        newLines = vlmLines.map((line: any) => ({
+          description: line.description || '',
+          quantity: line.quantity || 1,
+          unitPrice: line.unitPrice || 0,
+          vatPercent: line.vatPercent || (ocrResult.vatPercent ?? 25),
+          accountId: '',
+        }));
+      } else {
+        // Fallback: Generate line items from raw OCR lines that contain amounts
+        const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
 
-          if (lineAmount > 0 && lineAmount < 100000) {
-            // Extract description (remove amount part from the line)
-            const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
-            newLines.push({
-              description: desc || trimmed,
-              quantity: 1,
-              unitPrice: lineAmount,
-              vatPercent: ocrResult.vatPercent ?? 25,
-              accountId: '',
-            });
+        for (const rawLine of ocrResult.rawLines) {
+          const trimmed = rawLine.trim();
+          if (!trimmed) continue;
+
+          const match = trimmed.match(amountPattern);
+          if (match) {
+            const lineAmount = parseFloat(match[1].replace(',', '.'));
+            const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
+            if (isTotalLine) continue;
+            const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
+            if (isVatLine && !amount) continue;
+
+            if (lineAmount > 0 && lineAmount < 100000) {
+              const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
+              newLines.push({
+                description: desc || trimmed,
+                quantity: 1,
+                unitPrice: lineAmount,
+                vatPercent: ocrResult.vatPercent ?? 25,
+                accountId: '',
+              });
+            }
           }
         }
       }
@@ -707,21 +746,23 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     if (!receiptPreview) return null;
 
     const isPdf = receiptFile?.type === 'application/pdf';
+    const isLoading = receiptPreview === 'loading';
     const isFallback = receiptPreview === 'pdf-fallback';
     const fileName = receiptFile?.name || '';
-
-    // PDF rendered to image (clean preview) or image receipt
-    const showImage = !isPdf || !isFallback;
-    // PDF fallback (render failed)
-    const showFallback = isPdf && isFallback;
+    const isImagePreview = !isLoading && !isFallback && receiptPreview !== 'pdf-fallback';
 
     return (
       <div className="space-y-3">
         {/* Preview area */}
         <div className="relative rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden bg-gray-50 dark:bg-gray-900/50">
-          {showImage ? (
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
+              <Loader2 className="h-8 w-8 animate-spin text-[#0d9488]" />
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{isDa ? 'Indlæser PDF…' : 'Loading PDF…'}</p>
+            </div>
+          ) : isImagePreview ? (
             <img src={receiptPreview} alt="Document preview" className="w-full h-auto object-contain max-h-64" />
-          ) : showFallback ? (
+          ) : isFallback ? (
             <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
               <FileText className="h-12 w-12" />
               <div className="text-center">
