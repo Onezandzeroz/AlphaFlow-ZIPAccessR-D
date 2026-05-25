@@ -152,8 +152,8 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
       const cachedStream = await navigator.mediaDevices.getUserMedia({
         video: {
           deviceId: { exact: cached.deviceId },
-          width: { ideal: 1600, min: 1280 },
-          height: { ideal: 900, min: 720 },
+          width: { ideal: 1600 },
+          height: { ideal: 900 },
           frameRate: { ideal: 30 },
         },
         audio: false,
@@ -424,11 +424,13 @@ async function acquireBestCameraStream(): Promise<MediaStream | null> {
  * High-quality capture uses ImageCapture API (see doCapture).
  */
 async function openSelectedCamera(candidate: CameraCandidate): Promise<MediaStream> {
+  // Use `ideal` only — no `min` — so low-end devices that can't deliver 1280px
+  // still open a stream instead of throwing OverconstrainedError.
   const stream = await navigator.mediaDevices.getUserMedia({
     video: {
       deviceId: { exact: candidate.deviceId },
-      width: { ideal: 1600, min: 1280 },
-      height: { ideal: 900, min: 720 },
+      width: { ideal: 1600 },
+      height: { ideal: 900 },
       frameRate: { ideal: 30 },
     },
     audio: false,
@@ -511,11 +513,18 @@ function clampQuadToViewport(quad: Quad, video: HTMLVideoElement, dw: number, dh
   const clampX = (x: number) => Math.max(MARGIN, Math.min(dw - MARGIN, x));
   const clampY = (y: number) => Math.max(MARGIN, Math.min(dh - MARGIN, y));
 
+  // Compute display point once per corner, then clamp and convert back.
+  // Previously each corner called videoToDisplay twice, causing redundant math.
+  const clampCorner = (pt: Pt): Pt => {
+    const dp = videoToDisplay(pt, video, dw, dh);
+    return displayToVideo({ x: clampX(dp.x), y: clampY(dp.y) }, video, dw, dh);
+  };
+
   return {
-    tl: displayToVideo({ x: clampX(videoToDisplay(quad.tl, video, dw, dh).x), y: clampY(videoToDisplay(quad.tl, video, dw, dh).y) }, video, dw, dh),
-    tr: displayToVideo({ x: clampX(videoToDisplay(quad.tr, video, dw, dh).x), y: clampY(videoToDisplay(quad.tr, video, dw, dh).y) }, video, dw, dh),
-    br: displayToVideo({ x: clampX(videoToDisplay(quad.br, video, dw, dh).x), y: clampY(videoToDisplay(quad.br, video, dw, dh).y) }, video, dw, dh),
-    bl: displayToVideo({ x: clampX(videoToDisplay(quad.bl, video, dw, dh).x), y: clampY(videoToDisplay(quad.bl, video, dw, dh).y) }, video, dw, dh),
+    tl: clampCorner(quad.tl),
+    tr: clampCorner(quad.tr),
+    br: clampCorner(quad.br),
+    bl: clampCorner(quad.bl),
   };
 }
 
@@ -536,12 +545,23 @@ function smoothQuad(prev: Quad, fresh: Quad, alpha: number): Quad {
 
 // ── False-positive filter ───────────────────────────────────────────
 
+/**
+ * Returns true if the detected quad is a false-positive that spans nearly
+ * the entire frame — i.e. all four corners are near an edge of the display.
+ * Uses `every` to mean "each corner is close to some edge of the frame",
+ * which is the correct definition of a full-frame match.
+ *
+ * A real document quad should have at least some corners in the interior.
+ */
 function isEdgeQuad(dp: Pt[], dw: number, dh: number): boolean {
-  const edgeMargin = 0.03; // Tight margin — only filter obvious full-frame matches
-  return dp.every(p =>
-    p.x < dw * edgeMargin || p.x > dw * (1 - edgeMargin) ||
-    p.y < dh * edgeMargin || p.y > dh * (1 - edgeMargin)
-  );
+  const edgeMargin = 0.05; // 5% of dimension
+  const nearEdge = (p: Pt) =>
+    p.x < dw * edgeMargin ||
+    p.x > dw * (1 - edgeMargin) ||
+    p.y < dh * edgeMargin ||
+    p.y > dh * (1 - edgeMargin);
+  // All four corners near an edge → full-frame false positive
+  return dp.every(nearEdge);
 }
 
 // ── High-quality frame capture ───────────────────────────────────────
@@ -618,7 +638,8 @@ async function captureHighQualityFrame(
 
 export function useScannerEngine() {
   const language = useLanguageStore(s => s.language);
-  const msg = (da: string, en: string) => language === 'da' ? da : en;
+  // Stable reference — avoids stale-closure bugs in useCallback deps
+  const msg = useCallback((da: string, en: string) => language === 'da' ? da : en, [language]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -655,6 +676,17 @@ export function useScannerEngine() {
   const overlaySizedRef = useRef(false);
   const displayDimsRef = useRef({ dw: 0, dh: 0 });
   const torchOnRef = useRef(false);
+
+  // Re-arm overlay sizing when the element is resized (rotation, window resize)
+  useEffect(() => {
+    const overlay = overlayCanvasRef.current;
+    if (!overlay) return;
+    const ro = new ResizeObserver(() => {
+      overlaySizedRef.current = false;
+    });
+    ro.observe(overlay);
+    return () => ro.disconnect();
+  }, []);
 
   // Function refs (break circular dependencies)
   const stopCameraRef = useRef<() => void>(() => {});
@@ -1012,6 +1044,8 @@ export function useScannerEngine() {
     frameTimeEmaRef.current = 0;
     frameCountRef.current = 0;
     frameBusyRef.current = false;
+    stillnessCountRef.current = 0;   // Prevent stale count from triggering instant capture
+    prevFrameRef.current = null;
 
     const video = videoRef.current;
     // Prefer requestVideoFrameCallback (Chrome 83+) — fires exactly on new camera frames
@@ -1029,7 +1063,10 @@ export function useScannerEngine() {
       console.log('[ScannerEngine] Detection: requestVideoFrameCallback (frame-synced)');
     } else {
       // Fallback: setInterval for browsers without RVFC
-      intervalRef.current = setInterval(detectTick, DETECT_INTERVAL_MS);
+      intervalRef.current = setInterval(() => {
+        // Don't run during capture/processing phases — saves CPU on slow devices
+        if (!capturingRef.current) detectTick();
+      }, DETECT_INTERVAL_MS);
       console.log('[ScannerEngine] Detection: setInterval fallback');
     }
   }, [detectTick]);
@@ -1047,12 +1084,21 @@ export function useScannerEngine() {
 
     setPhase('capturing');
 
-    // Focus lock before capture: prevent AF hunting during the grab moment
+    // Focus lock before capture: prevent AF hunting during the grab moment.
+    // We apply 'manual' focus only if the track supports it, using a mid-range
+    // focusDistance. focusDistance: 0 means macro (minimum distance) which
+    // causes blurry captures on most Android devices — avoid it.
     const track = streamRef.current?.getVideoTracks()[0];
     if (track) {
       try {
-        await track.applyConstraints({ advanced: [{ focusMode: 'manual', focusDistance: 0 }] } as MediaTrackConstraintSet);
-        await new Promise(r => setTimeout(r, 200)); // Let lens settle
+        const caps = track.getCapabilities?.() as { focusMode?: string[]; focusDistance?: { min: number; max: number } } | undefined;
+        const supportsFocusLock = caps?.focusMode?.includes('manual');
+        if (supportsFocusLock && caps?.focusDistance) {
+          // Use ~30% of focus range — suitable for document scanning distance (30–60 cm)
+          const midDist = caps.focusDistance.min + (caps.focusDistance.max - caps.focusDistance.min) * 0.3;
+          await track.applyConstraints({ advanced: [{ focusMode: 'manual', focusDistance: midDist }] } as MediaTrackConstraintSet);
+          await new Promise(r => setTimeout(r, 200)); // Let lens settle
+        }
       } catch { /* Focus lock not supported — continue with continuous AF */ }
     }
 
