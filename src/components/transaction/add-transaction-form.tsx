@@ -768,8 +768,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               <img
                 src={receiptPreview}
                 alt="Document preview"
-                className="h-auto object-contain max-h-64 shadow-sm"
-                style={{ maxWidth: receiptNaturalWidth ? `${Math.min(Math.floor(receiptNaturalWidth * 1.5), 800)}px` : '100%', width: '100%' }}
+                className="w-full h-auto object-contain shadow-sm rounded"
+                style={{ maxHeight: '600px' }}
               />
             </div>
           ) : isFallback ? (
