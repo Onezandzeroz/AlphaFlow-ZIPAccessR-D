@@ -358,16 +358,48 @@ export async function PUT(
     const previousStatus = existing.status;
     const newStatus = body.status;
 
+    // ─── Recalculate totals from lineItems (same logic as POST) ────
+    let subtotal: number | undefined;
+    let vatTotal: number | undefined;
+    let total: number | undefined;
+
+    if (Array.isArray(body.lineItems) && body.lineItems.length > 0) {
+      subtotal = body.lineItems.reduce((sum: number, item: { quantity: number; unitPrice: number }) => {
+        return sum + (Number(item.quantity) * Number(item.unitPrice));
+      }, 0);
+
+      vatTotal = body.lineItems.reduce((sum: number, item: { quantity: number; unitPrice: number; vatPercent: number }) => {
+        return sum + ((Number(item.quantity) * Number(item.unitPrice) * Number(item.vatPercent)) / 100);
+      }, 0);
+
+      total = subtotal! + vatTotal!;
+    }
+
     // Build old/new data for audit
-    const oldData: Record<string, unknown> = { status: previousStatus, notes: existing.notes };
+    const oldData: Record<string, unknown> = {
+      status: previousStatus,
+      notes: existing.notes,
+      lineItems: existing.lineItems,
+      subtotal: existing.subtotal,
+      vatTotal: existing.vatTotal,
+      total: existing.total,
+      issueDate: existing.issueDate,
+      dueDate: existing.dueDate,
+    };
     const newData: Record<string, unknown> = {};
     if (newStatus) newData.status = newStatus;
     if (body.notes !== undefined) newData.notes = body.notes;
-    if (body.customerName) newData.customerName = body.customerName;
+    if (body.customerName !== undefined) newData.customerName = body.customerName;
     if (body.customerAddress !== undefined) newData.customerAddress = body.customerAddress;
     if (body.customerEmail !== undefined) newData.customerEmail = body.customerEmail;
     if (body.customerPhone !== undefined) newData.customerPhone = body.customerPhone;
     if (body.customerCvr !== undefined) newData.customerCvr = body.customerCvr;
+    if (body.lineItems !== undefined) newData.lineItems = body.lineItems;
+    if (subtotal !== undefined) newData.subtotal = subtotal;
+    if (vatTotal !== undefined) newData.vatTotal = vatTotal;
+    if (total !== undefined) newData.total = total;
+    if (body.issueDate) newData.issueDate = body.issueDate;
+    if (body.dueDate) newData.dueDate = body.dueDate;
 
     // Update the invoice
     const invoice = await db.invoice.update({
@@ -375,11 +407,17 @@ export async function PUT(
       data: {
         ...(newStatus && { status: newStatus }),
         ...(body.notes !== undefined && { notes: body.notes }),
-        ...(body.customerName && { customerName: body.customerName }),
+        ...(body.customerName !== undefined && { customerName: body.customerName }),
         ...(body.customerAddress !== undefined && { customerAddress: body.customerAddress }),
         ...(body.customerEmail !== undefined && { customerEmail: body.customerEmail }),
         ...(body.customerPhone !== undefined && { customerPhone: body.customerPhone }),
         ...(body.customerCvr !== undefined && { customerCvr: body.customerCvr }),
+        ...(body.lineItems && { lineItems: body.lineItems }),
+        ...(subtotal !== undefined && { subtotal }),
+        ...(vatTotal !== undefined && { vatTotal }),
+        ...(total !== undefined && { total }),
+        ...(body.issueDate && { issueDate: new Date(body.issueDate) }),
+        ...(body.dueDate && { dueDate: new Date(body.dueDate) }),
       },
     });
 
