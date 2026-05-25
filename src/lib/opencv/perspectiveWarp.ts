@@ -149,14 +149,22 @@ function gentleSCurve(gray: Uint8Array): void {
   // Higher values approach photocopy; lower values are nearly linear.
   const STEEPNESS = 4;
 
-  // Precompute 256-entry LUT
+  // Precompute 256-entry LUT, then rescale so 0→0 and 255→255.
+  // Without rescaling, the sigmoid never reaches exact 0 or 255,
+  // which lifts pure blacks and dims pure whites slightly.
   const lut = new Uint8Array(256);
   const midpointNorm = median / 255;
+  const raw = new Float32Array(256);
   for (let i = 0; i < 256; i++) {
     const x = i / 255;
     const centered = (x - midpointNorm) * STEEPNESS;
-    const sigmoid = 1 / (1 + Math.exp(-centered));
-    lut[i] = Math.min(255, Math.max(0, Math.round(sigmoid * 255)));
+    raw[i] = 1 / (1 + Math.exp(-centered));
+  }
+  const rawMin = raw[0];
+  const rawMax = raw[255];
+  const rawRange = rawMax - rawMin;
+  for (let i = 0; i < 256; i++) {
+    lut[i] = Math.min(255, Math.max(0, Math.round(((raw[i] - rawMin) / rawRange) * 255)));
   }
 
   // Apply LUT
@@ -184,7 +192,7 @@ function stretchContrast(gray: Uint8Array): void {
   for (let i = 255; i >= 0; i--) { cum += histogram[i]; if (cum >= n * 0.01) { hi = i; break; } }
 
   const range = hi - lo;
-  if (range <= 20) return; // Already high contrast
+  if (range <= 5) return; // Already full contrast — only skip truly saturated images
 
   const scale = 255 / range;
   for (let i = 0; i < n; i++) {
@@ -248,7 +256,8 @@ function boxBlurGray(gray: Uint8Array, w: number, h: number, radius: number): Fl
       const addX = Math.min(x + radius, w - 1);
       const subX = Math.max(x - radius - 1, 0);
       sum += gray[rowOff + addX] - gray[rowOff + subX];
-      temp[rowOff + x] = sum / (addX - subX);
+      // Window contains pixels [x-radius .. x+radius] clamped — count is addX - subX + 1
+      temp[rowOff + x] = sum / (addX - subX + 1);
     }
   }
 
@@ -264,7 +273,8 @@ function boxBlurGray(gray: Uint8Array, w: number, h: number, radius: number): Fl
       const addY = Math.min(y + radius, h - 1);
       const subY = Math.max(y - radius - 1, 0);
       sum += temp[addY * w + x] - temp[subY * w + x];
-      result[y * w + x] = sum / (addY - subY);
+      // Window contains rows [y-radius .. y+radius] clamped — count is addY - subY + 1
+      result[y * w + x] = sum / (addY - subY + 1);
     }
   }
 
@@ -310,36 +320,23 @@ function sauvolaBinarize(gray: Uint8Array, w: number, h: number): void {
   const R = 128;      // Dynamic range of standard deviation (normalization constant)
   const halfWin = 15; // Window half-size (31×31 window — large enough to capture local context)
 
-  // Build integral images for mean and mean-of-squares
-  // integral[i] = sum of gray[0..i]
-  // integralSq[i] = sum of gray[0..i]^2
-  const n = w * h;
-  const integral = new Float64Array(n + 1);
-  const integralSq = new Float64Array(n + 1);
+  // Standard 2D prefix-sum integral images.
+  // Size: (w+1) × (h+1), row stride = w+1.
+  // integral[y*(w+1)+x] = sum of gray over rect [0,0]..[x-1,y-1].
+  // This layout is required for the 4-corner rectangular sum formula to work correctly.
+  const stride = w + 1;
+  const integral = new Float64Array(stride * (h + 1));
+  const integralSq = new Float64Array(stride * (h + 1));
 
-  // Row 0
-  let rowSum = 0;
-  let rowSqSum = 0;
-  for (let x = 0; x < w; x++) {
-    const v = gray[x];
-    rowSum += v;
-    rowSqSum += v * v;
-    integral[x + 1] = rowSum;
-    integralSq[x + 1] = rowSqSum;
-  }
-
-  // Remaining rows
-  for (let y = 1; y < h; y++) {
-    const rowOff = y * w;
-    rowSum = 0;
-    rowSqSum = 0;
-    for (let x = 0; x < w; x++) {
-      const v = gray[rowOff + x];
+  for (let y = 1; y <= h; y++) {
+    let rowSum = 0;
+    let rowSqSum = 0;
+    for (let x = 1; x <= w; x++) {
+      const v = gray[(y - 1) * w + (x - 1)];
       rowSum += v;
       rowSqSum += v * v;
-      const idx = rowOff + x + 1;
-      integral[idx] = integral[idx - w] + rowSum;
-      integralSq[idx] = integralSq[idx - w] + rowSqSum;
+      integral[y * stride + x] = integral[(y - 1) * stride + x] + rowSum;
+      integralSq[y * stride + x] = integralSq[(y - 1) * stride + x] + rowSqSum;
     }
   }
 
@@ -353,14 +350,12 @@ function sauvolaBinarize(gray: Uint8Array, w: number, h: number): void {
 
       const area = (x2 - x1 + 1) * (y2 - y1 + 1);
 
-      // Sum from integral images: sum = II(x2,y2) - II(x1-1,y2) - II(x2,y1-1) + II(x1-1,y1-1)
-      const iy2 = y2 + 1;
-      const ix2 = x2 + 1;
-      const iy1 = y1;
-      const ix1 = x1;
+      // Rectangular sum using 4-corner formula on the (w+1)×(h+1) integral image
+      const r2 = y2 + 1, c2 = x2 + 1;
+      const r1 = y1,     c1 = x1;
 
-      const sum = integral[iy2 * w + ix2] - integral[iy2 * w + ix1] - integral[iy1 * w + ix2] + integral[iy1 * w + ix1];
-      const sumSq = integralSq[iy2 * w + ix2] - integralSq[iy2 * w + ix1] - integralSq[iy1 * w + ix2] + integralSq[iy1 * w + ix1];
+      const sum   = integral[r2*stride+c2]   - integral[r1*stride+c2]   - integral[r2*stride+c1]   + integral[r1*stride+c1];
+      const sumSq = integralSq[r2*stride+c2] - integralSq[r1*stride+c2] - integralSq[r2*stride+c1] + integralSq[r1*stride+c1];
 
       const mean = sum / area;
       const variance = sumSq / area - mean * mean;
@@ -395,17 +390,28 @@ function darkenText(gray: Uint8Array): void {
 
 /**
  * Paper whitening: lift near-white pixels toward pure white.
- * Threshold 225 catches pixels that are already quite bright.
- * Uses a linear ramp (not quadratic) for a natural, non-harsh result.
+ * Threshold 225 catches pixels that are already quite bright (warm-toned paper,
+ * slightly uneven mobile lighting).
+ *
+ * Uses a quadratic ease-in curve so pixels just above the threshold lift gently,
+ * while pixels close to 255 snap to pure white — natural, not harsh.
+ *
+ * Curve: output = THRESHOLD + t² × RANGE, where t = (pixel - THRESHOLD) / RANGE
  */
 function whitenPaper(gray: Uint8Array): void {
-  const THRESHOLD = 225;
-  const RANGE = 255 - THRESHOLD; // 30
-  for (let i = 0; i < gray.length; i++) {
-    if (gray[i] > THRESHOLD) {
-      const t = (gray[i] - THRESHOLD) / RANGE; // 0 → 1
-      gray[i] = Math.min(255, Math.round(THRESHOLD + t * t * RANGE));
+  const THRESHOLD = 220; // Slightly lowered to catch more warm-toned paper
+  const RANGE = 255 - THRESHOLD;
+  const lut = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    if (i <= THRESHOLD) {
+      lut[i] = i;
+    } else {
+      const t = (i - THRESHOLD) / RANGE; // 0 → 1
+      lut[i] = Math.min(255, Math.round(THRESHOLD + t * t * RANGE));
     }
+  }
+  for (let i = 0; i < gray.length; i++) {
+    gray[i] = lut[gray[i]];
   }
 }
 
@@ -528,48 +534,54 @@ function opencvWarp(
 ): HTMLCanvasElement {
   const src = cv.imread(sourceCanvas);
   const dst = new cv.Mat();
-
   const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
     quad.tl.x, quad.tl.y,
     quad.tr.x, quad.tr.y,
     quad.br.x, quad.br.y,
     quad.bl.x, quad.bl.y,
   ]);
-
   const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
     0, 0,
     outputWidth, 0,
     outputWidth, outputHeight,
     0, outputHeight,
   ]);
-
   const M = cv.getPerspectiveTransform(srcPts, dstPts);
-  cv.warpPerspective(
-    src, dst, M,
-    new cv.Size(outputWidth, outputHeight),
-    cv.INTER_CUBIC,
-    cv.BORDER_CONSTANT,
-    new cv.Scalar()
-  );
 
-  src.delete();
-  srcPts.delete();
-  dstPts.delete();
-  M.delete();
+  try {
+    cv.warpPerspective(
+      src, dst, M,
+      new cv.Size(outputWidth, outputHeight),
+      cv.INTER_CUBIC,
+      cv.BORDER_CONSTANT,
+      new cv.Scalar()
+    );
 
-  const outputCanvas = document.createElement('canvas');
-  outputCanvas.width = outputWidth;
-  outputCanvas.height = outputHeight;
-  cv.imshow(outputCanvas, dst);
-  dst.delete();
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = outputWidth;
+    outputCanvas.height = outputHeight;
+    cv.imshow(outputCanvas, dst);
 
-  enhanceCanvas(outputCanvas);
-
-  return outputCanvas;
+    enhanceCanvas(outputCanvas);
+    return outputCanvas;
+  } finally {
+    // Always free OpenCV mats — even if enhanceCanvas or imshow throws
+    src.delete();
+    dst.delete();
+    srcPts.delete();
+    dstPts.delete();
+    M.delete();
+  }
 }
 
 /**
- * Fallback: Simple Canvas 2D perspective warp using drawImage transforms.
+ * Fallback: Canvas 2D perspective crop — extracts the quad bounding box from
+ * the source and scales it to the output dimensions.
+ *
+ * This is NOT a full perspective correction (that requires a matrix transform),
+ * but it correctly crops to the detected document region rather than scaling
+ * the entire frame. For nearly-flat captures this produces usable results.
+ * True perspective warp only happens when OpenCV is available.
  */
 function canvasFallbackWarp(
   sourceCanvas: HTMLCanvasElement,
@@ -577,11 +589,29 @@ function canvasFallbackWarp(
   outputWidth: number,
   outputHeight: number,
 ): HTMLCanvasElement {
+  // Compute the bounding box of the quad in source coords
+  const xs = [quad.tl.x, quad.tr.x, quad.br.x, quad.bl.x];
+  const ys = [quad.tl.y, quad.tr.y, quad.br.y, quad.bl.y];
+  const x0 = Math.max(0, Math.floor(Math.min(...xs)));
+  const y0 = Math.max(0, Math.floor(Math.min(...ys)));
+  const x1 = Math.min(sourceCanvas.width,  Math.ceil(Math.max(...xs)));
+  const y1 = Math.min(sourceCanvas.height, Math.ceil(Math.max(...ys)));
+  const cropW = x1 - x0;
+  const cropH = y1 - y0;
+
   const outputCanvas = document.createElement('canvas');
   outputCanvas.width = outputWidth;
   outputCanvas.height = outputHeight;
   const ctx = outputCanvas.getContext('2d')!;
-  ctx.drawImage(sourceCanvas, 0, 0, outputWidth, outputHeight);
+
+  if (cropW > 0 && cropH > 0) {
+    // Draw only the quad bounding box, scaled to output dimensions
+    ctx.drawImage(sourceCanvas, x0, y0, cropW, cropH, 0, 0, outputWidth, outputHeight);
+  } else {
+    // Degenerate quad — fall back to full frame
+    ctx.drawImage(sourceCanvas, 0, 0, outputWidth, outputHeight);
+  }
+
   enhanceCanvas(outputCanvas);
   return outputCanvas;
 }
@@ -607,40 +637,40 @@ export function warpOnly(
 
   const src = cv.imread(sourceCanvas);
   const dst = new cv.Mat();
-
   const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
     quad.tl.x, quad.tl.y,
     quad.tr.x, quad.tr.y,
     quad.br.x, quad.br.y,
     quad.bl.x, quad.bl.y,
   ]);
-
   const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
     0, 0,
     outputWidth, 0,
     outputWidth, outputHeight,
     0, outputHeight,
   ]);
-
   const M = cv.getPerspectiveTransform(srcPts, dstPts);
-  cv.warpPerspective(
-    src, dst, M,
-    new cv.Size(outputWidth, outputHeight),
-    cv.INTER_CUBIC,
-    cv.BORDER_CONSTANT,
-    new cv.Scalar()
-  );
 
-  const outputCanvas = document.createElement('canvas');
-  outputCanvas.width = outputWidth;
-  outputCanvas.height = outputHeight;
-  cv.imshow(outputCanvas, dst);
+  try {
+    cv.warpPerspective(
+      src, dst, M,
+      new cv.Size(outputWidth, outputHeight),
+      cv.INTER_CUBIC,
+      cv.BORDER_CONSTANT,
+      new cv.Scalar()
+    );
 
-  src.delete();
-  dst.delete();
-  srcPts.delete();
-  dstPts.delete();
-  M.delete();
-
-  return outputCanvas;
+    const outputCanvas = document.createElement('canvas');
+    outputCanvas.width = outputWidth;
+    outputCanvas.height = outputHeight;
+    cv.imshow(outputCanvas, dst);
+    return outputCanvas;
+  } finally {
+    // Always free OpenCV mats — even if an exception is thrown
+    src.delete();
+    dst.delete();
+    srcPts.delete();
+    dstPts.delete();
+    M.delete();
+  }
 }
