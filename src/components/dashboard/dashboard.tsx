@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { User, useAuthStore } from '@/lib/auth-store';
 import { useTranslation } from '@/lib/use-translation';
+import { getRelativeDate } from '@/lib/date-utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -984,23 +985,13 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   };
 
   // ─── Relative time helper ──────────────────────────────────────
+  // Uses centralized getRelativeDate() from date-utils to correctly
+  // compare DATE-ONLY values (transactions, journal entries) as
+  // calendar dates, not timestamps. See date-utils.ts for rationale.
 
-  const getRelativeTime = (dateStr: string) => {
-    const now = new Date();
-    const date = new Date(dateStr);
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    const diffWeeks = Math.floor(diffDays / 7);
-
-    if (diffMins < 1) return language === 'da' ? 'Lige nu' : 'Just now';
-    if (diffMins < 60) return language === 'da' ? `${diffMins} min siden` : `${diffMins}m ago`;
-    if (diffHours < 24) return language === 'da' ? `${diffHours} timer siden` : `${diffHours}h ago`;
-    if (diffDays < 7) return language === 'da' ? `${diffDays} dage siden` : `${diffDays}d ago`;
-    if (diffWeeks < 4) return language === 'da' ? `${diffWeeks} uger siden` : `${diffWeeks}w ago`;
-    return td(date);
-  };
+  const getRelativeTime = useCallback((dateStr: string) => {
+    return getRelativeDate(dateStr, language);
+  }, [language]);
 
   // ─── Financial Health Score ────────────────────────────────────
 
