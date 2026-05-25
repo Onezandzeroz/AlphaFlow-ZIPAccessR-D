@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import path from 'path';
 
 /**
  * POST /api/ocr/pdf
@@ -31,37 +30,38 @@ export async function POST(request: NextRequest) {
     let pageImages: string[] = [];
 
     if (isPdf) {
-      // ── PDF: Render pages to images using pdfjs-dist + canvas ──
-      // Use require to avoid Turbopack bundling issues with pdfjs-dist internals
+      // ── PDF: Render pages to images using pdfjs-dist + node-canvas ──
+      // Fully dynamic require paths to avoid Turbopack resolution at build time
+      const nodePath = await import('path');
+      const cwd = process.cwd();
+      const pdfjsPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs');
+      const workerPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
+      const fontPath = nodePath.join(cwd, 'node_modules', 'pdfjs-dist', 'standard_fonts');
+      const canvasPath = nodePath.join(cwd, 'node_modules', 'canvas');
+
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs') as any;
-
-      // Set worker path explicitly for Node.js
-      const workerPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+      const pdfjsLib = require(pdfjsPath) as any;
       pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
-
-      const standardFontDataPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/standard_fonts');
 
       const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
-        standardFontDataUrl: standardFontDataPath + '/',
+        standardFontDataUrl: fontPath + '/',
       }).promise;
 
       const numPages = Math.min(pdf.numPages, 5);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createCanvas } = require(canvasPath);
 
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
         const scale = 2.0;
         const viewport = page.getViewport({ scale });
-
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { createCanvas } = require('canvas');
         const canvas = createCanvas(viewport.width, viewport.height);
         const ctx = canvas.getContext('2d');
-
         await page.render({ canvasContext: ctx, viewport }).promise;
         const pngBase64 = canvas.toDataURL('image/png');
         pageImages.push(pngBase64);
@@ -84,14 +84,7 @@ export async function POST(request: NextRequest) {
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
 
-    const content: Array<{
-      type: string;
-      text?: string;
-      image_url?: { url: string };
-    }> = [
-      {
-        type: 'text',
-        text: `Analyze this purchase invoice/receipt document${pageImages.length > 1 ? ` (${pageImages.length} pages)` : ''}. Extract the following information and return ONLY valid JSON (no markdown, no backticks):
+    const prompt = `Analyze this purchase invoice/receipt document${pageImages.length > 1 ? ` (${pageImages.length} pages)` : ''}. Extract the following information and return ONLY valid JSON (no markdown, no backticks):
 
 {
   "amount": <total amount as number, or null>,
@@ -115,15 +108,11 @@ Rules:
 - vatPercent should be 0-100 (not decimal)
 - Extract individual line items if visible
 - If no line items are visible, return empty lines array
-- Return ONLY the JSON object, nothing else`,
-      },
-    ];
+- Return ONLY the JSON object, nothing else`;
 
+    const content: any[] = [{ type: 'text' as const, text: prompt }];
     for (const imgDataUrl of pageImages) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: imgDataUrl },
-      });
+      content.push({ type: 'image_url' as const, image_url: { url: imgDataUrl } });
     }
 
     const response = await zai.chat.completions.createVision({
