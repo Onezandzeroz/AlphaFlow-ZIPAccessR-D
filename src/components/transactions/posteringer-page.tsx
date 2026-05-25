@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useLanguageStore } from '@/lib/language-store';
 import { useTranslation } from '@/lib/use-translation';
 import { useScannerStore } from '@/lib/scanner-store';
@@ -37,6 +37,16 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
   const [isMobileDialogOpen, setIsMobileDialogOpen] = useState(false);
   const [recurringTrigger, setRecurringTrigger] = useState(0);
 
+  // ── Viewport detection (lg = 1024px) ──
+  const subscribeToMedia = useCallback((cb: () => void) => {
+    const mql = window.matchMedia('(min-width: 1024px)');
+    mql.addEventListener('change', cb);
+    return () => mql.removeEventListener('change', cb);
+  }, []);
+  const getIsDesktopSnapshot = useCallback(() => window.matchMedia('(min-width: 1024px)').matches, []);
+  const getServerSnapshot = useCallback(() => false, []);
+  const isDesktop = useSyncExternalStore(subscribeToMedia, getIsDesktopSnapshot, getServerSnapshot);
+
   // ── Standalone scanner flow (FAB → scan → form) ──
   const [preloadedFile, setPreloadedFile] = useState<File | null>(null);
   const lastConsumedIdRef = useRef<number>(0);
@@ -46,9 +56,11 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
     lastConsumedIdRef.current = result.id;
     requestAnimationFrame(() => {
       setPreloadedFile(result.file);
-      // Desktop: full page, Mobile: dialog
+      // Desktop: full page only, Mobile: dialog only
       setCurrentView('create');
-      setIsMobileDialogOpen(true);
+      if (!window.matchMedia('(min-width: 1024px)').matches) {
+        setIsMobileDialogOpen(true);
+      }
     });
   }, []);
 
@@ -120,9 +132,12 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
   const handleAddClick = useCallback(() => {
     guardWriteAccess(isDa ? 'Tilføj indkøb' : 'Add Purchase', () => {
       setCurrentView('create');
-      setIsMobileDialogOpen(true);
+      // Only open dialog on mobile (not desktop)
+      if (!isDesktop) {
+        setIsMobileDialogOpen(true);
+      }
     });
-  }, [guardWriteAccess, isDa]);
+  }, [guardWriteAccess, isDa, isDesktop]);
 
   const tabs = [
     { id: 'transactions' as const, labelDa: 'Alle posteringer', labelEn: 'All Transactions', icon: Receipt },
