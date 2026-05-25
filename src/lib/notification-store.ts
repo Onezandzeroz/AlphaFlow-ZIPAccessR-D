@@ -28,7 +28,10 @@
 
 import { create } from 'zustand';
 import { useAuthStore } from './auth-store';
-import type { Socket } from 'socket.io-client';
+
+// NOTE: socket.io-client is imported dynamically (see connectSocketIO).
+// We intentionally avoid a static import so the build succeeds even if the
+// package is not yet installed — the system degrades to polling gracefully.
 
 // ─── Constants ────────────────────────────────────────────────────────
 
@@ -57,7 +60,8 @@ function getBroadcastChannel(): BroadcastChannel | null {
 
 // ─── Socket.IO client (cross-device real-time sync via WebSocket) ────
 
-let socketInstance: Socket | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let socketInstance: any = null;
 let socketConnecting = false;
 let currentSocketUserId: string | null = null;
 
