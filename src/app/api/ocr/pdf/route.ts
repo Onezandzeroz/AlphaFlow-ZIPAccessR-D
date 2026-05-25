@@ -10,8 +10,7 @@ import type { VisionMultimodalContentItem } from 'z-ai-web-dev-sdk';
  */
 export const maxDuration = 60;
 
-// Type declarations for packages without built-in types
-type PdfJsLib = typeof import('pdfjs-dist');
+// Type declarations for runtime-loaded packages
 type CanvasModule = { createCanvas: (w: number, h: number) => CanvasInstance };
 type CanvasInstance = {
   getContext(type: '2d'): CanvasContext;
