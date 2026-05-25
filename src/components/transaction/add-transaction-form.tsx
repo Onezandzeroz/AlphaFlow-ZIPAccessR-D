@@ -7,10 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { ResponsiveSwitch } from '@/components/ui/responsive-switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
 import {
   X,
   Info,
-  TrendingDown,
   BookOpen,
   Camera,
   Upload,
@@ -19,6 +19,11 @@ import {
   ArrowRightLeft,
   Loader2,
   Receipt,
+  Plus,
+  Package,
+  Trash2,
+  ScanSearch,
+  FileText,
 } from 'lucide-react';
 import {
   Select,
@@ -47,6 +52,14 @@ interface ExpenseAccount {
 interface RecentDescription {
   description: string;
   type: string;
+}
+
+interface PurchaseLineItem {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  vatPercent: number;
+  accountId: string;
 }
 
 interface AddTransactionFormProps {
@@ -97,8 +110,16 @@ function defaultYesterday(): string {
   return `${y}-${m}-${day}`;
 }
 
+const EMPTY_LINE_ITEM: PurchaseLineItem = {
+  description: '',
+  quantity: 1,
+  unitPrice: 0,
+  vatPercent: 25,
+  accountId: '',
+};
+
 export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloadedFileConsumed, onScannerActiveChange, layout = 'compact' }: AddTransactionFormProps) {
-  const { t, language } = useTranslation();
+  const { t, tc, language } = useTranslation();
   const isDa = language === 'da';
   const { handleMutationError } = useAccessErrorHandler();
 
@@ -124,9 +145,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const preloadedConsumedRef = useRef(false);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptPreviewUrlRef = useRef<string | null>(null);
-  // Track whether the user has manually interacted with the date field.
-  // OCR should override the default date (today) but NOT a user-chosen date.
   const dateManuallySetRef = useRef(false);
+
+  // ─── Purchase line items (for OCR + manual entry) ───
+  const [purchaseLines, setPurchaseLines] = useState<PurchaseLineItem[]>([
+    { ...EMPTY_LINE_ITEM },
+  ]);
 
   // ─── Data ───
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([]);
@@ -135,8 +159,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [descriptionsLoading, setDescriptionsLoading] = useState(false);
   const [showDescriptionSuggestions, setShowDescriptionSuggestions] = useState(false);
 
-  // Notify parent when scanner is active so the Dialog can prevent
-  // Radix from treating scanner clicks as "outside clicks" that close it.
+  // Notify parent when scanner is active
   useEffect(() => {
     onScannerActiveChange?.(scannerOpen);
   }, [scannerOpen, onScannerActiveChange]);
@@ -188,6 +211,17 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const vatAmount = netAmount * parsedVatPercent / 100;
   const totalAmount = netAmount + vatAmount;
 
+  // Line items totals
+  const lineTotals = useMemo(() => {
+    const subtotal = purchaseLines.reduce(
+      (sum, item) => sum + (item.quantity * item.unitPrice), 0
+    );
+    const vatTotal = purchaseLines.reduce(
+      (sum, item) => sum + ((item.quantity * item.unitPrice * item.vatPercent) / 100), 0
+    );
+    return { subtotal, vatTotal, total: subtotal + vatTotal };
+  }, [purchaseLines]);
+
   // Group accounts by category for the dropdown
   const groupedAccounts = useMemo(() => {
     const groups: Array<{ labelDa: string; labelEn: string; accounts: ExpenseAccount[] }> = [];
@@ -205,6 +239,23 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
   const selectedAccount = expenseAccounts.find((a) => a.id === selectedAccountId);
 
+  // ─── Line item callbacks ───
+  const addPurchaseLineItem = useCallback(() => {
+    setPurchaseLines(prev => [...prev, { ...EMPTY_LINE_ITEM }]);
+  }, []);
+
+  const removePurchaseLineItem = useCallback((index: number) => {
+    setPurchaseLines(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const updatePurchaseLineItem = useCallback((index: number, field: keyof PurchaseLineItem, value: string | number) => {
+    setPurchaseLines(prev =>
+      prev.map((item, i) =>
+        i === index ? { ...item, [field]: value } : item
+      )
+    );
+  }, []);
+
   // ─── Receipt handling ───
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -215,14 +266,20 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
     setReceiptFile(file);
     setError('');
-    const reader = new FileReader();
-    reader.onload = (event) => setReceiptPreview(event.target?.result as string);
-    reader.readAsDataURL(file);
+    // Clear any previous OCR line items when new document is uploaded
+    setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
+    if (file.type === 'application/pdf') {
+      // For PDFs, show a file icon placeholder
+      setReceiptPreview('pdf');
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => setReceiptPreview(event.target?.result as string);
+      reader.readAsDataURL(file);
+    }
   }, [isDa]);
 
   const clearReceipt = useCallback(() => {
     setReceiptFile(null);
-    // Revoke any Object URL created by the scanner
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
       receiptPreviewUrlRef.current = null;
@@ -230,40 +287,121 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setReceiptPreview(null);
     setOcrLoading(false);
     setOcrProgress(0);
+    setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
-  /**
-   * Apply OCR results to the form fields.
-   * Only fills a field if it's currently empty OR the user hasn't manually changed it.
-   * Date: overrides the default (today) unless the user manually picked a date.
-   * Amount: only fills if empty (preserves any user-typed value).
-   */
-  const applyOCRResult = useCallback((ocr: OCRResult) => {
-    if (ocr.amount !== null && !amount) {
-      setAmount(String(ocr.amount));
+  // ─── Manual OCR trigger ───
+  const handleManualOCR = useCallback(async () => {
+    if (!receiptFile) return;
+
+    // Only run OCR on images, not PDFs
+    if (receiptFile.type === 'application/pdf') {
+      toast.error(isDa ? 'OCR understøtter kun billeder' : 'OCR only supports images');
+      return;
     }
-    // Always apply OCR date unless the user has manually set one
-    if (ocr.date && !dateManuallySetRef.current) {
-      setDate(ocr.date);
-    }
-    if (ocr.vatPercent !== null) {
-      setVatPercent(String(ocr.vatPercent));
-    }
-    if (ocr.amount !== null) {
-      // If OCR found an amount and a VAT rate, the amount likely includes VAT
-      if (ocr.vatPercent !== null && ocr.vatPercent > 0) {
+
+    setOcrLoading(true);
+    setOcrProgress(0);
+
+    try {
+      const ocrResult = await scanReceipt(receiptFile, (progress) => {
+        setOcrProgress(progress);
+      });
+
+      setOcrLoading(false);
+      setOcrProgress(100);
+
+      // Apply OCR results to form fields
+      if (ocrResult.amount !== null && !amount) {
+        setAmount(String(ocrResult.amount));
+      }
+      if (ocrResult.date && !dateManuallySetRef.current) {
+        setDate(ocrResult.date);
+      }
+      if (ocrResult.vatPercent !== null) {
+        setVatPercent(String(ocrResult.vatPercent));
+      }
+      if (ocrResult.amount !== null && ocrResult.vatPercent !== null && ocrResult.vatPercent > 0) {
         setIncludesVAT(true);
       }
+
+      // Generate line items from raw OCR lines that contain amounts
+      const newLines: PurchaseLineItem[] = [];
+      const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
+
+      for (const rawLine of ocrResult.rawLines) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) continue;
+
+        const match = trimmed.match(amountPattern);
+        if (match) {
+          const lineAmount = parseFloat(match[1].replace(',', '.'));
+          // Skip if this looks like a total/sum line
+          const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
+          if (isTotalLine) continue;
+          // Skip VAT-only lines
+          const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
+          if (isVatLine && !amount) continue;
+
+          if (lineAmount > 0 && lineAmount < 100000) {
+            // Extract description (remove amount part from the line)
+            const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
+            newLines.push({
+              description: desc || trimmed,
+              quantity: 1,
+              unitPrice: lineAmount,
+              vatPercent: ocrResult.vatPercent ?? 25,
+              accountId: '',
+            });
+          }
+        }
+      }
+
+      // If no line items were extracted, create a single line from the total
+      if (newLines.length === 0 && ocrResult.amount !== null) {
+        newLines.push({
+          description: isDa ? 'Køb' : 'Purchase',
+          quantity: 1,
+          unitPrice: ocrResult.amount,
+          vatPercent: ocrResult.vatPercent ?? 25,
+          accountId: '',
+        });
+      }
+
+      if (newLines.length > 0) {
+        setPurchaseLines(newLines);
+      }
+
+      // Show result toast
+      if (ocrResult.confidence > 0 && (ocrResult.amount || ocrResult.date || newLines.length > 0)) {
+        toast.success(isDa ? 'Dokument læst' : 'Document scanned', {
+          description: isDa
+            ? `Fundet ${newLines.length} købslinje${newLines.length !== 1 ? 'r' : ''}${ocrResult.amount ? `, beløb: ${ocrResult.amount} kr` : ''}${ocrResult.date ? `, dato: ${ocrResult.date}` : ''}`
+            : `Found ${newLines.length} line item${newLines.length !== 1 ? 's' : ''}${ocrResult.amount ? `, amount: ${ocrResult.amount} DKK` : ''}${ocrResult.date ? `, date: ${ocrResult.date}` : ''}`,
+          duration: 4000,
+        });
+      } else {
+        toast.warning(isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document', {
+          description: isDa
+            ? 'Tilføj købslinjer manuelt'
+            : 'Add purchase lines manually',
+          duration: 3000,
+        });
+      }
+    } catch {
+      setOcrLoading(false);
+      toast.error(isDa ? 'OCR fejl' : 'OCR error', {
+        description: isDa ? 'Kunne ikke læse dokumentet. Prøv igen eller tilføj linjer manuelt.' : 'Could not read document. Try again or add lines manually.',
+      });
     }
-  }, [amount]);
+  }, [receiptFile, amount, isDa]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
-  // auto-attach it to the form and run OCR.
+  // auto-attach it to the form (OCR is manual now — user triggers it).
   useEffect(() => {
     if (preloadedReceiptFile && !preloadedConsumedRef.current) {
       preloadedConsumedRef.current = true;
-      // Revoke any previous Object URL
       if (receiptPreviewUrlRef.current) {
         URL.revokeObjectURL(receiptPreviewUrlRef.current);
       }
@@ -272,35 +410,13 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setReceiptFile(preloadedReceiptFile);
       setReceiptPreview(previewUrl);
       onPreloadedFileConsumed?.();
-
-      // Run OCR on the preloaded image
-      setOcrLoading(true);
-      setOcrProgress(0);
-      scanReceipt(preloadedReceiptFile, (progress) => {
-        setOcrProgress(progress);
-      }).then((ocrResult) => {
-        setOcrLoading(false);
-        setOcrProgress(100);
-        applyOCRResult(ocrResult);
-        if (ocrResult.confidence > 0 && (ocrResult.amount || ocrResult.date)) {
-          toast.success(isDa ? 'Kvittering læst' : 'Receipt scanned', {
-            description: isDa
-              ? `Fundet ${ocrResult.amount ? `beløb: ${ocrResult.amount} kr` : ''}${ocrResult.amount && ocrResult.date ? ', ' : ''}${ocrResult.date ? `dato: ${ocrResult.date}` : ''}`
-              : `Found ${ocrResult.amount ? `amount: ${ocrResult.amount} DKK` : ''}${ocrResult.amount && ocrResult.date ? ', ' : ''}${ocrResult.date ? `date: ${ocrResult.date}` : ''}`,
-            duration: 4000,
-          });
-        }
-      }).catch(() => {
-        setOcrLoading(false);
-      });
     }
     if (!preloadedReceiptFile) {
       preloadedConsumedRef.current = false;
     }
-  }, [preloadedReceiptFile, onPreloadedFileConsumed, isDa, applyOCRResult]);
+  }, [preloadedReceiptFile, onPreloadedFileConsumed]);
 
   const handleScannerCapture = useCallback((file: File) => {
-    // Revoke any previous Object URL to prevent memory leaks
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
     }
@@ -309,28 +425,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setReceiptFile(file);
     setReceiptPreview(previewUrl);
     setScannerOpen(false);
-
-    // Run OCR on the captured image
-    setOcrLoading(true);
-    setOcrProgress(0);
-    scanReceipt(file, (progress) => {
-      setOcrProgress(progress);
-    }).then((ocrResult) => {
-      setOcrLoading(false);
-      setOcrProgress(100);
-      applyOCRResult(ocrResult);
-      if (ocrResult.confidence > 0 && (ocrResult.amount || ocrResult.date)) {
-        toast.success(isDa ? 'Kvittering læst' : 'Receipt scanned', {
-          description: isDa
-            ? `Fundet ${ocrResult.amount ? `beløb: ${ocrResult.amount} kr` : ''}${ocrResult.amount && ocrResult.date ? ', ' : ''}${ocrResult.date ? `dato: ${ocrResult.date}` : ''}`
-            : `Found ${ocrResult.amount ? `amount: ${ocrResult.amount} DKK` : ''}${ocrResult.amount && ocrResult.date ? ', ' : ''}${ocrResult.date ? `date: ${ocrResult.date}` : ''}`,
-          duration: 4000,
-        });
-      }
-    }).catch(() => {
-      setOcrLoading(false);
-    });
-  }, [isDa, applyOCRResult]);
+  }, []);
 
   const handleScannerDismiss = useCallback(() => {
     setScannerOpen(false);
@@ -348,7 +443,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setError('');
     setAccountError('');
 
-    // Validate expense account is selected (required for double-entry)
     if (!selectedAccountId) {
       setAccountError(isDa
         ? 'Vælg en omkostningskonto for at bogføre i dobbelt-posteringsregnskabet'
@@ -407,6 +501,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setDescription('');
       setVatPercent('25');
       setSelectedAccountId('');
+      setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
       clearReceipt();
 
       toast.success(isDa ? 'Indkøb bogført' : 'Purchase recorded', {
@@ -568,55 +663,113 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     </div>
   );
 
-  // Shared: Receipt upload/scan
+  // Document preview card (shown when a file is uploaded)
+  const renderDocumentPreview = () => {
+    if (!receiptPreview) return null;
+
+    const isPdf = receiptPreview === 'pdf';
+    const fileName = receiptFile?.name || '';
+
+    return (
+      <div className="space-y-3">
+        {/* Preview area */}
+        <div className="relative rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden bg-gray-50 dark:bg-gray-900/50">
+          {isPdf ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
+              <FileText className="h-12 w-12" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{fileName}</p>
+                <p className="text-xs mt-0.5">PDF</p>
+              </div>
+            </div>
+          ) : (
+            <img src={receiptPreview} alt="Document preview" className="w-full h-auto object-contain max-h-64" />
+          )}
+
+          {/* OCR loading overlay */}
+          {ocrLoading && (
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2">
+              <Loader2 className="h-6 w-6 text-white animate-spin" />
+              <div className="w-32 h-1.5 rounded-full bg-white/20 overflow-hidden">
+                <div
+                  className="h-full bg-teal-400 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${Math.max(ocrProgress, 5)}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-white/80 font-medium">
+                {isDa ? 'Læser dokument…' : 'Reading document…'}
+              </p>
+            </div>
+          )}
+
+          {/* Action buttons overlay */}
+          {!ocrLoading && (
+            <div className="absolute top-2 right-2 flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 shadow-sm"
+                onClick={handleManualOCR}
+                disabled={!isPdf && false}
+                title={isDa ? 'Læs dokument med OCR' : 'Read document with OCR'}
+              >
+                <ScanSearch className="h-3.5 w-3.5" />
+              </Button>
+              {!isPdf && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 shadow-sm"
+                  onClick={() => {
+                    const a = document.createElement('a');
+                    a.href = receiptPreview;
+                    const now = new Date();
+                    const pad = (n: number) => String(n).padStart(2, '0');
+                    a.download = `dokument_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.jpg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                  }}
+                  aria-label={isDa ? 'Gem billede' : 'Save image'}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button type="button" variant="destructive" size="sm" className="bg-red-500/90 backdrop-blur-sm shadow-sm" onClick={clearReceipt}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {/* OCR trigger button below preview */}
+        {!ocrLoading && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full h-10 gap-2 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
+            onClick={handleManualOCR}
+            disabled={isPdf}
+          >
+            <ScanSearch className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+            <span className="text-sm font-medium">
+              {isDa ? 'Læs dokument med OCR' : 'Read document with OCR'}
+            </span>
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  // Shared: Receipt upload area (only shown when no document is uploaded)
   const renderReceiptUpload = () => (
     <div className="space-y-1.5">
       <Label className="dark:text-gray-300 text-sm font-medium">{t('receipt')} <span className="text-gray-400 text-xs font-normal">({isDa ? 'valgfrit' : 'optional'})</span></Label>
-      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" disabled={isLoading} />
+      <input ref={fileInputRef} type="file" accept="image/*,.pdf" onChange={handleFileChange} className="hidden" disabled={isLoading} />
       {receiptPreview ? (
-        <div className="relative">
-          <div className="w-full rounded-lg border overflow-hidden bg-gray-50 dark:bg-gray-900/50">
-            <img src={receiptPreview} alt="Receipt preview" className={`w-full h-auto object-contain ${layout === 'cards' ? 'max-h-64' : 'max-h-52'}`} />
-            {ocrLoading && (
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2">
-                <Loader2 className="h-6 w-6 text-white animate-spin" />
-                <div className="w-32 h-1.5 rounded-full bg-white/20 overflow-hidden">
-                  <div
-                    className="h-full bg-teal-400 rounded-full transition-all duration-300 ease-out"
-                    style={{ width: `${Math.max(ocrProgress, 5)}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-white/80 font-medium">
-                  {isDa ? 'Læser kvittering…' : 'Reading receipt…'}
-                </p>
-              </div>
-            )}
-          </div>
-          <div className="absolute top-2 right-2 flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700"
-              onClick={() => {
-                const a = document.createElement('a');
-                a.href = receiptPreview;
-                const now = new Date();
-                const pad = (n: number) => String(n).padStart(2, '0');
-                a.download = `kvittering_${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.jpg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-              }}
-              aria-label={isDa ? 'Gem billede' : 'Save image'}
-            >
-              <Download className="h-3.5 w-3.5" />
-            </Button>
-            <Button type="button" variant="destructive" size="sm" className="bg-red-500/80 backdrop-blur-sm" onClick={clearReceipt}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
+        renderDocumentPreview()
       ) : (
         <div className={`grid gap-2 ${layout === 'cards' ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {layout !== 'cards' && (
@@ -642,7 +795,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           >
             <div className="flex flex-col items-center gap-1">
               <Upload className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-              <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Vælg fil' : 'Choose file'}</span>
+              <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Upload kvittering eller købsfaktura' : 'Upload receipt or purchase invoice'}</span>
             </div>
           </Button>
         </div>
@@ -693,6 +846,132 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     </div>
   );
 
+  // ─── Line items card content (matches invoice line items pattern) ───
+  const renderLineItems = () => (
+    <div className="space-y-4">
+      {purchaseLines.map((item, index) => (
+        <div key={index} className="flex flex-col gap-3 p-4 rounded-lg border border-gray-100/50 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
+          <div className="flex flex-wrap gap-3 items-end">
+            {/* Account selector */}
+            <div className="w-48 space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">
+                {isDa ? 'Konto' : 'Account'}
+              </Label>
+              <Select
+                value={item.accountId}
+                onValueChange={(val) => updatePurchaseLineItem(index, 'accountId', val)}
+              >
+                <SelectTrigger className="h-10 bg-white dark:bg-white/5">
+                  <SelectValue placeholder={isDa ? 'Vælg konto...' : 'Select account...'} />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-[#1a1f1e] dark:border-[#232740] max-h-64 overflow-y-auto">
+                  {groupedAccounts.map((group) => (
+                    <SelectGroup key={group.labelDa}>
+                      <SelectLabel className="text-xs font-semibold text-gray-500 dark:text-gray-400 px-2 py-1.5 select-none">
+                        {isDa ? group.labelDa : group.labelEn} ({group.accounts[0]?.number.slice(0, 1)}xxx)
+                      </SelectLabel>
+                      {group.accounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          <span className="font-mono text-xs mr-1">{acc.number}</span> {isDa ? acc.name : (acc.nameEn || acc.name)}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Description */}
+            <div className="flex-1 min-w-[180px] space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">{t('itemDescription')}</Label>
+              <Input
+                value={item.description}
+                onChange={(e) => updatePurchaseLineItem(index, 'description', e.target.value)}
+                placeholder={t('itemDescription')}
+                className="h-10 bg-white dark:bg-white/5"
+              />
+            </div>
+            {/* Quantity */}
+            <div className="w-20 space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">{t('quantity')}</Label>
+              <Input
+                type="number"
+                min="1"
+                value={item.quantity}
+                onChange={(e) => updatePurchaseLineItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                className="h-10 bg-white dark:bg-white/5 text-center"
+              />
+            </div>
+            {/* Unit Price */}
+            <div className="w-28 space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">{t('unitPrice')}</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={item.unitPrice || ''}
+                onChange={(e) => updatePurchaseLineItem(index, 'unitPrice', parseFloat(e.target.value) || 0)}
+                className="h-10 bg-white dark:bg-white/5 text-right"
+              />
+            </div>
+            {/* VAT % */}
+            <div className="w-20 space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">{t('vatPercent')}</Label>
+              <Select
+                value={item.vatPercent.toString()}
+                onValueChange={(val) => updatePurchaseLineItem(index, 'vatPercent', parseFloat(val))}
+              >
+                <SelectTrigger className="h-10 bg-white dark:bg-white/5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-white dark:bg-[#1a1f1e] dark:border-[#232740]">
+                  <SelectItem value="0">0%</SelectItem>
+                  <SelectItem value="12">12%</SelectItem>
+                  <SelectItem value="25">25%</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Amount (read-only) */}
+            <div className="w-24 space-y-1">
+              <Label className="text-xs text-gray-500 dark:text-gray-400">{t('amount')}</Label>
+              <div className="h-10 px-3 flex items-center justify-end text-sm font-medium text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-700 rounded-md">
+                {tc(item.quantity * item.unitPrice)}
+              </div>
+            </div>
+            {/* Delete */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => removePurchaseLineItem(index)}
+              disabled={purchaseLines.length === 1}
+              className="text-gray-400 hover:text-red-500 disabled:opacity-30"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      ))}
+
+      {/* Totals */}
+      <div className="flex justify-end">
+        <div className="w-72 space-y-3">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500 dark:text-gray-400">{t('subtotal')}</span>
+            <span className="font-medium dark:text-gray-300">{tc(lineTotals.subtotal)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500 dark:text-gray-400">{t('vatTotalLabel')}</span>
+            <span className="font-medium dark:text-gray-300">{tc(lineTotals.vatTotal)}</span>
+          </div>
+          <Separator className="dark:bg-gray-700" />
+          <div className="flex justify-between">
+            <span className="text-lg font-bold text-gray-900 dark:text-white">{t('grandTotal')}</span>
+            <span className="text-lg font-bold text-[#0d9488] dark:text-[#2dd4bf]">{tc(lineTotals.total)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   // Shared: Submit button
   const renderSubmit = () => (
     <Button
@@ -734,7 +1013,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     <form onSubmit={handleSubmit} className="space-y-4 lg:space-y-6">
       {renderError()}
 
-      {/* ── Two-column: Purchase Details + Receipt & Description ── */}
+      {/* ── Two-column: Purchase Details + Receipt & Invoice ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
 
         {/* ── Left Card: Purchase Details ── */}
@@ -824,19 +1103,19 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           </CardContent>
         </Card>
 
-        {/* ── Right Card: Receipt & Description ── */}
+        {/* ── Right Card: Kvittering & Købsfaktura ── */}
         <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
           <CardHeader className="pb-4">
             <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shrink-0">
                 <Receipt className="h-4 w-4 text-white" />
               </div>
-              {isDa ? 'Kvittering & Beskrivelse' : 'Receipt & Description'}
+              {isDa ? 'Kvittering & Købsfaktura' : 'Receipt & Purchase Invoice'}
             </CardTitle>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {isDa
-                ? 'Scan eller upload en kvittering, og tilføj en beskrivelse'
-                : 'Scan or upload a receipt and add a description'}
+                ? 'Upload en kvittering eller købsfaktura, og læs den med OCR'
+                : 'Upload a receipt or purchase invoice and read it with OCR'}
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -846,10 +1125,27 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         </Card>
       </div>
 
-      {/* ── Bottom Card: Record Purchase ── */}
+      {/* ── Bottom Card: Købslinjer (Line Items) — matches invoice varelinjer pattern ── */}
       <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
-        <CardContent className="py-5">
-          <div className="flex items-center justify-between gap-4">
+        <CardHeader className="pb-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shrink-0">
+                <Package className="h-4 w-4 text-white" />
+              </div>
+              {isDa ? 'Købslinjer' : 'Purchase Lines'}
+            </CardTitle>
+            <Button variant="outline" size="sm" onClick={addPurchaseLineItem} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              {t('addItem')}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {renderLineItems()}
+
+          {/* Submit row */}
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100 dark:border-white/5">
             <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
               <ArrowRightLeft className="h-4 w-4 text-teal-500" />
               <span>{isDa
