@@ -717,11 +717,11 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       <form onSubmit={handleSubmit} className="space-y-4">
         {renderError()}
         {renderInfoBanner()}
-        {renderAccountSelect()}
         {renderDateAmount()}
         {renderCalculations()}
         {renderVatCurrency()}
         {renderExchangeRate()}
+        {renderAccountSelect()}
         {renderReceiptUpload()}
         {renderDescription()}
         {renderSubmit()}
@@ -748,36 +748,22 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Section: Expense Account */}
-            {renderAccountSelect()}
-
-            <div className="border-t border-gray-100 dark:border-white/5" />
-
-            {/* Section: Amount & Date (amount first) */}
-            <div className="space-y-4">
-              {/* Amount */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="dark:text-gray-300 text-sm font-medium">{t('amount')}</Label>
-                  <div className="flex items-center gap-1.5">
-                    <Label className="text-[11px] text-gray-500 dark:text-gray-400 cursor-pointer">{t('amountIncludesVAT')}</Label>
-                    <ResponsiveSwitch checked={includesVAT} onCheckedChange={setIncludesVAT} disabled={isLoading} />
-                  </div>
+            {/* ── 1. Beløb (Amount) ── */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="dark:text-gray-300 text-sm font-medium">{t('amount')}</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="text-[11px] text-gray-500 dark:text-gray-400 cursor-pointer">{t('amountIncludesVAT')}</Label>
+                  <ResponsiveSwitch checked={includesVAT} onCheckedChange={setIncludesVAT} disabled={isLoading} />
                 </div>
-                <div className="relative">
-                  <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={isLoading} className="h-12 text-xl font-bold text-right pr-14 bg-gray-50 dark:bg-white/5 tabular-nums" />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2"><span className="text-xs font-semibold text-gray-400 dark:text-gray-500">DKK</span></div>
-                </div>
-                {includesVAT && (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
-                )}
               </div>
-
-              {/* Date */}
-              <div className="space-y-1.5">
-                <Label htmlFor="date-cards" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
-                <Input id="date-cards" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
+              <div className="relative">
+                <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={isLoading} className="h-12 text-xl font-bold text-right pr-14 bg-gray-50 dark:bg-white/5 tabular-nums" />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2"><span className="text-xs font-semibold text-gray-400 dark:text-gray-500">DKK</span></div>
               </div>
+              {includesVAT && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
+              )}
             </div>
 
             {/* Net / VAT / Gross calculation row */}
@@ -800,7 +786,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
             <div className="border-t border-gray-100 dark:border-white/5" />
 
-            {/* Section: VAT, Currency & Exchange rate */}
+            {/* ── 2. Moms % & Valuta ── */}
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -822,6 +808,19 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 </div>
               )}
             </div>
+
+            <div className="border-t border-gray-100 dark:border-white/5" />
+
+            {/* ── 3. Dato ── */}
+            <div className="space-y-1.5">
+              <Label htmlFor="date-cards" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
+              <Input id="date-cards" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
+            </div>
+
+            <div className="border-t border-gray-100 dark:border-white/5" />
+
+            {/* ── 4. Fra konto ── */}
+            {renderAccountSelect()}
           </CardContent>
         </Card>
 
