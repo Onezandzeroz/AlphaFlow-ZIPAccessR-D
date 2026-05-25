@@ -131,7 +131,7 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
 
   // ── Full-page create form (desktop) ──
   const renderCreatePage = () => (
-    <div className="space-y-6">
+    <div className="p-3 lg:p-6 space-y-4 lg:space-y-6">
       <PageHeader
         title={isDa ? 'Tilføj indkøb' : 'Add Purchase'}
         description={isDa
@@ -149,27 +149,26 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           </Button>
         )}
       />
-      <div className="px-3 lg:px-6">
-        <div className="max-w-2xl">
-          <AddTransactionForm
-            onSuccess={handleSuccess}
-            preloadedReceiptFile={preloadedFile}
-            onPreloadedFileConsumed={handlePreloadedFileConsumed}
-            onScannerActiveChange={(active) => { isScannerActiveRef.current = active; }}
-          />
-          <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-800">
-            <button
-              type="button"
-              onClick={handleSwitchToRecurring}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/5 dark:hover:bg-[#2dd4bf]/5 transition-colors cursor-pointer"
-            >
-              <RefreshCw className="h-4 w-4" />
-              <span className="flex-1 text-left font-medium">
-                {isDa ? 'Tilføj gentagende indkøb' : 'Add recurring purchase'}
-              </span>
-              <ArrowRight className="h-3.5 w-3.5 opacity-50" />
-            </button>
-          </div>
+      <div>
+        <AddTransactionForm
+          layout="cards"
+          onSuccess={handleSuccess}
+          preloadedReceiptFile={preloadedFile}
+          onPreloadedFileConsumed={handlePreloadedFileConsumed}
+          onScannerActiveChange={(active) => { isScannerActiveRef.current = active; }}
+        />
+        <div className="pt-3 mt-3">
+          <button
+            type="button"
+            onClick={handleSwitchToRecurring}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/5 dark:hover:bg-[#2dd4bf]/5 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span className="flex-1 text-left font-medium">
+              {isDa ? 'Tilføj gentagende indkøb' : 'Add recurring purchase'}
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 opacity-50" />
+          </button>
         </div>
       </div>
     </div>
