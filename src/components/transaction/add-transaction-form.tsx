@@ -769,11 +769,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 src={receiptPreview}
                 alt="Document preview"
                 className="h-auto object-contain max-h-64 shadow-sm"
-                onLoad={(e) => {
-                  const img = e.currentTarget;
-                  if (img.naturalWidth) setReceiptNaturalWidth(img.naturalWidth);
-                }}
-                style={{ maxWidth: receiptNaturalWidth ? `${Math.floor(receiptNaturalWidth / 2)}px` : '100%', width: 'auto' }}
+                style={{ maxWidth: receiptNaturalWidth ? `${Math.min(Math.floor(receiptNaturalWidth * 1.5), 800)}px` : '100%', width: '100%' }}
               />
             </div>
           ) : isFallback ? (
