@@ -32,16 +32,17 @@ export async function POST(request: NextRequest) {
 
     if (isPdf) {
       // ── PDF: Render pages to images using pdfjs-dist + canvas ──
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const pdfjsLibAny = pdfjsLib as any;
+      // Use require to avoid Turbopack bundling issues with pdfjs-dist internals
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.mjs') as any;
 
       // Set worker path explicitly for Node.js
       const workerPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
-      pdfjsLibAny.GlobalWorkerOptions.workerSrc = workerPath;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
       const standardFontDataPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules/pdfjs-dist/standard_fonts');
 
-      const pdf = await pdfjsLibAny.getDocument({
+      const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
@@ -56,7 +57,8 @@ export async function POST(request: NextRequest) {
         const scale = 2.0;
         const viewport = page.getViewport({ scale });
 
-        const { createCanvas } = await import('canvas');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { createCanvas } = require('canvas');
         const canvas = createCanvas(viewport.width, viewport.height);
         const ctx = canvas.getContext('2d');
 
