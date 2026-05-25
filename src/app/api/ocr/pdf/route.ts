@@ -10,6 +10,36 @@ import type { VisionMultimodalContentItem } from 'z-ai-web-dev-sdk';
  */
 export const maxDuration = 60;
 
+// Type declarations for packages without built-in types
+type PdfJsLib = typeof import('pdfjs-dist');
+type CanvasModule = { createCanvas: (w: number, h: number) => CanvasInstance };
+type CanvasInstance = {
+  getContext(type: '2d'): CanvasContext;
+  toDataURL(mime: string): string;
+  width: number;
+  height: number;
+};
+type CanvasContext = {
+  fillRect(x: number, y: number, w: number, h: number): void;
+  drawImage(img: any, x: number, y: number): void;
+  getImageData(x: number, y: number, w: number, h: number): ImageData;
+};
+
+async function getPdfjsLib(): Promise<any> {
+  try {
+    // Try legacy build (better Node.js support)
+    const mod = await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
+    return mod;
+  } catch {
+    // Fallback to main entry
+    return await import('pdfjs-dist');
+  }
+}
+
+async function getCanvas() {
+  return await import('canvas') as unknown as CanvasModule;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -33,15 +63,15 @@ export async function POST(request: NextRequest) {
 
     if (isPdf) {
       // ── PDF: Render pages to images using pdfjs-dist + node-canvas ──
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const pdfjs = pdfjsLib as any;
+      const pdfjsLib = await getPdfjsLib();
 
-      const workerPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
-      pdfjs.GlobalWorkerOptions.workerSrc = workerPath;
+      const cwd = process.cwd();
+      const workerPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
+      const fontPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'standard_fonts');
 
-      const fontPath = path.join(/*turbopackIgnore: true*/ process.cwd(), 'node_modules', 'pdfjs-dist', 'standard_fonts');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
-      const pdf = await pdfjs.getDocument({
+      const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
@@ -50,7 +80,7 @@ export async function POST(request: NextRequest) {
       }).promise;
 
       const numPages = Math.min(pdf.numPages, 5);
-      const { createCanvas } = await import('canvas');
+      const { createCanvas } = await getCanvas();
 
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
