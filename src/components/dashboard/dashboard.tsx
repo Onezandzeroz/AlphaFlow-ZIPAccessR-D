@@ -1423,30 +1423,34 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           ? `Regnskabsoversigt for ${tm(new Date())}`
           : `Accounting overview for ${tm(new Date())}`
         }
-        action={(
-          <div className="flex items-center gap-1.5 [&_button]:text-white/70 [&_button:hover]:text-white [&_button:hover]:bg-white/15 [&_button]:backdrop-blur-sm">
-            <DateRangeFilter value={dateRange} onChange={setDateRange} />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setIsDragMode(!isDragMode)}
-              className={`gap-1.5 text-xs font-medium shrink-0 h-8 px-3 backdrop-blur-sm ${isDragMode ? 'bg-teal-500/20 text-white hover:bg-teal-500/30' : 'text-white/70 hover:text-white hover:bg-white/15'}`}
-            >
-              <GripVertical className="h-3.5 w-3.5" />
-              {isDragMode ? (language === 'da' ? 'Færdig' : 'Done') : (language === 'da' ? 'Flyt' : 'Move')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setWidgetPickerOpen(true)}
-              className="gap-1.5 text-white/70 hover:text-white hover:bg-white/15 text-xs font-medium shrink-0 h-8 px-3 backdrop-blur-sm"
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-              {language === 'da' ? 'Tilpas' : 'Customize'}
-            </Button>
-          </div>
-        )}
       />
+
+      {/* ─── Dashboard Controls: Altid (left) · Flyt + Tilpas (right) ─── */}
+      <div className="w-full flex items-center justify-between px-3 lg:px-6 mb-4">
+        <div>
+          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsDragMode(!isDragMode)}
+            className={`gap-1.5 text-xs font-medium shrink-0 h-8 px-3 ${isDragMode ? 'bg-[#0d9488]/10 text-[#0d9488] hover:bg-[#0d9488]/20 dark:bg-[#2dd4bf]/10 dark:text-[#2dd4bf] dark:hover:bg-[#2dd4bf]/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+            {isDragMode ? (language === 'da' ? 'Færdig' : 'Done') : (language === 'da' ? 'Flyt' : 'Move')}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setWidgetPickerOpen(true)}
+            className="gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted text-xs font-medium shrink-0 h-8 px-3"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            {language === 'da' ? 'Tilpas' : 'Customize'}
+          </Button>
+        </div>
+      </div>
       )}
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
