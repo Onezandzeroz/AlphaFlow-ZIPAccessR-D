@@ -139,6 +139,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [vatPercent, setVatPercent] = useState('25');
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+  const [receiptNaturalWidth, setReceiptNaturalWidth] = useState<number | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -268,6 +269,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setError('');
     // Clear any previous OCR line items when new document is uploaded
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
+    setReceiptNaturalWidth(null); // reset natural width for new file
 
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
@@ -329,6 +331,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       receiptPreviewUrlRef.current = null;
     }
     setReceiptPreview(null);
+    setReceiptNaturalWidth(null);
     setOcrLoading(false);
     setOcrProgress(0);
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
@@ -761,7 +764,18 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{isDa ? 'Indlæser PDF…' : 'Loading PDF…'}</p>
             </div>
           ) : isImagePreview ? (
-            <img src={receiptPreview} alt="Document preview" className="w-full h-auto object-contain max-h-64" />
+            <div className="flex justify-center p-2">
+              <img
+                src={receiptPreview}
+                alt="Document preview"
+                className="h-auto object-contain max-h-64 shadow-sm"
+                onLoad={(e) => {
+                  const img = e.currentTarget;
+                  if (img.naturalWidth) setReceiptNaturalWidth(img.naturalWidth);
+                }}
+                style={{ maxWidth: receiptNaturalWidth ? `${Math.floor(receiptNaturalWidth / 2)}px` : '100%', width: 'auto' }}
+              />
+            </div>
           ) : isFallback ? (
             <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
               <FileText className="h-12 w-12" />
