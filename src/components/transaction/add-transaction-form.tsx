@@ -1023,7 +1023,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[#14b8a6] to-[#0d9488] flex items-center justify-center shrink-0">
                 <BookOpen className="h-4 w-4 text-white" />
               </div>
-              {isDa ? 'Købsoplysninger' : 'Purchase Details'}
+              {isDa ? 'Købsnota & kvittering' : 'Purchase Note & Receipts'}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -1110,7 +1110,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center shrink-0">
                 <Receipt className="h-4 w-4 text-white" />
               </div>
-              {isDa ? 'Kvittering & Købsfaktura' : 'Receipt & Purchase Invoice'}
+              {isDa ? 'Købsdokumenter' : 'Purchase Documents'}
             </CardTitle>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {isDa
