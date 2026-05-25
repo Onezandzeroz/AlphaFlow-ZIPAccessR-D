@@ -10,8 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   X,
   Info,
-  Calendar,
-  Clock,
   TrendingDown,
   BookOpen,
   Camera,
@@ -453,7 +451,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       <div className="flex items-center gap-2">
         <BookOpen className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
         <Label className="dark:text-gray-300 text-sm font-medium">
-          {isDa ? 'Omkostninger' : 'Expenses'}
+          {isDa ? 'Fra konto' : 'From account'}
         </Label>
         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#0d9488]/10 text-[#0d9488] dark:bg-[#2dd4bf]/20 dark:text-[#2dd4bf]">
           6xxx–9xxx
@@ -464,7 +462,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         <SelectTrigger className={`bg-gray-50 dark:bg-white/5 ${accountError ? 'border-red-400 dark:border-red-500' : ''}`}>
           <SelectValue placeholder={accountsLoading
             ? (isDa ? 'Indlæser konti...' : 'Loading accounts...')
-            : (isDa ? 'Vælg omkostningskonto...' : 'Select expense account...')
+            : (isDa ? 'Vælg konto...' : 'Select account...')
           } />
         </SelectTrigger>
         <SelectContent className="bg-white dark:bg-[#1a1f1e] max-h-72">
@@ -498,23 +496,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     </div>
   );
 
-  // Shared: Date & Amount row
+  // Shared: Amount & Date (amount first)
   const renderDateAmount = () => (
-    <div className="grid grid-cols-[1fr_1.4fr] gap-3">
-      {/* Date */}
-      <div className="space-y-1.5">
-        <Label htmlFor={layout === 'cards' ? 'date-cards' : 'date'} className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
-        <div className="flex gap-1.5">
-          <button type="button" onClick={() => { setDate(defaultToday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultToday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
-            <Calendar className="h-3 w-3" /> {t('today')}
-          </button>
-          <button type="button" onClick={() => { setDate(defaultYesterday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultYesterday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
-            <Clock className="h-3 w-3" /> {t('yesterday')}
-          </button>
-        </div>
-        <Input id={layout === 'cards' ? 'date-cards' : 'date'} type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
-      </div>
-
+    <div className="space-y-4">
       {/* Amount */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
@@ -531,6 +515,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         {includesVAT && (
           <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
         )}
+      </div>
+
+      {/* Date */}
+      <div className="space-y-1.5">
+        <Label htmlFor={layout === 'cards' ? 'date-cards' : 'date'} className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
+        <Input id={layout === 'cards' ? 'date-cards' : 'date'} type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
       </div>
     </div>
   );
@@ -763,22 +753,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
             <div className="border-t border-gray-100 dark:border-white/5" />
 
-            {/* Section: Date & Amount */}
+            {/* Section: Amount & Date (amount first) */}
             <div className="space-y-4">
-              {/* Date */}
-              <div className="space-y-1.5">
-                <Label htmlFor="date-cards" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={() => { setDate(defaultToday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultToday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
-                    <Calendar className="h-3 w-3" /> {t('today')}
-                  </button>
-                  <button type="button" onClick={() => { setDate(defaultYesterday()); dateManuallySetRef.current = true; }} className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${date === defaultYesterday() ? 'bg-[#0d9488]/10 border-[#0d9488] text-[#0d9488] dark:text-[#2dd4bf]' : 'border-gray-200 dark:border-white/10 text-gray-500'}`}>
-                    <Clock className="h-3 w-3" /> {t('yesterday')}
-                  </button>
-                </div>
-                <Input id="date-cards" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
-              </div>
-
               {/* Amount */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -795,6 +771,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 {includesVAT && (
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-center gap-1"><Info className="h-3 w-3" />{t('grossToNetInfo')}</p>
                 )}
+              </div>
+
+              {/* Date */}
+              <div className="space-y-1.5">
+                <Label htmlFor="date-cards" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
+                <Input id="date-cards" type="date" value={date} onChange={(e) => { setDate(e.target.value); dateManuallySetRef.current = true; }} required disabled={isLoading} className="bg-gray-50 dark:bg-white/5 text-sm" />
               </div>
             </div>
 
