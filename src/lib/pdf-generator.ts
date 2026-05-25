@@ -123,7 +123,7 @@ async function loadLogoBytes(logoRef: string): Promise<Buffer | null> {
   }
 
   // 3) Local file path
-  const lp = path.isAbsolute(logoRef) ? logoRef : path.join(process.cwd(), logoRef);
+  const lp = path.isAbsolute(logoRef) ? logoRef : path.join(/*turbopackIgnore: true*/ process.cwd(), logoRef);
   if (existsSync(lp)) {
     return readFile(lp);
   }

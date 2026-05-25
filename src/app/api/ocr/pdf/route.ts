@@ -31,10 +31,11 @@ export async function POST(request: NextRequest) {
     console.log(`[PDF OCR] Processing ${file.name}, ${(file.size / 1024).toFixed(1)}KB via VLM`);
 
     // Use z-ai-web-dev-sdk for vision analysis
-    const ZAI = await import('z-ai-web-dev-sdk');
+    const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
 
     const response = await zai.chat.completions.createVision({
+      model: 'claude-sonnet-4-20250514',
       messages: [
         {
           role: 'user',
