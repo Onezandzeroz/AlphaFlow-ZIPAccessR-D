@@ -257,7 +257,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   }, []);
 
   // ─── Receipt handling ───
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
@@ -268,13 +268,36 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setError('');
     // Clear any previous OCR line items when new document is uploaded
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
-    // Always create an object URL for preview (works for both images and PDFs)
+
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
+      receiptPreviewUrlRef.current = null;
     }
-    const previewUrl = URL.createObjectURL(file);
-    receiptPreviewUrlRef.current = previewUrl;
-    setReceiptPreview(previewUrl);
+
+    if (file.type === 'application/pdf') {
+      // Render PDF first page as image for clean preview
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/ocr/render', { method: 'POST', body: formData });
+        if (res.ok) {
+          const blob = await res.blob();
+          const previewUrl = URL.createObjectURL(blob);
+          receiptPreviewUrlRef.current = previewUrl;
+          setReceiptPreview(previewUrl);
+        } else {
+          // Fallback: show generic placeholder
+          setReceiptPreview('pdf-fallback');
+        }
+      } catch {
+        setReceiptPreview('pdf-fallback');
+      }
+    } else {
+      // Images: use object URL directly
+      const previewUrl = URL.createObjectURL(file);
+      receiptPreviewUrlRef.current = previewUrl;
+      setReceiptPreview(previewUrl);
+    }
   }, [isDa]);
 
   const clearReceipt = useCallback(() => {
@@ -684,30 +707,29 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     if (!receiptPreview) return null;
 
     const isPdf = receiptFile?.type === 'application/pdf';
+    const isFallback = receiptPreview === 'pdf-fallback';
     const fileName = receiptFile?.name || '';
+
+    // PDF rendered to image (clean preview) or image receipt
+    const showImage = !isPdf || !isFallback;
+    // PDF fallback (render failed)
+    const showFallback = isPdf && isFallback;
 
     return (
       <div className="space-y-3">
         {/* Preview area */}
         <div className="relative rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden bg-gray-50 dark:bg-gray-900/50">
-          {isPdf ? (
-            <div className="space-y-2">
-              {/* PDF file info bar */}
-              <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-[#1a1f1e] border-b border-gray-200 dark:border-white/10">
-                <FileText className="h-4 w-4 text-red-500 shrink-0" />
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-1">{fileName}</p>
-                <span className="text-[10px] text-gray-400 font-medium shrink-0">PDF</span>
-              </div>
-              {/* PDF preview via iframe */}
-              <iframe
-                src={receiptPreview}
-                className="w-full h-64 border-0"
-                title="PDF preview"
-              />
-            </div>
-          ) : (
+          {showImage ? (
             <img src={receiptPreview} alt="Document preview" className="w-full h-auto object-contain max-h-64" />
-          )}
+          ) : showFallback ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
+              <FileText className="h-12 w-12" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{fileName}</p>
+                <p className="text-xs mt-0.5">PDF</p>
+              </div>
+            </div>
+          ) : null}
 
           {/* OCR loading overlay */}
           {ocrLoading && (
@@ -738,7 +760,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               >
                 <ScanSearch className="h-3.5 w-3.5" />
               </Button>
-              {!isPdf && (
+              {!isPdf && !isFallback && (
                 <Button
                   type="button"
                   variant="outline"
