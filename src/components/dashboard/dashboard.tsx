@@ -1417,6 +1417,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       <>
       {/* Banner hidden when pricing widget is shown so it sits at the very top */}
       {!showSubscriptionWidget && (
+      <>
       <PageHeader
         title={t('dashboard')}
         description={language === 'da'
@@ -1451,6 +1452,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           </Button>
         </div>
       </div>
+      </>
       )}
 
       {/* ─── Subscription Plans Widget (shown when no .tbkey / write access) ─── */}
