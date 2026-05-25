@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Receipt, RefreshCw, Plus, ArrowRight, X } from 'lucide-react';
+import { Receipt, RefreshCw, Plus, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWriteAccessGuard } from '@/hooks/use-write-access-guard';
 
@@ -152,17 +152,11 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
         description={isDa
           ? 'Vælg en omkostningskonto og bogfør købet i dobbelt-posteringsregnskabet'
           : 'Select an expense account and record the purchase in the double-entry ledger'}
-        action={(
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCancel}
-            className="gap-1.5 text-muted-foreground hover:text-foreground hover:bg-muted text-xs font-medium h-8 px-3"
-          >
-            <X className="h-3.5 w-3.5" />
-            {isDa ? 'Annuller' : 'Cancel'}
+        action={
+          <Button variant="outline" onClick={handleCancel} className="bg-gray-200 hover:bg-gray-300 text-gray-700 border border-gray-300 lg:bg-white/10 lg:hover:bg-white/20 lg:text-white lg:border-white/20 gap-2">
+            {t('cancel')}
           </Button>
-        )}
+        }
       />
       <div>
         <AddTransactionForm
