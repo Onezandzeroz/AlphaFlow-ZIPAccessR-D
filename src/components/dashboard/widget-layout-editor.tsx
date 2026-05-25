@@ -396,7 +396,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-2xl w-[95vw] max-h-[90vh] overflow-hidden flex flex-col p-0">
+      <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-[1008px] w-[95vw] max-h-[90vh] overflow-hidden flex flex-col p-0">
         {/* Header */}
         <div className="shrink-0 px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-800">
           <DialogHeader>
