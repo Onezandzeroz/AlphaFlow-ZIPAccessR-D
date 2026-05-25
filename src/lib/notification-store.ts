@@ -218,6 +218,8 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
       if (res.ok) {
         const data = await res.json();
         set({ readIds: new Set<string>(data.readIds || []), lastFetchAt: Date.now() });
+      } else {
+        console.warn('[NotificationStore] read-state fetch failed:', res.status);
       }
     } catch {
       // Silently fail — user will see notifications as unread, which is
@@ -232,16 +234,22 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
 
     // Optimistically update local state + broadcast to other same-device tabs
     mergeAndBroadcast(set, get, ids);
+    // Set throttle BEFORE the POST to prevent race condition with fetchReadState
+    set({ lastFetchAt: Date.now() });
 
     try {
-      await fetch('/api/notifications/mark-read', {
+      const res = await fetch('/api/notifications/mark-read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: ids }),
       });
-      set({ lastFetchAt: Date.now() });
+      if (!res.ok) {
+        console.warn('[NotificationStore] mark-read failed:', res.status);
+        // Server rejected — revert to authoritative state
+        get().fetchReadState(true);
+      }
     } catch {
-      // On failure, revert: re-fetch from server to get authoritative state
+      // Network failure — revert: re-fetch from server to get authoritative state
       get().fetchReadState(true);
     }
   },
@@ -251,6 +259,8 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
 
     // Optimistically mark all as read locally + broadcast
     set({ readIds: new Set(allNotificationIds) });
+    // Set throttle BEFORE the POST to prevent race condition with fetchReadState
+    set({ lastFetchAt: Date.now() });
     const channel = getBroadcastChannel();
     if (channel) {
       try {
@@ -261,14 +271,18 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
     }
 
     try {
-      await fetch('/api/notifications/mark-read', {
+      const res = await fetch('/api/notifications/mark-read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: allNotificationIds }),
       });
-      set({ lastFetchAt: Date.now() });
+      if (!res.ok) {
+        console.warn('[NotificationStore] mark-all-read failed:', res.status);
+        // Server rejected — revert to authoritative state
+        get().fetchReadState(true);
+      }
     } catch {
-      // On failure, revert: re-fetch from server to get authoritative state
+      // Network failure — revert: re-fetch from server to get authoritative state
       get().fetchReadState(true);
     }
   },
