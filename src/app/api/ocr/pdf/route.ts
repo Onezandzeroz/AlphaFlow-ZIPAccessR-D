@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * POST /api/ocr/pdf
  * Uses AI vision (VLM) to extract structured data from PDF purchase invoices.
- * Converts PDF to base64, sends to z-ai-web-dev-sdk vision API.
+ * Step 1: Renders PDF pages to images using pdfjs-dist
+ * Step 2: Sends images to z-ai-web-dev-sdk VLM for analysis
  */
 export const maxDuration = 60;
 
@@ -25,24 +26,50 @@ export async function POST(request: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
-    const dataUrl = `data:application/pdf;base64,${base64}`;
+    console.log(`[PDF OCR] Processing ${file.name}, ${(file.size / 1024).toFixed(1)}KB`);
 
-    console.log(`[PDF OCR] Processing ${file.name}, ${(file.size / 1024).toFixed(1)}KB via VLM`);
+    // Step 1: Render PDF pages to PNG images using pdfjs-dist
+    const pdfjsLib = await import('pdfjs-dist');
 
-    // Use z-ai-web-dev-sdk for vision analysis
+    // In Node.js, disable the worker (runs on main thread)
+    const pdfjsLibAny = pdfjsLib as any;
+    pdfjsLibAny.GlobalWorkerOptions.workerSrc = '';
+
+    const pdf = await pdfjsLibAny.getDocument({ data: new Uint8Array(arrayBuffer), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+    const numPages = Math.min(pdf.numPages, 5); // Max 5 pages
+    const pageImages: string[] = [];
+
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdf.getPage(i);
+      const scale = 2.0;
+      const viewport = page.getViewport({ scale });
+
+      // Create offscreen canvas to render the page
+      const canvas = await createCanvas(viewport.width, viewport.height);
+      const ctx = canvas.getContext('2d');
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // Get PNG as base64
+      const pngBase64 = canvas.toDataURL('image/png');
+      pageImages.push(pngBase64);
+    }
+
+    console.log(`[PDF OCR] Rendered ${pageImages.length} pages to images`);
+
+    // Step 2: Send rendered images to VLM for analysis
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
 
-    const response = await zai.chat.completions.createVision({
-      model: 'claude-sonnet-4-20250514',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: `Analyze this purchase invoice/receipt document. Extract the following information and return ONLY valid JSON (no markdown, no backticks):
+    // Build content array: text prompt + all page images
+    const content: Array<{
+      type: string;
+      text?: string;
+      image_url?: { url: string };
+    }> = [
+      {
+        type: 'text',
+        text: `Analyze this purchase invoice/receipt document (page ${pageImages.length > 1 ? '1 of ' + pageImages.length : ''}). Extract the following information and return ONLY valid JSON (no markdown, no backticks):
 
 {
   "amount": <total amount as number, or null>,
@@ -66,20 +93,30 @@ Rules:
 - vatPercent should be 0-100 (not decimal)
 - Extract individual line items if visible
 - If no line items are visible, return empty lines array
-- Return ONLY the JSON object, nothing else`
-            },
-            {
-              type: 'file_url',
-              file_url: { url: dataUrl }
-            }
-          ]
+- Return ONLY the JSON object, nothing else`,
+      },
+    ];
+
+    for (const imgDataUrl of pageImages) {
+      content.push({
+        type: 'image_url',
+        image_url: { url: imgDataUrl },
+      });
+    }
+
+    const response = await zai.chat.completions.createVision({
+      model: 'claude-sonnet-4-20250514',
+      messages: [
+        {
+          role: 'user',
+          content,
         }
       ],
       thinking: { type: 'disabled' }
     });
 
-    const content = response.choices[0]?.message?.content || '';
-    console.log(`[PDF OCR] VLM response length: ${content.length}`);
+    const resultContent = response.choices[0]?.message?.content || '';
+    console.log(`[PDF OCR] VLM response length: ${resultContent.length}`);
 
     // Parse JSON from response
     let parsed: {
@@ -97,19 +134,18 @@ Rules:
     };
 
     try {
-      // Extract JSON from response (may be wrapped in markdown code blocks)
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonMatch = resultContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in response');
       parsed = JSON.parse(jsonMatch[0]);
     } catch {
-      console.error('[PDF OCR] Failed to parse VLM response:', content.substring(0, 200));
+      console.error('[PDF OCR] Failed to parse VLM response:', resultContent.substring(0, 200));
       return NextResponse.json({
-        text: content,
+        text: resultContent,
         amount: null,
         date: null,
         vatPercent: null,
         confidence: 0,
-        rawLines: content.split('\n').filter((l: string) => l.trim()),
+        rawLines: resultContent.split('\n').filter((l: string) => l.trim()),
       });
     }
 
@@ -124,13 +160,12 @@ Rules:
     }
 
     const ocrResult = {
-      text: content,
+      text: resultContent,
       amount: parsed.amount ?? null,
       date: parsed.date ?? null,
       vatPercent: parsed.vatPercent ?? null,
-      confidence: 85, // VLM generally high confidence
+      confidence: 85,
       rawLines,
-      // Pass through structured line items for the form
       vlmLines: parsed.lines || [],
       vlmDescription: parsed.description || null,
     };
@@ -139,10 +174,18 @@ Rules:
 
     return NextResponse.json(ocrResult);
   } catch (error) {
-    console.error('[PDF OCR] Error:', error instanceof Error ? error.message : error);
+    console.error('[PDF OCR] Error:', error instanceof Error ? error.stack : error);
     return NextResponse.json(
-      { error: 'Failed to process PDF' },
+      { error: `Failed to process PDF: ${error instanceof Error ? error.message : 'Unknown error'}` },
       { status: 500 }
     );
   }
+}
+
+/**
+ * Creates a node-canvas for server-side PDF rendering.
+ */
+async function createCanvas(width: number, height: number) {
+  const { createCanvas } = await import('canvas');
+  return createCanvas(width, height);
 }

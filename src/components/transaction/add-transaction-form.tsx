@@ -349,7 +349,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       let ocrResult;
 
       if (receiptFile.type === 'application/pdf') {
-        // For PDFs, send to backend API which renders pages to images and runs OCR
+        // For PDFs, send to backend API which uses VLM vision AI
         const formData = new FormData();
         formData.append('file', receiptFile);
 
@@ -359,7 +359,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         });
 
         if (!res.ok) {
-          throw new Error('PDF OCR failed');
+          const errBody = await res.text().catch(() => '');
+          console.error('[OCR] PDF OCR failed:', res.status, errBody);
+          throw new Error(`PDF OCR failed (${res.status}): ${errBody}`);
         }
 
         const data = await res.json();
