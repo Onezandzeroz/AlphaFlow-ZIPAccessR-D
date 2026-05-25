@@ -1045,6 +1045,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               )}
             </div>
 
+            {/* Description */}
+            {renderDescription()}
+
             {/* Net / VAT / Gross calculation row */}
             {amount && parsedAmount > 0 && (
               <div className="grid grid-cols-3 gap-3">
@@ -1120,7 +1123,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           </CardHeader>
           <CardContent className="space-y-4">
             {renderReceiptUpload()}
-            {renderDescription()}
           </CardContent>
         </Card>
       </div>
