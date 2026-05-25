@@ -291,6 +291,7 @@ model User {
   // Multi-tenant relations
   companies        UserCompany[]
   performedAuditLogs AuditLog[]       @relation("PerformedByUser")
+  notificationReads NotificationRead[]
 }
 
 // ─── SESSION (with activeCompanyId) ───────────────────────────────
@@ -788,4 +789,21 @@ model BankConnectionSync {
   @@index([companyId])
   @@index([status])
   @@index([startedAt])
+}
+
+// ─── NOTIFICATION READ STATE ──────────────────────────────────
+// Tracks which in-app notifications a user has dismissed / read.
+// This ensures read state syncs across devices and browser instances.
+
+model NotificationRead {
+  id              String   @id @default(cuid())
+  userId          String
+  notificationId  String   // Deterministic ID from the notification source (e.g. "overdue-abc123", "vat-deadline")
+  readAt          DateTime @default(now())
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, notificationId])
+  @@index([userId])
+  @@index([readAt])
 }

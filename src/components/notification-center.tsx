@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useLanguageStore } from '@/lib/language-store';
+import { useNotificationStore } from '@/lib/notification-store';
 import { formatDistanceToNow } from 'date-fns';
 import { da, enGB } from 'date-fns/locale';
 import {
@@ -15,7 +16,6 @@ import { Separator } from '@/components/ui/separator';
 import {
   Bell,
   AlertTriangle,
-  FileText,
   Calculator,
   Landmark,
   BookOpen,
@@ -34,6 +34,8 @@ interface NotificationItem {
   title: string;
   description: string;
   timeAgo: string;
+  /** Absolute timestamp (ms) used for sorting — newest first */
+  timestamp: number;
   actionView: string;
   actionLabel: string;
 }
@@ -84,38 +86,28 @@ const strings = {
   },
 };
 
-const STORAGE_KEY = 'alphaai-notifications-read';
 const FETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const { language } = useLanguageStore();
+  const { readIds, fetchReadState, markAsRead, markAllAsRead } = useNotificationStore();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const t = strings[language];
 
   const locale = language === 'da' ? da : enGB;
 
-  // Track whether we have loaded from localStorage to prevent the persist
+  // Track whether we have loaded from server to prevent the persist
   // effect from clobbering saved read state with the initial empty Set.
-  const hasLoadedFromStorage = useRef(false);
+  const hasLoadedFromServer = useRef(false);
 
-  // Load read IDs from localStorage on mount (synchronous-ish init)
+  // Load read IDs from server on mount (shared across both desktop & mobile instances)
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setReadIds(new Set(JSON.parse(stored)));
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-    // Mark as loaded after the microtask so the persist effect skips the first cycle
-    // (React batches the setReadIds above with the re-render, so by the next
-    //  render hasLoadedFromStorage is true and the persist effect won't wipe data).
-    requestAnimationFrame(() => { hasLoadedFromStorage.current = true; });
-  }, []);
+    fetchReadState().finally(() => {
+      requestAnimationFrame(() => { hasLoadedFromServer.current = true; });
+    });
+  }, [fetchReadState]);
 
   // Compute next VAT deadline: 1st day of the 2nd following month
   const computeVatDeadline = useCallback((): Date => {
@@ -123,14 +115,10 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     const currentMonth = now.getMonth(); // 0-indexed
     const targetMonth = currentMonth + 2;
     const targetDate = new Date(now.getFullYear(), targetMonth, 1);
-    // Handle year overflow
-    if (targetDate.getMonth() !== targetMonth % 12) {
-      // Month overflowed, adjust
-    }
     return targetDate;
   }, []);
 
-  // Fetch notification data
+  // Fetch notification data from existing business-logic APIs
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -173,6 +161,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
                 title: t.overdueInvoices,
                 description: `${inv.invoiceNumber} — ${inv.customerName}`,
                 timeAgo: formatDistanceToNow(dueDate, { addSuffix: true, locale }),
+                timestamp: dueDate.getTime(),
                 actionView: 'invoices',
                 actionLabel: t.viewInvoices,
               });
@@ -180,6 +169,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
             // Summary notification if more than 3
             if (overdueInvoices.length > 3) {
+              const lastDueDate = new Date(overdueInvoices[overdueInvoices.length - 1].dueDate);
               items.push({
                 id: 'overdue-summary',
                 type: 'overdue',
@@ -190,10 +180,11 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
                 ),
                 title: t.overdueInvoices,
                 description: t.overdueDescMulti(overdueInvoices.length),
-                timeAgo: formatDistanceToNow(new Date(overdueInvoices[overdueInvoices.length - 1].dueDate), {
+                timeAgo: formatDistanceToNow(lastDueDate, {
                   addSuffix: true,
                   locale,
                 }),
+                timestamp: lastDueDate.getTime(),
                 actionView: 'invoices',
                 actionLabel: t.viewInvoices,
               });
@@ -225,6 +216,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               ? `${language === 'da' ? 'Om' : 'In'} ${daysUntilVat} ${language === 'da' ? 'dage' : 'days'} — ${t.vatDesc}`
               : t.vatDesc,
           timeAgo: formatDistanceToNow(vatDeadline, { addSuffix: true, locale }),
+          timestamp: vatDeadline.getTime(),
           actionView: 'vat-report',
           actionLabel: t.viewVat,
         });
@@ -237,6 +229,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
           const bankData = await bankRes.json();
           const statements = bankData.bankStatements || [];
           if (statements.length > 0) {
+            const bankDate = new Date(statements[0].importDate || statements[0].startDate);
             items.push({
               id: 'bank-recon-reminder',
               type: 'bank-recon',
@@ -247,10 +240,8 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               ),
               title: t.bankRecon,
               description: t.bankReconDesc,
-              timeAgo: formatDistanceToNow(
-                new Date(statements[0].importDate || statements[0].startDate),
-                { addSuffix: true, locale }
-              ),
+              timeAgo: formatDistanceToNow(bankDate, { addSuffix: true, locale }),
+              timestamp: bankDate.getTime(),
               actionView: 'bank-recon',
               actionLabel: t.viewBankRecon,
             });
@@ -270,6 +261,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
             .slice(0, 3);
 
           for (const entry of entries) {
+            const createdAt = new Date(entry.createdAt);
             items.push({
               id: `journal-${entry.id}`,
               type: 'journal',
@@ -283,10 +275,11 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
                 entry.reference || entry.id.slice(0, 8),
                 entry.description || ''
               ),
-              timeAgo: formatDistanceToNow(new Date(entry.createdAt), {
+              timeAgo: formatDistanceToNow(createdAt, {
                 addSuffix: true,
                 locale,
               }),
+              timestamp: createdAt.getTime(),
               actionView: 'journal',
               actionLabel: t.viewJournal,
             });
@@ -296,70 +289,49 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
         // Silently fail journal fetch
       }
 
+      // *** KEY FIX: Sort all notifications by timestamp DESCENDING (newest first) ***
+      items.sort((a, b) => b.timestamp - a.timestamp);
+
       setNotifications(items);
     } finally {
       setIsLoading(false);
     }
   }, [t, locale, language, computeVatDeadline]);
 
-  // Initial fetch and periodic refresh
+  // Initial fetch, periodic refresh, and periodic read-state re-sync
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, FETCH_INTERVAL);
+    fetchReadState(); // Also re-fetch read state periodically
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+      fetchReadState();
+    }, FETCH_INTERVAL);
+
     return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  }, [fetchNotifications, fetchReadState]);
 
-  // Persist read IDs to localStorage — skip the initial mount cycle to avoid
-  // overwriting saved state with the empty default Set before the load effect runs.
-  useEffect(() => {
-    if (!hasLoadedFromStorage.current) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...readIds]));
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, [readIds]);
-
-  // Compute unread count
+  // Compute unread count from server-backed readIds
   const unreadCount = useMemo(
     () => notifications.filter((n) => !readIds.has(n.id)).length,
     [notifications, readIds]
   );
 
-  // Mark all as read
-  const markAllAsRead = useCallback(() => {
-    setReadIds(new Set(notifications.map((n) => n.id)));
-  }, [notifications]);
-
-  // Handle notification click
+  // Handle notification click → mark as read (server-backed) + navigate
   const handleNotificationClick = useCallback(
     (notification: NotificationItem) => {
-      // Mark this notification as read
-      setReadIds((prev) => new Set([...prev, notification.id]));
+      markAsRead([notification.id]);
       setOpen(false);
       onNavigate(notification.actionView);
     },
-    [onNavigate]
+    [onNavigate, markAsRead]
   );
 
-  // Group notifications by type
-  const groupedNotifications = useMemo(() => {
-    const groups: { type: string; icon: React.ReactNode; items: NotificationItem[] }[] = [];
-    const typeOrder = ['overdue', 'vat', 'bank-recon', 'journal'];
-
-    for (const type of typeOrder) {
-      const items = notifications.filter((n) => n.type === type);
-      if (items.length > 0) {
-        groups.push({
-          type,
-          icon: items[0].icon,
-          items,
-        });
-      }
-    }
-
-    return groups;
-  }, [notifications]);
+  // Handle "Mark all as read" → mark ALL current notification IDs (server-backed)
+  const handleMarkAllRead = useCallback(() => {
+    const allIds = notifications.map((n) => n.id);
+    markAllAsRead(allIds);
+  }, [notifications, markAllAsRead]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -394,7 +366,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={markAllAsRead}
+                onClick={handleMarkAllRead}
                 className="h-auto px-2 py-1 text-xs text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/10 dark:hover:bg-[#2dd4bf]/10 transition-colors"
               >
                 <CheckCircle2 className="h-3 w-3 mr-1" />
@@ -412,7 +384,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
           </div>
         </div>
 
-        {/* Notifications List */}
+        {/* Notifications List — sorted newest-first */}
         <div className="max-h-80 overflow-y-auto scrollable-thin">
           {isLoading ? (
             // Loading skeleton
@@ -441,72 +413,62 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               </p>
             </div>
           ) : (
-            // Grouped notifications
+            // Flat list sorted by timestamp (newest first)
             <div className="divide-y divide-[var(--border)]">
-              {groupedNotifications.map((group, groupIndex) => (
-                <div key={group.type}>
-                  {group.items.map((notification, itemIndex) => {
-                    const isRead = readIds.has(notification.id);
-                    const isFirstInGroup = itemIndex === 0;
-                    const isLastInGroup =
-                      itemIndex === group.items.length - 1;
-                    const isLastGroup =
-                      groupIndex === groupedNotifications.length - 1 &&
-                      isLastInGroup;
+              {notifications.map((notification, index) => {
+                const isRead = readIds.has(notification.id);
+                const isLast = index === notifications.length - 1;
 
-                    return (
-                      <button
-                        key={notification.id}
-                        type="button"
-                        onClick={() => handleNotificationClick(notification)}
-                        className={`
-                          w-full flex items-start gap-3 px-4 py-3 text-left
-                          transition-colors cursor-pointer
-                          hover:bg-[#f0fdf9]/60 dark:hover:bg-[#1a2e2b]/50
-                          ${isFirstInGroup ? 'pt-3' : 'pt-2.5'}
-                          ${isLastGroup ? 'pb-3' : 'pb-2.5'}
-                          ${!isRead ? 'bg-[#0d9488]/[0.03] dark:bg-[#2dd4bf]/[0.03]' : ''}
-                        `}
-                      >
-                        {/* Unread indicator dot */}
-                        {!isRead && (
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-[#0d9488] dark:bg-[#2dd4bf]" />
-                        )}
+                return (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    onClick={() => handleNotificationClick(notification)}
+                    className={`
+                      w-full flex items-start gap-3 px-4 py-3 text-left
+                      transition-colors cursor-pointer relative
+                      hover:bg-[#f0fdf9]/60 dark:hover:bg-[#1a2e2b]/50
+                      ${isLast ? 'pb-3' : 'pb-2.5'}
+                      ${!isRead ? 'bg-[#0d9488]/[0.03] dark:bg-[#2dd4bf]/[0.03]' : ''}
+                    `}
+                  >
+                    {/* Unread indicator dot */}
+                    {!isRead && (
+                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-[#0d9488] dark:bg-[#2dd4bf]" />
+                    )}
 
-                        {/* Icon */}
-                        <div className="relative shrink-0">{notification.icon}</div>
+                    {/* Icon */}
+                    <div className="relative shrink-0">{notification.icon}</div>
 
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p
-                              className={`text-sm font-medium text-foreground truncate ${
-                                !isRead ? '' : 'font-normal'
-                              }`}
-                            >
-                              {notification.title}
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {notification.description}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className="text-[11px] text-muted-foreground/70">
-                              {notification.timeAgo}
-                            </span>
-                            <Badge
-                              variant="secondary"
-                              className="h-4 px-1.5 text-[10px] font-normal"
-                            >
-                              {notification.actionLabel}
-                            </Badge>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={`text-sm text-foreground truncate ${
+                            !isRead ? 'font-medium' : 'font-normal'
+                          }`}
+                        >
+                          {notification.title}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {notification.description}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[11px] text-muted-foreground/70">
+                          {notification.timeAgo}
+                        </span>
+                        <Badge
+                          variant="secondary"
+                          className="h-4 px-1.5 text-[10px] font-normal"
+                        >
+                          {notification.actionLabel}
+                        </Badge>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
