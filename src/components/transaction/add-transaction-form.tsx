@@ -764,7 +764,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             <div className="border-t border-gray-100 dark:border-white/5" />
 
             {/* Section: Date & Amount */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               {/* Date */}
               <div className="space-y-1.5">
                 <Label htmlFor="date-cards" className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
