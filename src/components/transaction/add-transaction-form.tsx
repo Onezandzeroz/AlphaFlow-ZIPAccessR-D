@@ -285,8 +285,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             // Load pdf.js library
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load pdf.js'));
             document.head.appendChild(script);
           });
           // Set worker
