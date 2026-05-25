@@ -86,7 +86,8 @@ const strings = {
   },
 };
 
-const FETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const FETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes (fallback polling)
+const READ_STATE_SYNC_INTERVAL = 30 * 1000; // 30 seconds — how often to poll read state from server for cross-device sync
 
 export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const { language } = useLanguageStore();
@@ -98,15 +99,47 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   const locale = language === 'da' ? da : enGB;
 
-  // Track whether we have loaded from server to prevent the persist
-  // effect from clobbering saved read state with the initial empty Set.
+  // Track whether we have loaded from server to prevent stale initial state.
   const hasLoadedFromServer = useRef(false);
 
-  // Load read IDs from server on mount (shared across both desktop & mobile instances)
+  // ─── Read-state fetch on mount ───────────────────────────────
   useEffect(() => {
     fetchReadState().finally(() => {
       requestAnimationFrame(() => { hasLoadedFromServer.current = true; });
     });
+  }, [fetchReadState]);
+
+  // ─── Read-state fetch when popover OPENS ─────────────────────
+  // Whenever the user clicks the bell, we get the latest read state
+  // from the server. This is the primary cross-device sync trigger.
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
+      // Always fetch fresh read state when the popover opens
+      fetchReadState(true);
+    }
+  }, [fetchReadState]);
+
+  // ─── Read-state fetch on tab focus / visibility ──────────────
+  // When user switches back to this tab from another app (e.g. from
+  // their phone browser to their desktop browser), refresh read state.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchReadState(true);
+      }
+    };
+    const onFocus = () => {
+      fetchReadState(true);
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [fetchReadState]);
 
   // Compute next VAT deadline: 1st day of the 2nd following month
@@ -298,17 +331,26 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     }
   }, [t, locale, language, computeVatDeadline]);
 
-  // Initial fetch, periodic refresh, and periodic read-state re-sync
+  // ─── Periodic polling (notification data + read state) ────────
   useEffect(() => {
     fetchNotifications();
-    fetchReadState(); // Also re-fetch read state periodically
+    fetchReadState();
 
-    const interval = setInterval(() => {
+    // Full notification data + read state every 5 min
+    const fullInterval = setInterval(() => {
       fetchNotifications();
       fetchReadState();
     }, FETCH_INTERVAL);
 
-    return () => clearInterval(interval);
+    // Read-state-only poll every 30 sec for faster cross-device sync
+    const readStateInterval = setInterval(() => {
+      fetchReadState();
+    }, READ_STATE_SYNC_INTERVAL);
+
+    return () => {
+      clearInterval(fullInterval);
+      clearInterval(readStateInterval);
+    };
   }, [fetchNotifications, fetchReadState]);
 
   // Compute unread count from server-backed readIds
@@ -334,7 +376,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   }, [notifications, markAllAsRead]);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="ghost"

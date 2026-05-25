@@ -11,6 +11,21 @@ alphaflow.dk, www.alphaflow.dk {
     # Force HTTPS — redirect HTTP to HTTPS
     # (Caddy does this automatically, but explicit for clarity)
 
+# ─── Notification WebSocket Service (port 3001) ───────────────────
+    # Routes requests with ?XTransformPort=3001 to the notification WS service.
+    # Supports both Socket.IO polling (HTTP) and WebSocket upgrades.
+    @notification-ws {
+        query XTransformPort=3001
+    }
+    handle @notification-ws {
+        reverse_proxy localhost:3001 {
+            header_up Host {host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
     # ─── TokenPay Access Service (port 3100) ───────────────────────
     # Routes requests with ?XTransformPort=3100 to the TokenPay service
     @tokenpay {
