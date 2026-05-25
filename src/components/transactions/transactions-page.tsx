@@ -493,10 +493,10 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
 
     const outputVAT = transactions
       .filter(t => t.type === 'SALE' || !t.type)
-      .reduce((sum, t) => sum + Math.abs(Number(t.vatAmount || 0)), 0);
+      .reduce((sum, t) => sum + Math.abs(getDisplayVAT(t).amount), 0);
     const inputVAT = transactions
       .filter(t => t.type === 'PURCHASE')
-      .reduce((sum, t) => sum + Math.abs(Number(t.vatAmount || 0)), 0);
+      .reduce((sum, t) => sum + Math.abs(getDisplayVAT(t).amount), 0);
 
     return {
       salesCount: sales.length,
@@ -1067,9 +1067,9 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
                     <TableCell />
                     <TableCell />
                     <TableCell className="font-semibold">{t('total')}</TableCell>
-                    <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + tx.amount, 0))}</TableCell>
+                    <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0))}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + Math.abs(Number(tx.vatAmount || 0)), 0))}</TableCell>
+                    <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + Math.abs(getDisplayVAT(tx).amount), 0))}</TableCell>
                     <TableCell />
                   </TableRow>
                 </TableBody>
