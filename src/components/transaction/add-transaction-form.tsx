@@ -268,14 +268,13 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setError('');
     // Clear any previous OCR line items when new document is uploaded
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
-    if (file.type === 'application/pdf') {
-      // For PDFs, show a file icon placeholder
-      setReceiptPreview('pdf');
-    } else {
-      const reader = new FileReader();
-      reader.onload = (event) => setReceiptPreview(event.target?.result as string);
-      reader.readAsDataURL(file);
+    // Always create an object URL for preview (works for both images and PDFs)
+    if (receiptPreviewUrlRef.current) {
+      URL.revokeObjectURL(receiptPreviewUrlRef.current);
     }
+    const previewUrl = URL.createObjectURL(file);
+    receiptPreviewUrlRef.current = previewUrl;
+    setReceiptPreview(previewUrl);
   }, [isDa]);
 
   const clearReceipt = useCallback(() => {
@@ -295,19 +294,35 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const handleManualOCR = useCallback(async () => {
     if (!receiptFile) return;
 
-    // Only run OCR on images, not PDFs
-    if (receiptFile.type === 'application/pdf') {
-      toast.error(isDa ? 'OCR understøtter kun billeder' : 'OCR only supports images');
-      return;
-    }
-
     setOcrLoading(true);
     setOcrProgress(0);
 
     try {
-      const ocrResult = await scanReceipt(receiptFile, (progress) => {
-        setOcrProgress(progress);
-      });
+      let ocrResult;
+
+      if (receiptFile.type === 'application/pdf') {
+        // For PDFs, send to backend API which renders pages to images and runs OCR
+        const formData = new FormData();
+        formData.append('file', receiptFile);
+
+        const res = await fetch('/api/ocr/pdf', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) {
+          throw new Error('PDF OCR failed');
+        }
+
+        const data = await res.json();
+        ocrResult = data as Awaited<ReturnType<typeof scanReceipt>>;
+        setOcrProgress(100);
+      } else {
+        // For images, use client-side Tesseract OCR
+        ocrResult = await scanReceipt(receiptFile, (progress) => {
+          setOcrProgress(progress);
+        });
+      }
 
       setOcrLoading(false);
       setOcrProgress(100);
@@ -391,6 +406,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       }
     } catch {
       setOcrLoading(false);
+      setOcrProgress(0);
       toast.error(isDa ? 'OCR fejl' : 'OCR error', {
         description: isDa ? 'Kunne ikke læse dokumentet. Prøv igen eller tilføj linjer manuelt.' : 'Could not read document. Try again or add lines manually.',
       });
@@ -667,7 +683,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const renderDocumentPreview = () => {
     if (!receiptPreview) return null;
 
-    const isPdf = receiptPreview === 'pdf';
+    const isPdf = receiptFile?.type === 'application/pdf';
     const fileName = receiptFile?.name || '';
 
     return (
@@ -675,12 +691,19 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         {/* Preview area */}
         <div className="relative rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden bg-gray-50 dark:bg-gray-900/50">
           {isPdf ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
-              <FileText className="h-12 w-12" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{fileName}</p>
-                <p className="text-xs mt-0.5">PDF</p>
+            <div className="space-y-2">
+              {/* PDF file info bar */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-[#1a1f1e] border-b border-gray-200 dark:border-white/10">
+                <FileText className="h-4 w-4 text-red-500 shrink-0" />
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate flex-1">{fileName}</p>
+                <span className="text-[10px] text-gray-400 font-medium shrink-0">PDF</span>
               </div>
+              {/* PDF preview via iframe */}
+              <iframe
+                src={receiptPreview}
+                className="w-full h-64 border-0"
+                title="PDF preview"
+              />
             </div>
           ) : (
             <img src={receiptPreview} alt="Document preview" className="w-full h-auto object-contain max-h-64" />
@@ -711,7 +734,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 size="sm"
                 className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border-gray-300 dark:border-gray-600 hover:bg-white dark:hover:bg-gray-700 shadow-sm"
                 onClick={handleManualOCR}
-                disabled={!isPdf && false}
                 title={isDa ? 'Læs dokument med OCR' : 'Read document with OCR'}
               >
                 <ScanSearch className="h-3.5 w-3.5" />
@@ -751,7 +773,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             variant="outline"
             className="w-full h-10 gap-2 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
             onClick={handleManualOCR}
-            disabled={isPdf}
           >
             <ScanSearch className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
             <span className="text-sm font-medium">
