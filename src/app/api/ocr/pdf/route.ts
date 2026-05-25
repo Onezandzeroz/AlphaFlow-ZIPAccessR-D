@@ -26,18 +26,13 @@ type CanvasContext = {
 };
 
 async function getPdfjsLib(): Promise<any> {
-  try {
-    // Try legacy build (better Node.js support)
-    const mod = await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
-    return mod;
-  } catch {
-    // Fallback to main entry
-    return await import('pdfjs-dist');
-  }
+  // Both imports must be ignored by bundler — resolved at runtime on server
+  // where pdfjs-dist is installed in node_modules
+  return await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
 }
 
 async function getCanvas() {
-  return await import('canvas') as unknown as CanvasModule;
+  return await import(/* webpackIgnore: true */ 'canvas' as string) as unknown as CanvasModule;
 }
 
 export async function POST(request: NextRequest) {
