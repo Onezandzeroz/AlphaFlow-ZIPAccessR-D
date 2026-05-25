@@ -495,7 +495,7 @@ export function WidgetLayoutEditor({ open, onOpenChange }: WidgetLayoutEditorPro
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className={`
-                                font-semibold truncate text-[10px] leading-tight
+                                font-semibold truncate text-xs leading-tight
                                 ${visible ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-600 line-through'}
                               `}>
                                 {language === 'da' ? widget.labelDa : widget.labelEn}
