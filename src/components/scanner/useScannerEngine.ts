@@ -677,17 +677,6 @@ export function useScannerEngine() {
   const displayDimsRef = useRef({ dw: 0, dh: 0 });
   const torchOnRef = useRef(false);
 
-  // Re-arm overlay sizing when the element is resized (rotation, window resize)
-  useEffect(() => {
-    const overlay = overlayCanvasRef.current;
-    if (!overlay) return;
-    const ro = new ResizeObserver(() => {
-      overlaySizedRef.current = false;
-    });
-    ro.observe(overlay);
-    return () => ro.disconnect();
-  }, []);
-
   // Function refs (break circular dependencies)
   const stopCameraRef = useRef<() => void>(() => {});
   const doCaptureRef = useRef<() => Promise<void>>(async () => {});
