@@ -125,12 +125,6 @@ function getDisplayVAT(tx: Transaction): { rate: number; amount: number } {
   return { rate, amount: Math.round(netVat * 100) / 100 };
 }
 
-interface VATRegisterSummary {
-  totalOutputVAT: number;
-  totalInputVAT: number;
-  netVATPayable: number;
-}
-
 interface TransactionsPageProps {
   user: User;
   hideHeader?: boolean;
@@ -173,25 +167,12 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
     return `/api/receipts/${receiptImage}`;
   }, []);
 
-  // VAT register data (single source of truth for VAT totals)
-  const [vatSummary, setVatSummary] = useState<VATRegisterSummary | null>(null);
-
   const fetchTransactions = useCallback(async () => {
     try {
-      // Fetch transactions, invoices, and VAT register in parallel
-      // NOTE: Use local date formatting (YYYY-MM-DD) instead of toISOString().split('T')[0]
-      // to avoid timezone issues — toISOString() converts to UTC which can shift dates
-      // by ±1 day depending on timezone (e.g., Copenhagen UTC+1 → Jan 1 local = Dec 31 UTC).
-      const now = new Date();
-      const yearStart = new Date(now.getFullYear(), 0, 1);
-      const formatDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const vatFrom = formatDate(yearStart);
-      const vatTo = formatDate(now);
-
-      const [txResponse, invResponse, vatResponse] = await Promise.all([
+      // Fetch transactions and invoices in parallel
+      const [txResponse, invResponse] = await Promise.all([
         fetch('/api/transactions'),
         fetch('/api/invoices'),
-        fetch(`/api/vat-register?from=${vatFrom}&to=${vatTo}`),
       ]);
 
       if (!txResponse.ok) console.error('Transactions API error:', txResponse.status);
@@ -199,19 +180,6 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
 
       const txData = txResponse.ok ? await txResponse.json() : {};
       const invData = invResponse.ok ? await invResponse.json() : {};
-
-      // Store VAT register data as the authoritative VAT source
-      if (vatResponse.ok) {
-        const vatData = await vatResponse.json();
-        console.log(`[TransactionsPage] VAT register (${vatFrom} → ${vatTo}): input=${vatData.totalInputVAT}, output=${vatData.totalOutputVAT}, net=${vatData.netVATPayable}`);
-        setVatSummary({
-          totalOutputVAT: vatData.totalOutputVAT || 0,
-          totalInputVAT: vatData.totalInputVAT || 0,
-          netVATPayable: vatData.netVATPayable || 0,
-        });
-      } else {
-        console.error('[TransactionsPage] VAT register API error:', vatResponse.status, vatResponse.statusText);
-      }
 
       const allTransactions: Transaction[] = txData.transactions || [];
       const invoices: Invoice[] = invData.invoices || [];
@@ -515,21 +483,21 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
     setTypeFilter('all');
   };
 
-  // Calculate summary stats — VAT totals come exclusively from the VAT register
-  // (double-entry journal), not from the legacy transaction formula.
+  // Calculate summary stats from ALL transactions (unfiltered)
   const stats = useMemo(() => {
     const sales = transactions.filter(t => t.type === 'SALE' || !t.type);
     const purchases = transactions.filter(t => t.type === 'PURCHASE');
-    
+
     const salesAmount = sales.reduce((sum, t) => sum + Number(t.amount), 0);
     const purchasesAmount = purchases.reduce((sum, t) => sum + Number(t.amount), 0);
 
-    // Use VAT register as the single source of truth for VAT amounts.
-    // If vatSummary is null (API fetch failed or not yet loaded), show 0
-    // rather than falling back to the legacy formula.
-    const outputVAT = vatSummary?.totalOutputVAT ?? 0;
-    const inputVAT = vatSummary?.totalInputVAT ?? 0;
-    
+    const outputVAT = transactions
+      .filter(t => t.type === 'SALE' || !t.type)
+      .reduce((sum, t) => sum + Math.abs(Number(t.vatAmount || 0)), 0);
+    const inputVAT = transactions
+      .filter(t => t.type === 'PURCHASE')
+      .reduce((sum, t) => sum + Math.abs(Number(t.vatAmount || 0)), 0);
+
     return {
       salesCount: sales.length,
       purchasesCount: purchases.length,
@@ -538,7 +506,7 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
       outputVAT,
       inputVAT,
     };
-  }, [transactions, vatSummary]);
+  }, [transactions]);
 
   // Find transaction for receipt preview
   const selectedTransaction = useMemo(() => {
@@ -1101,7 +1069,7 @@ export function TransactionsPage({ user, hideHeader, defaultTypeFilter }: Transa
                     <TableCell className="font-semibold">{t('total')}</TableCell>
                     <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + tx.amount, 0))}</TableCell>
                     <TableCell />
-                    <TableCell className="text-right font-semibold">{tc(stats.outputVAT - stats.inputVAT >= 0 ? stats.outputVAT : 0)}</TableCell>
+                    <TableCell className="text-right font-semibold">{tc(filteredTransactions.reduce((sum, tx) => sum + Math.abs(Number(tx.vatAmount || 0)), 0))}</TableCell>
                     <TableCell />
                   </TableRow>
                 </TableBody>
