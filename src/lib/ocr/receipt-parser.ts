@@ -11,6 +11,13 @@
  * Danish invoice table structure detected by:
  *   - "Beløb" column header (or "BELØB")
  *   - Line items between "Beløb" and "Subtotal" (or "Subtotal" / "I alt")
+ *
+ * Line-item identification rule:
+ *   A line in the description area is only a purchase line if it contains
+ *   a Danish monetary amount (comma-decimal, thousands-dot, or "kr" suffix).
+ *   Text-only lines (no monetary amounts) are accumulated as description
+ *   text for the current purchase line.  Small integers like quantity "5" or
+ *   VAT "25%" on their own line do NOT trigger a new line item.
  */
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -117,18 +124,92 @@ export function parseInvoiceText(text: string | undefined | null): ParsedInvoice
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /**
+ * Check whether a line contains a Danish monetary-format number.
+ *
+ * A "monetary amount" is a number that looks like money:
+ *   - Has a comma decimal part: "300,00" or "1.500,00"
+ *   - Has thousands-dot separators: "3.000"
+ *   - Has "kr" suffix: "500 kr" or "1.500,00 kr."
+ *
+ * Small bare integers (e.g. "5" for quantity, "25" for percentage)
+ * do NOT qualify as monetary amounts on their own.
+ */
+function hasMonetaryAmount(line: string): boolean {
+  // Comma-decimal number (e.g. "300,00" or "1.500,00")
+  if (/\d+,\d{1,2}\b/.test(line)) return true;
+  // Thousands-dot number with at least 4 digits total (e.g. "1.500" or "10.000")
+  if (/\d{1,3}\.\d{3}/.test(line)) return true;
+  // "kr" or "DKK" suffix near a number
+  if (/\d[\d.,]*\s*kr/i.test(line)) return true;
+  return false;
+}
+
+/**
+ * Check whether a line contains actual descriptive text (words/letters),
+ * as opposed to pure numbers, percentages, or empty content.
+ *
+ * Used to determine when a new line item block starts: a descriptive line
+ * after a block that already has monetary data signals a new item.
+ */
+function isDescriptiveText(line: string): boolean {
+  // Remove numbers, %, punctuation, and whitespace
+  const stripped = line.replace(/[\d%.,\-–—|\s:/]+/g, '').trim();
+  // If there are at least 3 alphabetic characters, it's descriptive text
+  return /[a-zA-ZæøåÆØÅäöÄÖ]{3,}/.test(stripped);
+}
+
+/**
+ * Extract ALL numbers from a line of text (including small integers).
+ *
+ * Returns numbers in left-to-right order of appearance.
+ * Skips year-like numbers (1990-2100) that lack comma/dot separators.
+ */
+function extractAllNumbers(line: string): number[] {
+  const numbers: number[] = [];
+  const pattern = /(\d[\d.,]*)/g;
+  let match;
+
+  while ((match = pattern.exec(line)) !== null) {
+    const raw = match[1];
+    const num = parseDanishNumber(raw);
+    if (num !== null && num > 0 && num < 10000000) {
+      // Skip year-like 4-digit integers with no decimal/thousands markers
+      if (num >= 1990 && num <= 2100 && !raw.includes('.') && !raw.includes(',')) {
+        continue;
+      }
+      numbers.push(num);
+    }
+  }
+
+  return numbers;
+}
+
+/**
  * Extract line items from a Danish invoice table.
  *
- * Strategy:
+ * Strategy (block-based grouping for Tesseract column-split output):
  *   1. Find the "Beløb" (or "BELØB") column header row
- *   2. Scan lines after it until "Subtotal" / "Subtotal" / "I alt subtotal"
- *   3. Each line between those markers is a line item
- *   4. Parse quantity, unit price, and total from the amounts on each line
+ *   2. Collect all content lines between header and subtotal
+ *   3. Group lines into "blocks" — each block = one logical line item.
+ *      A new block starts when we see descriptive text after a block
+ *      that already contains monetary data.
+ *   4. Each block is joined into one string and parsed for
+ *      description, quantity, unit price, and VAT%.
  *
- * Danish invoice table format:
- *   BESKRIVELSE AF VARE/YDELSE | ANTAL | ENHEDSPRIS | MOMS % | BELØB
- *   Ting                       | 10    | 300,00    | 25%    | 3.000,00
- *   Subtotal                   |       |           |        | 3.000,00
+ * This correctly handles invoices where Tesseract splits table columns
+ * across multiple output lines, e.g.:
+ *     Konsulentydelse - Rådgivning ifm. AI ...
+ *     5
+ *     1.500,00 kr.
+ *     25%
+ *     7.500,00 kr.
+ * All these lines belong to the same block (same invoice row).
+ *
+ * And it correctly handles multiple line items:
+ *     Webhosting  1  500,00  25%  500,00
+ *     Domæne  2  150,00  25%  300,00
+ * "Domæne" is descriptive text, and the previous block already had monetary
+ * data, so it starts a new block.
  */
 function extractLineItems(text: string): ParsedLineItem[] {
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -145,79 +226,49 @@ function extractLineItems(text: string): ParsedLineItem[] {
 
   if (headerIndex === -1) return [];
 
-  // Scan lines after the header until we hit a subtotal/total marker
+  // Collect content lines between header and subtotal
+  const contentLines: string[] = [];
+  for (let i = headerIndex + 1; i < lines.length; i++) {
+    if (/^(?:Subtotal|I alt|Moms i alt|Total|At betale|Forfaldsdato|BANKDETAILER|BETINGELSER|BETALING)/i.test(lines[i])) {
+      break;
+    }
+    contentLines.push(lines[i]);
+  }
+
+  if (contentLines.length === 0) return [];
+
+  // ── Group lines into blocks ──
+  const blocks: string[][] = [];
+  let currentBlock: string[] = [];
+  let blockHasMonetary = false;
+
+  for (const line of contentLines) {
+    const monetary = hasMonetaryAmount(line);
+    const descriptive = isDescriptiveText(line);
+
+    if (descriptive && blockHasMonetary && currentBlock.length > 0) {
+      // New descriptive text after monetary data → start a new block
+      blocks.push(currentBlock);
+      currentBlock = [line];
+      blockHasMonetary = monetary;
+    } else {
+      currentBlock.push(line);
+      if (monetary) blockHasMonetary = true;
+    }
+  }
+  if (currentBlock.length > 0) {
+    blocks.push(currentBlock);
+  }
+
+  // ── Parse each block into a line item ──
   const items: ParsedLineItem[] = [];
   const defaultVat = extractVAT(text) ?? 25;
 
-  for (let i = headerIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Stop at subtotal / total markers
-    if (/^(?:Subtotal|I alt|Moms i alt|Total|At betale|Forfaldsdato|BANKDETAILER|BETINGELSER|BETALING)/i.test(line)) {
-      break;
-    }
-
-    // Extract all amounts from this line (Danish format: 3.000,00 or 300,00)
-    const amounts = extractAmountsFromLine(line);
-    if (amounts.length === 0) continue;
-
-    // Try to determine the structure from the amounts:
-    //
-    // For a line like: "Ting  10  300,00 kr.  25%  3.000,00 kr."
-    //   amounts = [10, 300, 3000]
-    //   description = "Ting", quantity = 10, unitPrice = 300, total = 3000
-    //
-    // For a line like: "Ting  300,00 kr."
-    //   amounts = [300]
-    //   description = "Ting", quantity = 1, unitPrice = 300
-
-    // Extract VAT % if present on the line
-    const vatMatch = line.match(/(\d+)\s*%/);
-    const lineVat = vatMatch ? parseInt(vatMatch[1], 10) : defaultVat;
-
-    // Extract description (everything before the first number on the line)
-    const descMatch = line.match(/^(.*?)(?=\d)/);
-    const description = descMatch
-      ? descMatch[1].replace(/[|\-–—]/g, '').replace(/\s+/g, ' ').trim().slice(0, 120)
-      : line.slice(0, 80).trim();
-
-    if (amounts.length >= 3) {
-      // Full row: description | quantity | unitPrice | [vat%] | total
-      // The first small number is quantity, next is unit price, last is total
-      const quantity = amounts[0];
-      const unitPrice = amounts[1];
-      // Validate: total should be approx quantity * unitPrice (allow for rounding)
-      const expectedTotal = quantity * unitPrice;
-      const actualTotal = amounts[amounts.length - 1];
-
-      if (Math.abs(expectedTotal - actualTotal) < expectedTotal * 0.05) {
-        items.push({ description, quantity, unitPrice, vatPercent: lineVat });
-      } else if (amounts.length >= 2) {
-        // If the total doesn't match, maybe amounts[0] isn't quantity
-        // Try: unitPrice = amounts[0], total = amounts[1], quantity = 1
-        items.push({ description, quantity: 1, unitPrice: amounts[0], vatPercent: lineVat });
-      } else {
-        items.push({ description, quantity: 1, unitPrice: actualTotal, vatPercent: lineVat });
-      }
-    } else if (amounts.length === 2) {
-      // Two amounts: could be quantity + unitPrice, or unitPrice + total
-      // Heuristic: if first amount < 1000 and second amount is roughly first * N, first is qty
-      if (amounts[0] < 1000 && amounts[0] >= 1 && amounts[1] >= amounts[0]) {
-        const qty = amounts[0];
-        const unitPrice = Math.round((amounts[1] / qty) * 100) / 100;
-        items.push({ description, quantity: qty, unitPrice, vatPercent: lineVat });
-      } else {
-        // Otherwise: treat as unitPrice + total (qty = 1)
-        items.push({ description, quantity: 1, unitPrice: amounts[0], vatPercent: lineVat });
-      }
-    } else if (amounts.length === 1) {
-      // Single amount: treat as unit price (quantity = 1)
-      items.push({
-        description,
-        quantity: 1,
-        unitPrice: amounts[0],
-        vatPercent: lineVat,
-      });
+  for (const block of blocks) {
+    const combined = block.join(' ');
+    if (hasMonetaryAmount(combined)) {
+      const item = parseSingleLineItem(combined, defaultVat);
+      if (item) items.push(item);
     }
   }
 
@@ -225,33 +276,81 @@ function extractLineItems(text: string): ParsedLineItem[] {
 }
 
 /**
- * Extract all monetary amounts from a single line.
- * Handles Danish format: "3.000,00" (thousands separator = dot, decimal = comma)
- * Also handles plain numbers with optional "kr." suffix.
+ * Parse a single line item from combined text.
  *
- * Returns amounts sorted by position in the line (left to right).
+ * `combined` is all lines of one block joined with spaces, e.g.:
+ * "Konsulentydelse - Rådgivning ifm. AI i arbejdsgangen 5 25% 1.500,00 kr. 7.500,00 kr."
+ *
+ * Extracts description, quantity, unit price, and VAT%.
  */
-function extractAmountsFromLine(line: string): number[] {
-  const amounts: number[] = [];
+function parseSingleLineItem(combined: string, defaultVat: number): ParsedLineItem | null {
+  // Extract VAT % if present
+  const vatMatch = combined.match(/(\d+)\s*%/);
+  const lineVat = vatMatch ? parseInt(vatMatch[1], 10) : defaultVat;
 
-  // Pattern: Danish number format with optional "kr." suffix
-  // Matches: 3.000,00  /  300,00  /  3.000  /  300
-  const pattern = /(\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?)/g;
-  let match;
+  // Extract ALL numbers from the combined text
+  const allNumbers = extractAllNumbers(combined);
 
-  while ((match = pattern.exec(line)) !== null) {
-    const raw = match[1];
-    const num = parseDanishNumber(raw);
-    if (num !== null && num > 0 && num < 10000000) {
-      // Skip if this number looks like a year (2026, 2024, etc.)
-      if (num >= 1990 && num <= 2100 && raw.indexOf('.') === -1 && raw.indexOf(',') === -1) {
-        continue;
-      }
-      amounts.push(num);
+  // Remove the VAT percentage value from the number list (it's not a monetary amount)
+  const monetaryNums = allNumbers.filter((n) => n !== lineVat);
+
+  // Extract description: text before the first digit
+  const descMatch = combined.match(/^(.*?)(?=\d)/);
+  const description = descMatch
+    ? descMatch[1]
+        .replace(/[|\-–—]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 200)
+    : '';
+
+  if (monetaryNums.length === 0) return null;
+
+  // ── Determine quantity and unit price from available numbers ──
+  if (monetaryNums.length >= 3) {
+    // Full row: likely [quantity, unitPrice, ..., total]
+    // Try: values[0] = qty, values[1] = unitPrice, values[last] = total
+    const qty = monetaryNums[0];
+    const unitPrice = monetaryNums[1];
+    const total = monetaryNums[monetaryNums.length - 1];
+
+    // Validate: total ≈ qty × unitPrice (within 5% for rounding)
+    const expected = qty * unitPrice;
+    if (
+      qty >= 1 &&
+      qty < 10000 &&
+      unitPrice > 0 &&
+      total > 0 &&
+      Math.abs(expected - total) < Math.max(expected, total) * 0.05
+    ) {
+      return { description, quantity: qty, unitPrice, vatPercent: lineVat };
     }
+
+    // Fallback: maybe values[0] isn't quantity. Try qty=1
+    return { description, quantity: 1, unitPrice: monetaryNums[0], vatPercent: lineVat };
   }
 
-  return amounts;
+  if (monetaryNums.length === 2) {
+    // Two values: could be qty + unitPrice, or unitPrice + total
+    const first = monetaryNums[0];
+    const second = monetaryNums[1];
+
+    // If first < 1000 and >= 1, and second >= first → likely qty + unitPrice
+    if (first >= 1 && first < 1000 && second >= first) {
+      return { description, quantity: first, unitPrice: second, vatPercent: lineVat };
+    }
+
+    // Otherwise treat as qty=1, unitPrice = first
+    return { description, quantity: 1, unitPrice: first, vatPercent: lineVat };
+  }
+
+  // Single value: treat as unit price (qty = 1)
+  return {
+    description,
+    quantity: 1,
+    unitPrice: monetaryNums[0],
+    vatPercent: lineVat,
+  };
 }
 
 /**
@@ -261,13 +360,18 @@ function extractAmountsFromLine(line: string): number[] {
  *   "300,00"   → 300.00
  *   "3.000"    → 3000.00
  *   "300"      → 300.00
+ *   "1500,00"  → 1500.00  (no thousands separator)
  */
 function parseDanishNumber(str: string): number | null {
   if (!str) return null;
   try {
+    // Remove any trailing non-numeric chars (kr., DKK, etc.)
+    const cleaned = str.replace(/[^\d.,\-]/g, '');
+    if (!cleaned) return null;
+
     // If it has a comma, the comma is the decimal separator
     // Remove dots (thousands separator), replace comma with dot
-    let normalized = str.replace(/\./g, '').replace(',', '.');
+    let normalized = cleaned.replace(/\./g, '').replace(',', '.');
     const num = parseFloat(normalized);
     return isNaN(num) ? null : num;
   } catch {
@@ -368,23 +472,33 @@ function normalizeDate(dateStr: string | undefined, groups?: RegExpMatchArray): 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function extractAmount(text: string): number | null {
+  // Process line-by-line to prevent regex \s from matching across newlines.
+  // Use [:\s]+ instead of [^:]* to avoid greedy consumption of numbers.
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
   // ── Phase 1: High-priority TOTAL-line patterns ──
   const totalLinePatterns = [
-    /(?:TOTAL|Total|total)[^:]*:?\s*(?:kr\.?\s*)?(?:DKK\s*)?(\d[\d.,]+)\s*(?:kr)?(?:\s*DKK)?/gi,
-    /kr\.?\s*(\d[\d.,]+)\s*(?:total|TOTAL|Total)/gi,
-    /(?:SUM|Sum|sum)[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)\s*(?:kr)?/gi,
-    /at\s+betale[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)/gi,
-    /i\s*alt[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)/gi,
+    // "TOTAL 1.000,00 kr." or "Total: 9.375,00" or "total 9375,00 DKK"
+    /(?:TOTAL|Total|total)[:\s]+(?:kr\.?\s*)?(?:DKK\s*)?(\d[\d.,]+)/i,
+    // "1.000,00 kr total" (amount before keyword)
+    /(\d[\d.,]+)\s*kr\.?\s*(?:total|TOTAL|Total)/i,
+    // "SUM 1.000,00" or "Sum: 800,00"
+    /(?:SUM|Sum|sum)[:\s]+(?:kr\.?\s*)?(\d[\d.,]+)/i,
+    // "at betale 1.000,00 kr." or "At betale: 9375"
+    /at\s+betale[:\s]+(?:kr\.?\s*)?(\d[\d.,]+)/i,
+    // "i alt 1.000,00 kr." or "I alt: 9.375,00"
+    /i\s+alt[:\s]+(?:kr\.?\s*)?(\d[\d.,]+)/i,
   ];
 
   for (const pattern of totalLinePatterns) {
-    const regex = new RegExp(pattern.source, pattern.flags);
-    let match;
     let lastAmount: number | null = null;
-    while ((match = regex.exec(text)) !== null) {
-      const amount = parseDanishNumber(match[1]);
-      if (amount !== null && amount > 0) {
-        lastAmount = amount;
+    for (const line of lines) {
+      const match = line.match(pattern);
+      if (match) {
+        const amount = parseDanishNumber(match[1]);
+        if (amount !== null && amount > 0) {
+          lastAmount = amount;
+        }
       }
     }
     if (lastAmount !== null) return lastAmount;
@@ -392,19 +506,20 @@ function extractAmount(text: string): number | null {
 
   // ── Phase 2: Fallback — largest monetary amount ──
   const fallbackPatterns = [
-    /dkk\s*(\d[\d.,]+)/gi,
-    /kr\.?\s*(\d[\d.,]+)/gi,
-    /(?:pris|price|amount)[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)/gi,
+    /dkk\s*(\d[\d.,]+)/i,
+    /kr\.?\s*(\d[\d.,]+)/i,
+    /(?:pris|price|amount)[:\s]+(?:kr\.?\s*)?(\d[\d.,]+)/i,
   ];
 
   const allAmounts: number[] = [];
   for (const pattern of fallbackPatterns) {
-    const regex = new RegExp(pattern.source, pattern.flags);
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const amount = parseDanishNumber(match[1]);
-      if (amount !== null && amount > 0) {
-        allAmounts.push(amount);
+    for (const line of lines) {
+      const match = line.match(pattern);
+      if (match) {
+        const amount = parseDanishNumber(match[1]);
+        if (amount !== null && amount > 0) {
+          allAmounts.push(amount);
+        }
       }
     }
   }
@@ -422,27 +537,41 @@ function extractAmount(text: string): number | null {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function extractVAT(text: string): number | null {
-  const patterns = [
-    /(\d+)\s*%\s*(?:moms|vat)/gi,
-    /moms[^:]*:?\s*(\d+(?:[.,]\d+)?)\s*%/gi,
-    /vat[^:]*:?\s*(\d+(?:[.,]\d+)?)\s*%/gi,
-    /moms\s+(?:i alt)[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)/gi,
-    /moms[^:]*:?\s*(?:kr\.?\s*)?(\d[\d.,]+)/gi,
-  ];
+  // Process line-by-line to prevent regex \s from matching across newlines.
+  //
+  // Pattern design principles:
+  //   - Use [:\s]+ instead of [^:]* to avoid greedy partial-number matches
+  //   - Require "moms" or "vat" keyword on the SAME line as the percentage
+  //   - The "MOMS %" column header is safely ignored (no digit before %)
+  //   - Standalone "25%" without "moms"/"vat" is ignored (falls through to default)
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  // Pattern 1: "25% moms" or "25 % vat" — percentage then keyword
+  const pPercentBefore = /(\d+)\s*%\s*(?:moms|vat)/i;
+  // Pattern 2: "moms: 25%" — keyword colon then percentage
+  const pMomsColon = /moms\s*:\s*(\d+)\s*%/i;
+  // Pattern 3: "moms (25%)" or "moms i alt (25%)" — percentage in parentheses
+  const pMomsParen = /moms[^(]*\((\d+)%\)/i;
+  // Pattern 4: "moms 25%" — keyword space then percentage (no colon)
+  const pMomsSpace = /moms\s+(\d+)\s*%/i;
+  // Pattern 5: "vat: 25%" or "vat 25%"
+  const pVatAny = /vat\s*:?\s*(\d+)\s*%/i;
+
+  const patterns = [pPercentBefore, pMomsColon, pMomsParen, pMomsSpace, pVatAny];
 
   for (const pattern of patterns) {
-    const regex = new RegExp(pattern.source, pattern.flags);
-    let vatMatch;
-    while ((vatMatch = regex.exec(text)) !== null) {
-      const value = parseFloat((vatMatch[1] || '0').replace(',', '.'));
-      if (!isNaN(value) && value <= 100 && value >= 0) {
-        return value; // Percentage (0-100)
+    for (const line of lines) {
+      const match = line.match(pattern);
+      if (match) {
+        const value = parseFloat((match[1] || '0').replace(',', '.'));
+        if (!isNaN(value) && value > 0 && value <= 100) {
+          return value; // Valid percentage (1-100)
+        }
       }
-      break;
     }
   }
 
-  // Default to 25% for Danish receipts with no explicit VAT
+  // Default to 25% for Danish receipts/invoices with no explicit VAT percentage
   const danishIndicators = ['moms', 'kr', 'dkk', 'betale', 'kontant', 'dankort', 'faktura'];
   if (danishIndicators.some((ind) => text.toLowerCase().includes(ind))) {
     return 25;
