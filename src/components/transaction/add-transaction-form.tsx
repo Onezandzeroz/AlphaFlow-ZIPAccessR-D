@@ -246,6 +246,10 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
   const selectedAccount = expenseAccounts.find((a) => a.id === selectedAccountId);
 
+  // ─── Card data detection (for conditional account validation) ───
+  const receiptCardHasData = !!(amount && parseFloat(amount) > 0) || !!(description && description.trim() !== '');
+  const purchaseLinesHasData = purchaseLines.some(line => !!(line.description?.trim()) || line.unitPrice > 0);
+
   // ─── Line item callbacks ───
   const addPurchaseLineItem = useCallback(() => {
     setPurchaseLines(prev => [...prev, { ...EMPTY_LINE_ITEM }]);
@@ -554,10 +558,32 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setError('');
     setAccountError('');
 
-    if (!selectedAccountId) {
+    // Validate based on which cards have data
+    if (receiptCardHasData && !selectedAccountId) {
       setAccountError(isDa
         ? 'Vælg en omkostningskonto for at bogføre i dobbelt-posteringsregnskabet'
         : 'Select an expense account for double-entry bookkeeping');
+      return;
+    }
+
+    // Validate purchase line accounts when lines have data
+    if (purchaseLinesHasData) {
+      const lineMissingAccount = purchaseLines.find(
+        line => (line.description?.trim() || line.unitPrice > 0) && !line.accountId
+      );
+      if (lineMissingAccount) {
+        setError(isDa
+          ? 'Alle købslinjer med data skal have en konto valgt'
+          : 'All purchase lines with data must have an account selected');
+        return;
+      }
+    }
+
+    // At least one card must have data to record
+    if (!receiptCardHasData && !purchaseLinesHasData) {
+      setError(isDa
+        ? 'Tilføj beløb eller købslinjer for at bogføre'
+        : 'Add an amount or purchase lines to record');
       return;
     }
 
@@ -630,7 +656,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     } finally {
       setIsLoading(false);
     }
-  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError]);
+  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError, receiptCardHasData, purchaseLinesHasData, purchaseLines]);
 
   // ─── RENDER ───
 
@@ -655,7 +681,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   );
 
   // Shared: Expense account select
-  const renderAccountSelect = () => (
+  const renderAccountSelect = (cardDisabled?: boolean) => (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <BookOpen className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
@@ -665,9 +691,10 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-[#0d9488]/10 text-[#0d9488] dark:bg-[#2dd4bf]/20 dark:text-[#2dd4bf]">
           6xxx–9xxx
         </span>
-        <span className="text-[10px] text-red-500 dark:text-red-400 ml-1">*</span>
+        {!cardDisabled && <span className="text-[10px] text-red-500 dark:text-red-400 ml-1">*</span>}
+        {cardDisabled && <span className="text-[10px] text-gray-400 ml-1">({isDa ? 'valgfrit' : 'optional'})</span>}
       </div>
-      <Select value={selectedAccountId} onValueChange={(val) => { setSelectedAccountId(val); setAccountError(''); }} disabled={isLoading || accountsLoading}>
+      <Select value={selectedAccountId} onValueChange={(val) => { setSelectedAccountId(val); setAccountError(''); }} disabled={isLoading || accountsLoading || !!cardDisabled}>
         <SelectTrigger className={`bg-gray-50 dark:bg-white/5 ${accountError ? 'border-red-400 dark:border-red-500' : ''}`}>
           <SelectValue placeholder={accountsLoading
             ? (isDa ? 'Indlæser konti...' : 'Loading accounts...')
@@ -978,10 +1005,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-600/10 text-emerald-600 dark:bg-emerald-400/20 dark:text-emerald-400">
                   6xxx–9xxx
                 </span>
+                {purchaseLinesHasData && (item.description?.trim() || item.unitPrice > 0) && <span className="text-[10px] text-red-500 dark:text-red-400 ml-1">*</span>}
               </div>
               <Select
                 value={item.accountId}
                 onValueChange={(val) => updatePurchaseLineItem(index, 'accountId', val)}
+                disabled={!purchaseLinesHasData || (!(item.description?.trim()) && item.unitPrice === 0)}
               >
                 <SelectTrigger className="h-10 bg-gray-50 dark:bg-white/5">
                   <SelectValue placeholder={isDa ? 'Vælg konto...' : 'Select account...'} />
@@ -1108,7 +1137,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const renderSubmit = () => (
     <Button
       type="submit"
-      disabled={isLoading}
+      disabled={isLoading || (layout === 'cards' && !receiptCardHasData && !purchaseLinesHasData)}
       className={`bg-[#0d9488] hover:bg-[#0f766e] text-white font-semibold transition-colors ${layout === 'cards' ? 'h-12 text-base px-8' : 'w-full h-11'}`}
     >
       {isLoading ? (
@@ -1234,7 +1263,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             <div className="border-t border-gray-100 dark:border-white/5" />
 
             {/* ── 4. Fra konto ── */}
-            {renderAccountSelect()}
+            {renderAccountSelect(!receiptCardHasData)}
           </CardContent>
         </Card>
 
