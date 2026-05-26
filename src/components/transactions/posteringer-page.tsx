@@ -54,14 +54,15 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
   const openFormWithScan = useCallback((result: { file: File; id: number }) => {
     if (result.id === lastConsumedIdRef.current) return;
     lastConsumedIdRef.current = result.id;
-    requestAnimationFrame(() => {
-      setPreloadedFile(result.file);
-      // Desktop: full page only, Mobile: dialog only
-      setCurrentView('create');
-      if (!window.matchMedia('(min-width: 1024px)').matches) {
-        setIsMobileDialogOpen(true);
-      }
-    });
+    // Deliver file synchronously — requestAnimationFrame caused a race
+    // where the preloaded file arrived too late (or not at all) when
+    // scanning from inside the already-open dialog.
+    setPreloadedFile(result.file);
+    // Desktop: full page only, Mobile: dialog only
+    setCurrentView('create');
+    if (!window.matchMedia('(min-width: 1024px)').matches) {
+      setIsMobileDialogOpen(true);
+    }
   }, []);
 
   useEffect(() => {
