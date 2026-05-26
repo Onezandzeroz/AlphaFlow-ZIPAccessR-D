@@ -602,20 +602,49 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         receiptImagePath = uploadData.path;
       }
 
-      const amountToStore = includesVAT ? netAmount : parsedAmount;
+      // Determine amount, description, date, and accountId for the API
+      // Priority: receipt card data → derived from purchase lines
+      let txAmount: number;
+      let txDescription: string;
+      let txDate: string;
+      let txAccountId: string | undefined;
+      let txVatPercent: number;
+
+      if (receiptCardHasData) {
+        txAmount = includesVAT ? netAmount : parsedAmount;
+        txDescription = description;
+        txDate = date;
+        txAccountId = selectedAccountId || undefined;
+        txVatPercent = parseFloat(vatPercent);
+      } else {
+        // Derive from purchase lines
+        txAmount = lineTotals.subtotal; // net amount from lines
+        const descriptions = purchaseLines
+          .filter(l => l.description?.trim())
+          .map(l => l.description.trim());
+        txDescription = descriptions.length > 0
+          ? (descriptions.length === 1 ? descriptions[0] : descriptions.slice(0, 3).join(', ') + (descriptions.length > 3 ? '...' : ''))
+          : (isDa ? 'Køb' : 'Purchase');
+        txDate = purchaseLinesDate;
+        txAccountId = purchaseLines.find(l => l.accountId)?.accountId || undefined;
+        // Use the most common VAT% among lines, or default to 25
+        const vatCounts = purchaseLines.reduce((acc, l) => { acc[l.vatPercent] = (acc[l.vatPercent] || 0) + 1; return acc; }, {} as Record<number, number>);
+        txVatPercent = Object.entries(vatCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 25;
+      }
+
       const response = await fetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'PURCHASE',
-          date,
-          amount: amountToStore,
-          currency: currency !== 'DKK' ? currency : undefined,
-          exchangeRate: currency !== 'DKK' && exchangeRate ? parseFloat(exchangeRate) : undefined,
-          description,
-          vatPercent: parseFloat(vatPercent),
+          date: txDate,
+          amount: txAmount,
+          currency: receiptCardHasData && currency !== 'DKK' ? currency : undefined,
+          exchangeRate: receiptCardHasData && currency !== 'DKK' && exchangeRate ? parseFloat(exchangeRate) : undefined,
+          description: txDescription,
+          vatPercent: txVatPercent,
           receiptImage: receiptImagePath,
-          accountId: selectedAccountId,
+          accountId: txAccountId,
         }),
       });
 
@@ -657,7 +686,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     } finally {
       setIsLoading(false);
     }
-  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError, receiptCardHasData, purchaseLinesHasData, purchaseLines]);
+  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError, receiptCardHasData, purchaseLinesHasData, purchaseLines, purchaseLinesDate, lineTotals]);
 
   // ─── RENDER ───
 
