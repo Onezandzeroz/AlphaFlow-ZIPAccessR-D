@@ -38,7 +38,7 @@ import { useTranslation } from '@/lib/use-translation';
 import { toast } from 'sonner';
 import { useAccessErrorHandler } from '@/hooks/use-access-error-handler';
 import { ReceiptScanner } from '@/components/scanner/ReceiptScanner';
-import { scanReceipt, type OCRResult } from '@/lib/ocr-utils';
+import { useOcr, type OCRResult } from '@/lib/ocr';
 
 const CURRENCIES = ['DKK', 'EUR', 'USD', 'GBP', 'SEK', 'NOK'] as const;
 
@@ -133,10 +133,13 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [currency, setCurrency] = useState('DKK');
   const [exchangeRate, setExchangeRate] = useState('');
   const [includesVAT, setIncludesVAT] = useState(true);
-  const [ocrLoading, setOcrLoading] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState(0);
   const [description, setDescription] = useState('');
+
   const [vatPercent, setVatPercent] = useState('25');
+
+  // ─── OCR (unified hook — manages loading, progress, result, error) ───
+  const { processFile: processOCR, result: ocrResult, loading: ocrLoading, progress: ocrProgress, reset: resetOCR } = useOcr();
+
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [receiptNaturalWidth, setReceiptNaturalWidth] = useState<number | null>(null);
@@ -332,157 +335,110 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
     setReceiptPreview(null);
     setReceiptNaturalWidth(null);
-    setOcrLoading(false);
-    setOcrProgress(0);
+    resetOCR();
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, []);
+  }, [resetOCR]);
 
   // ─── Manual OCR trigger ───
   const handleManualOCR = useCallback(async () => {
     if (!receiptFile) return;
 
-    setOcrLoading(true);
-    setOcrProgress(0);
+    const result = await processOCR(receiptFile, { source: 'upload' });
+    if (!result) return; // Processing was interrupted or failed (hook handles error toast)
 
-    try {
-      let ocrResult;
-      const isPdf = receiptFile.type === 'application/pdf' || receiptFile.name?.toLowerCase().endsWith('.pdf');
+    // Apply OCR results to form fields
+    if (result.amount !== null && !amount) {
+      setAmount(String(result.amount));
+    }
+    if (result.date && !dateManuallySetRef.current) {
+      setDate(result.date);
+    }
+    if (result.vatPercent !== null) {
+      setVatPercent(String(result.vatPercent));
+    }
+    if (result.amount !== null && result.vatPercent !== null && result.vatPercent > 0) {
+      setIncludesVAT(true);
+    }
 
-      if (isPdf || !receiptFile.type.startsWith('image/')) {
-        // For PDFs and other non-image files, send to backend VLM API
-        const formData = new FormData();
-        formData.append('file', receiptFile);
+    // Use structured line items or description from OCR result
+    if (result.description && !description) {
+      setDescription(result.description);
+    }
 
-        console.log('[OCR] Sending to backend VLM:', receiptFile.name, receiptFile.type, `${(receiptFile.size / 1024).toFixed(1)}KB`);
+    let newLines: PurchaseLineItem[] = [];
 
-        const res = await fetch('/api/ocr/pdf', {
-          method: 'POST',
-          body: formData,
-        });
+    if (result.lineItems.length > 0) {
+      // Structured line items (from VLM PDF processing)
+      newLines = result.lineItems.map((line) => ({
+        description: line.description || '',
+        quantity: line.quantity || 1,
+        unitPrice: line.unitPrice || 0,
+        vatPercent: line.vatPercent || (result.vatPercent ?? 25),
+        accountId: '',
+      }));
+    } else {
+      // Fallback: derive line items from raw OCR lines
+      const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
 
-        if (!res.ok) {
-          const errBody = await res.text().catch(() => '');
-          console.error('[OCR] Backend OCR failed:', res.status, errBody);
-          throw new Error(`OCR failed (${res.status}): ${errBody}`);
-        }
+      for (const rawLine of result.rawLines) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) continue;
 
-        const data = await res.json();
-        ocrResult = data;
-        setOcrProgress(100);
-      } else {
-        // For images, use client-side Tesseract OCR
-        console.log('[OCR] Using client-side Tesseract for image:', receiptFile.name);
-        ocrResult = await scanReceipt(receiptFile, (progress) => {
-          setOcrProgress(progress);
-        });
-      }
+        const match = trimmed.match(amountPattern);
+        if (match) {
+          const lineAmount = parseFloat(match[1].replace(',', '.'));
+          const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
+          if (isTotalLine) continue;
+          const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
+          if (isVatLine && !amount) continue;
 
-      setOcrLoading(false);
-      setOcrProgress(100);
-
-      // Apply OCR results to form fields
-      if (ocrResult.amount !== null && !amount) {
-        setAmount(String(ocrResult.amount));
-      }
-      if (ocrResult.date && !dateManuallySetRef.current) {
-        setDate(ocrResult.date);
-      }
-      if (ocrResult.vatPercent !== null) {
-        setVatPercent(String(ocrResult.vatPercent));
-      }
-      if (ocrResult.amount !== null && ocrResult.vatPercent !== null && ocrResult.vatPercent > 0) {
-        setIncludesVAT(true);
-      }
-
-      // Use VLM structured line items if available (from PDF OCR)
-      const vlmLines = (ocrResult as any).vlmLines;
-      const vlmDescription = (ocrResult as any).vlmDescription;
-      
-      if (vlmDescription && !description) {
-        setDescription(vlmDescription);
-      }
-
-      let newLines: PurchaseLineItem[] = [];
-
-      if (vlmLines && Array.isArray(vlmLines) && vlmLines.length > 0) {
-        // Use structured VLM line items directly
-        newLines = vlmLines.map((line: any) => ({
-          description: line.description || '',
-          quantity: line.quantity || 1,
-          unitPrice: line.unitPrice || 0,
-          vatPercent: line.vatPercent || (ocrResult.vatPercent ?? 25),
-          accountId: '',
-        }));
-      } else {
-        // Fallback: Generate line items from raw OCR lines that contain amounts
-        const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
-
-        for (const rawLine of ocrResult.rawLines) {
-          const trimmed = rawLine.trim();
-          if (!trimmed) continue;
-
-          const match = trimmed.match(amountPattern);
-          if (match) {
-            const lineAmount = parseFloat(match[1].replace(',', '.'));
-            const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
-            if (isTotalLine) continue;
-            const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
-            if (isVatLine && !amount) continue;
-
-            if (lineAmount > 0 && lineAmount < 100000) {
-              const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
-              newLines.push({
-                description: desc || trimmed,
-                quantity: 1,
-                unitPrice: lineAmount,
-                vatPercent: ocrResult.vatPercent ?? 25,
-                accountId: '',
-              });
-            }
+          if (lineAmount > 0 && lineAmount < 100000) {
+            const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
+            newLines.push({
+              description: desc || trimmed,
+              quantity: 1,
+              unitPrice: lineAmount,
+              vatPercent: result.vatPercent ?? 25,
+              accountId: '',
+            });
           }
         }
       }
+    }
 
-      // If no line items were extracted, create a single line from the total
-      if (newLines.length === 0 && ocrResult.amount !== null) {
-        newLines.push({
-          description: isDa ? 'Køb' : 'Purchase',
-          quantity: 1,
-          unitPrice: ocrResult.amount,
-          vatPercent: ocrResult.vatPercent ?? 25,
-          accountId: '',
-        });
-      }
-
-      if (newLines.length > 0) {
-        setPurchaseLines(newLines);
-      }
-
-      // Show result toast
-      if (ocrResult.confidence > 0 && (ocrResult.amount || ocrResult.date || newLines.length > 0)) {
-        toast.success(isDa ? 'Dokument læst' : 'Document scanned', {
-          description: isDa
-            ? `Fundet ${newLines.length} købslinje${newLines.length !== 1 ? 'r' : ''}${ocrResult.amount ? `, beløb: ${ocrResult.amount} kr` : ''}${ocrResult.date ? `, dato: ${ocrResult.date}` : ''}`
-            : `Found ${newLines.length} line item${newLines.length !== 1 ? 's' : ''}${ocrResult.amount ? `, amount: ${ocrResult.amount} DKK` : ''}${ocrResult.date ? `, date: ${ocrResult.date}` : ''}`,
-          duration: 4000,
-        });
-      } else {
-        toast.warning(isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document', {
-          description: isDa
-            ? 'Tilføj købslinjer manuelt'
-            : 'Add purchase lines manually',
-          duration: 3000,
-        });
-      }
-    } catch {
-      setOcrLoading(false);
-      setOcrProgress(0);
-      toast.error(isDa ? 'OCR fejl' : 'OCR error', {
-        description: isDa ? 'Kunne ikke læse dokumentet. Prøv igen eller tilføj linjer manuelt.' : 'Could not read document. Try again or add lines manually.',
+    // If no line items were extracted, create a single line from the total
+    if (newLines.length === 0 && result.amount !== null) {
+      newLines.push({
+        description: isDa ? 'Køb' : 'Purchase',
+        quantity: 1,
+        unitPrice: result.amount,
+        vatPercent: result.vatPercent ?? 25,
+        accountId: '',
       });
     }
-  }, [receiptFile, amount, isDa]);
+
+    if (newLines.length > 0) {
+      setPurchaseLines(newLines);
+    }
+
+    // Show result toast
+    if (result.confidence > 0 && (result.amount || result.date || newLines.length > 0)) {
+      toast.success(isDa ? 'Dokument læst' : 'Document scanned', {
+        description: isDa
+          ? `Fundet ${newLines.length} købslinje${newLines.length !== 1 ? 'r' : ''}${result.amount ? `, beløb: ${result.amount} kr` : ''}${result.date ? `, dato: ${result.date}` : ''}`
+          : `Found ${newLines.length} line item${newLines.length !== 1 ? 's' : ''}${result.amount ? `, amount: ${result.amount} DKK` : ''}${result.date ? `, date: ${result.date}` : ''}`,
+        duration: 4000,
+      });
+    } else {
+      toast.warning(isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document', {
+        description: isDa
+          ? 'Tilføj købslinjer manuelt'
+          : 'Add purchase lines manually',
+        duration: 3000,
+      });
+    }
+  }, [receiptFile, amount, description, isDa, processOCR]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
@@ -583,12 +539,11 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setCurrency('DKK');
       setExchangeRate('');
       setIncludesVAT(true);
-      setOcrLoading(false);
-      setOcrProgress(0);
       setDescription('');
       setVatPercent('25');
       setSelectedAccountId('');
       setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
+      resetOCR();
       clearReceipt();
 
       toast.success(isDa ? 'Indkøb bogført' : 'Purchase recorded', {
