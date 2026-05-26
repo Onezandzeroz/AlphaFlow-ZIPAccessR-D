@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fromBuffer } from 'pdf2pic';
 
 /**
  * POST /api/pdf-to-png
@@ -10,8 +9,17 @@ import { fromBuffer } from 'pdf2pic';
  * System dependencies (install on production VPS):
  *   apt-get install -y graphicsmagick ghostscript
  *
- * Returns the PNG as a binary blob with Content-Type: image/png.
+ * NOTE: pdf2pic is loaded via dynamic import() to avoid Turbopack
+ * bundling issues — it spawns native child processes (gm/gs) that
+ * cannot be bundled. It is also listed in serverExternalPackages
+ * in next.config.ts.
  */
+
+async function getPdf2pic() {
+  // Dynamic import — hidden from Turbopack static analysis at build time.
+  // Resolved at runtime from node_modules on the server.
+  return await import(/* webpackIgnore: true */ 'pdf2pic' as string);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -48,6 +56,10 @@ export async function POST(request: NextRequest) {
     console.log(
       `[PDF→PNG] Converting: ${file.name}, ${(pdfBuffer.length / 1024).toFixed(1)}KB`,
     );
+
+    // Load pdf2pic at runtime (not bundled by Turbopack)
+    const pdf2pic = await getPdf2pic();
+    const { fromBuffer } = pdf2pic;
 
     // Convert page 1 to PNG (in-memory, no temp files)
     const convert = fromBuffer(pdfBuffer, {
