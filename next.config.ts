@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
     "*.space.z.ai",
     "*.space-z.ai",
   ],
-  serverExternalPackages: ["@prisma/client", "prisma", "node-cron", "archiver", "nodemailer"],
+  serverExternalPackages: ["@prisma/client", "prisma", "node-cron", "archiver", "nodemailer", "pdf2pic"],
 
   // ─── SPA rewrites: catch all non-API, non-static paths and serve the root page ───
   // The app is a single-page app (SPA) with client-side routing.
