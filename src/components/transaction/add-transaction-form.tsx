@@ -629,7 +629,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         txAccountId = purchaseLines.find(l => l.accountId)?.accountId || undefined;
         // Use the most common VAT% among lines, or default to 25
         const vatCounts = purchaseLines.reduce((acc, l) => { acc[l.vatPercent] = (acc[l.vatPercent] || 0) + 1; return acc; }, {} as Record<number, number>);
-        txVatPercent = Object.entries(vatCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 25;
+        txVatPercent = Number(Object.entries(vatCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 25);
       }
 
       const response = await fetch('/api/transactions', {
