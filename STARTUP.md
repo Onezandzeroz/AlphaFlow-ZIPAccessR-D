@@ -36,7 +36,25 @@ bun --version
 
 ## 1. Local Development
 
-### 1.1. Clone and Configure
+### 1.1. System Dependencies (Required)
+
+The app uses **pdf2pic** (via GraphicsMagick + Ghostscript) for server-side PDF-to-PNG conversion (e.g., uploading purchase invoices). Install these before running the app:
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install -y graphicsmagick ghostscript
+
+# macOS (Homebrew)
+brew install graphicsmagick ghostscript
+
+# Verify
+gm version    # GraphicsMagick
+gs --version  # Ghostscript
+```
+
+> **If you skip this step**, PDF uploads on the "Add purchase" page will fail with a clear error message telling you to install these dependencies. Direct image uploads (PNG, JPEG) are unaffected.
+
+### 1.2. Clone and Configure
 
 ```bash
 # Clone the repository
@@ -47,7 +65,7 @@ cd AlphaFlow
 bun install
 ```
 
-### 1.2. Host App — Neon PostgreSQL Database
+### 1.3. Host App — Neon PostgreSQL Database
 
 The host app requires a **Neon PostgreSQL** connection. You must set `DATABASE_URL` in your `.env` file.
 
@@ -74,7 +92,7 @@ Then push the Prisma schema to your Neon database:
 bun run db:push
 ```
 
-### 1.3. TokenBay Access — Local SQLite Database
+### 1.4. TokenBay Access — Local SQLite Database
 
 The mini-service uses its **own separate local SQLite database** — completely independent from the host app's PostgreSQL.
 
@@ -98,7 +116,7 @@ cd ../..
 >
 > The `DATABASE_PATH` defaults to `./data/access.db` (relative to `mini-services/tokenpay-access-service/`). You can override it via the `DATABASE_PATH` environment variable, but the default works for both dev and production.
 
-### 1.4. Start Development Servers
+### 1.5. Start Development Servers
 
 ```bash
 # Start the Next.js development server (port 3000)
@@ -152,7 +170,7 @@ To test real emails during development, configure SMTP in `.env` (see [Environme
 sudo apt update && sudo apt upgrade -y
 
 # Install essential tools
-sudo apt install -y git curl ufw
+sudo apt install -y git curl ufw graphicsmagick ghostscript
 
 # Install Bun
 curl -fsSL https://bun.sh/install | bash

@@ -279,48 +279,30 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
-      // ── PDF: Convert first page to PNG using local pdf.js ──
+      // ── PDF: Convert first page to PNG via server-side pdf2pic (Ghostscript) ──
       try {
         setReceiptPreview('loading');
 
-        // Load pdf.js from local static files (bundled in /public/pdfjs/)
-        if (!(window as any).pdfjsLib) {
-          const pdfjsScript = document.createElement('script');
-          pdfjsScript.src = '/pdfjs/pdf.min.js';
-          document.head.appendChild(pdfjsScript);
+        // Send PDF to server for high-quality Ghostscript-based conversion
+        const formData = new FormData();
+        formData.append('file', file);
 
-          await new Promise<void>((resolve, reject) => {
-            pdfjsScript.onload = () => resolve();
-            pdfjsScript.onerror = () => reject(new Error('pdf.js load failed'));
-          });
-        }
-
-        const pdfjsLib = (window as any).pdfjsLib;
-        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js';
-
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-
-        // Render first page only
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, viewport.width, viewport.height);
-        }
-        await page.render({ canvasContext: ctx, viewport }).promise;
-
-        // Convert canvas to PNG blob
-        const pngBlob = await new Promise<Blob>((resolve, reject) => {
-          canvas.toBlob(
-            (b) => b ? resolve(b) : reject(new Error('Canvas toBlob failed')),
-            'image/png',
-          );
+        const response = await fetch('/api/pdf-to-png', {
+          method: 'POST',
+          body: formData,
         });
+
+        if (!response.ok) {
+          const errBody = await response.json().catch(() => ({ error: 'Conversion failed' }));
+          throw new Error(errBody.error || `Server error ${response.status}`);
+        }
+
+        // Receive the PNG blob from the server
+        const pngBlob = await response.blob();
+
+        if (pngBlob.size === 0 || !pngBlob.type.startsWith('image/')) {
+          throw new Error('Server returned an invalid image');
+        }
 
         const pngFile = new File(
           [pngBlob],
@@ -340,7 +322,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         setOriginalWasPdf(true);
 
         console.log(
-          `[PDF→PNG] Converted first page: ${viewport.width}x${viewport.height}, PNG: ${(pngBlob.size / 1024).toFixed(0)}KB`,
+          `[PDF→PNG] Server-converted first page: ${(pngBlob.size / 1024).toFixed(0)}KB`,
         );
       } catch (err) {
         console.error('[PDF→PNG] Conversion failed:', err);
@@ -348,13 +330,24 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         setReceiptPreview(null);
         setOriginalWasPdf(false);
 
+        const isDepError = err instanceof Error && (
+          err.message.includes('GraphicsMagick') ||
+          err.message.includes('Ghostscript') ||
+          err.message.includes('graphicsmagick') ||
+          err.message.includes('ghostscript')
+        );
+
         toast.error(
           isDa ? 'Kunne ikke konvertere PDF' : 'Could not convert PDF',
           {
-            description: isDa
-              ? 'PDFen kunne ikke konverteres til billede. Prøv igen eller brug et screenshot i stedet.'
-              : 'The PDF could not be converted to image. Try again or use a screenshot instead.',
-            duration: 5000,
+            description: isDepError
+              ? isDa
+                ? 'Server mangler GraphicsMagick/Ghostscript. Kør: sudo apt-get install -y graphicsmagick ghostscript'
+                : 'Server missing GraphicsMagick/Ghostscript. Run: sudo apt-get install -y graphicsmagick ghostscript'
+              : isDa
+                ? 'PDFen kunne ikke konverteres til billede. Prøv igen eller brug et screenshot i stedet.'
+                : 'The PDF could not be converted to image. Try again or use a screenshot instead.',
+            duration: 8000,
           },
         );
       }
@@ -386,13 +379,28 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const handleManualOCR = useCallback(async () => {
     if (!receiptFile) return;
 
-    // PDF-converted PNGs should use VLM for structured extraction (line items, description)
-    // Regular images (camera/upload) use auto-detect → Tesseract
-    const result = await processOCR(receiptFile, {
+    // All images (including PDF-converted PNGs) use auto-detect → Tesseract first.
+    // If Tesseract returns nothing useful, fall back to VLM (server-side Claude).
+    // This ensures OCR always works — Tesseract is client-side and never throws.
+    let result = await processOCR(receiptFile, {
       source: 'upload',
-      processor: originalWasPdf ? 'vlm' : 'auto',
+      processor: 'auto',
     });
-    if (!result) {
+
+    // Fallback: if Tesseract produced an empty result, retry with VLM
+    // (useful for complex invoices where AI vision extracts more structure)
+    if (result && result.confidence < 30 && !result.amount && !result.date) {
+      console.log('[OCR] Tesseract returned low-confidence result, trying VLM fallback…');
+      const vlmResult = await processOCR(receiptFile, {
+        source: 'upload',
+        processor: 'vlm',
+      });
+      if (vlmResult && vlmResult.confidence > result.confidence) {
+        result = vlmResult;
+      }
+    }
+
+    if (!result || (result.confidence === 0 && !result.amount && !result.date)) {
       toast.error(
         isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document',
         {
@@ -498,7 +506,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         duration: 3000,
       });
     }
-  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR, ocrError]);
+  }, [receiptFile, amount, description, isDa, processOCR, ocrError]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
