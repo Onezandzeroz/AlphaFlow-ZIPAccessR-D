@@ -138,7 +138,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [vatPercent, setVatPercent] = useState('25');
 
   // ─── OCR (unified hook — manages loading, progress, result, error) ───
-  const { processFile: processOCR, result: ocrResult, loading: ocrLoading, progress: ocrProgress, reset: resetOCR } = useOcr();
+  const { processFile: processOCR, result: ocrResult, loading: ocrLoading, progress: ocrProgress, error: ocrError, reset: resetOCR } = useOcr();
 
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
@@ -345,7 +345,18 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     if (!receiptFile) return;
 
     const result = await processOCR(receiptFile, { source: 'upload' });
-    if (!result) return; // Processing was interrupted or failed (hook handles error toast)
+    if (!result) {
+      toast.error(
+        isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document',
+        {
+          description: isDa
+            ? 'Tjek at filen er et gyldigt bilag og prøv igen, eller tilføj data manuelt'
+            : 'Make sure the file is a valid receipt/invoice and try again, or add data manually',
+          duration: 5000,
+        },
+      );
+      return;
+    }
 
     // Apply OCR results to form fields
     if (result.amount !== null && !amount) {

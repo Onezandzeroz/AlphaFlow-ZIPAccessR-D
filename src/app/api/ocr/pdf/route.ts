@@ -7,52 +7,20 @@ import type { VisionMultimodalContentItem } from 'z-ai-web-dev-sdk';
  * Uses AI vision (VLM) to extract structured data from purchase documents.
  * For PDFs: renders pages to images first, then sends to VLM.
  * For images: sends directly to VLM.
+ *
+ * Runtime dependencies (not bundled — loaded from node_modules):
+ *   - pdfjs-dist@3.11.174: PDF parsing & rendering
+ *   - canvas: Node.js canvas for page rendering
  */
 export const maxDuration = 60;
 
-// ─── Canvas polyfill state ───────────────────────────────────────────
-// pdfjs-dist v4 uses `instanceof Image` and `instanceof Canvas` checks
-// internally (e.g. in paintInlineImageXObject). In Node.js these DOM
-// globals don't exist, causing "Image or Canvas expected" errors when
-// rendering PDFs with inline images (logos, stamps, etc.).
-//
-// We polyfill them once from the `canvas` npm package so all pdfjs-dist
-// code paths work transparently. The polyfill is idempotent — safe to
-// call on every request.
-
-let canvasPolyfilled = false;
-
-async function ensureCanvasPolyfill(): Promise<typeof import('canvas')> {
-  if (canvasPolyfilled) {
-    return await import(/* webpackIgnore: true */ 'canvas' as string);
-  }
-
-  const nodeCanvas = await import(/* webpackIgnore: true */ 'canvas' as string) as any;
-
-  // Polyfill DOM globals that pdfjs-dist v4 checks with `instanceof`
-  if (typeof (globalThis as any).Image === 'undefined') {
-    (globalThis as any).Image = nodeCanvas.Image;
-  }
-  if (typeof (globalThis as any).Canvas === 'undefined') {
-    // The `canvas` package doesn't export `Canvas` as a named export directly,
-    // but createCanvas() returns an instance whose constructor IS the Canvas class.
-    const temp = nodeCanvas.createCanvas(1, 1);
-    (globalThis as any).Canvas = temp.constructor;
-  }
-  if (typeof (globalThis as any).ImageBitmap === 'undefined') {
-    // pdfjs-dist may also reference ImageBitmap in some code paths
-    (globalThis as any).ImageBitmap = class ImageBitmap {};
-  }
-
-  canvasPolyfilled = true;
-  console.log('[OCR] Canvas polyfill applied (Image, Canvas, ImageBitmap)');
-  return nodeCanvas;
+async function getPdfjsLib(): Promise<any> {
+  // webpackIgnore: true → resolved at runtime from node_modules
+  return await import(/* webpackIgnore: true */ 'pdfjs-dist/build/pdf.js' as string);
 }
 
-// ─── pdfjs-dist loader ──────────────────────────────────────────────
-
-async function getPdfjsLib(): Promise<any> {
-  return await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
+async function getCanvas() {
+  return await import(/* webpackIgnore: true */ 'canvas' as string);
 }
 
 export async function POST(request: NextRequest) {
@@ -77,22 +45,19 @@ export async function POST(request: NextRequest) {
     let pageImages: string[] = [];
 
     if (isPdf) {
-      // ── PDF: Render pages to images using pdfjs-dist + node-canvas ──
-      // Ensure canvas polyfill is applied before loading pdfjs-dist,
-      // so the legacy build picks up the correct Image/Canvas globals.
-      const nodeCanvas = await ensureCanvasPolyfill();
+      // ── PDF: Render pages to images using pdfjs-dist v3 + node-canvas ──
       const pdfjsLib = await getPdfjsLib();
+      const nodeCanvas = await getCanvas();
 
       const cwd = process.cwd();
-      const workerPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.mjs');
+      const workerPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.js');
       const fontPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'standard_fonts');
 
       pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
-      // canvasFactory: tells pdfjs-dist how to create Canvas objects in Node.js.
-      // This is required for v4 so that ALL internal canvas creation (including
-      // inline images in paintInlineImageXObject) uses node-canvas instead of
-      // trying to use the non-existent DOM Canvas.
+      // canvasFactory: tells pdfjs-dist v3 how to create Canvas objects in Node.js.
+      // All internal canvas creation (including for inline images) routes through
+      // node-canvas, avoiding any need for DOM globals.
       const canvasFactory = {
         create(width: number, height: number) {
           const canvas = nodeCanvas.createCanvas(width, height);

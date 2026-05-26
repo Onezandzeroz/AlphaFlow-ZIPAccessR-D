@@ -64,7 +64,7 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.7",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^4.9.155",
+    "pdfjs-dist": "3.11.174",
     "prisma": "^6.11.1",
     "react": "^19.0.0",
     "react-day-picker": "^9.14.0",
