@@ -56,9 +56,10 @@ export async function POST(request: NextRequest) {
     );
 
     // Load pdfjs-dist + node-canvas at runtime (not bundled by Turbopack)
-    const pdfjsLib = await getPdfjsLib();
-    const nodeCanvas = await getCanvas();
-    const { createCanvas } = nodeCanvas;
+    const pdfjsModule = await getPdfjsLib();
+    const pdfjsLib = pdfjsModule.default || pdfjsModule;
+    const canvasModule = await getCanvas();
+    const createCanvas = canvasModule.default?.createCanvas || canvasModule.createCanvas;
 
     // Set up worker
     const path = await import('path');
