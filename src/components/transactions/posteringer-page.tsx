@@ -80,7 +80,13 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
   }, [openFormWithScan]);
 
   // ── Embedded scanner tracking (for mobile Dialog protection) ──
+  // The scanner now uses the zustand store (rendered at page level in page.tsx).
+  // Track isOpen so the Dialog doesn't close while the scanner covers the screen.
   const isScannerActiveRef = useRef(false);
+  const scannerStoreIsOpen = useScannerStore((s) => s.isOpen);
+  useEffect(() => {
+    isScannerActiveRef.current = scannerStoreIsOpen;
+  }, [scannerStoreIsOpen]);
 
   const handleSuccess = useCallback(() => {
     setCurrentView('list');
@@ -164,7 +170,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           onSuccess={handleSuccess}
           preloadedReceiptFile={preloadedFile}
           onPreloadedFileConsumed={handlePreloadedFileConsumed}
-          onScannerActiveChange={(active) => { isScannerActiveRef.current = active; }}
         />
         <div className="pt-3 mt-3">
           <button
@@ -204,7 +209,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           onSuccess={handleSuccess}
           preloadedReceiptFile={preloadedFile}
           onPreloadedFileConsumed={handlePreloadedFileConsumed}
-          onScannerActiveChange={(active) => { isScannerActiveRef.current = active; }}
         />
         <div className="pt-2 mt-2 border-t border-gray-100 dark:border-white/10">
           <button

@@ -37,7 +37,7 @@ import {
 import { useTranslation } from '@/lib/use-translation';
 import { toast } from 'sonner';
 import { useAccessErrorHandler } from '@/hooks/use-access-error-handler';
-import { ReceiptScanner } from '@/components/scanner/ReceiptScanner';
+import { useScannerStore } from '@/lib/scanner-store';
 import { useOcr, type OCRResult } from '@/lib/ocr';
 
 const CURRENCIES = ['DKK', 'EUR', 'USD', 'GBP', 'SEK', 'NOK'] as const;
@@ -69,9 +69,6 @@ interface AddTransactionFormProps {
   preloadedReceiptFile?: File | null;
   /** Called after the preloaded file has been consumed (set in the form). */
   onPreloadedFileConsumed?: () => void;
-  /** Called when the scanner opens (true) or closes (false). Used by parent Dialog
-   *  to prevent Radix from treating scanner clicks as "outside clicks". */
-  onScannerActiveChange?: (active: boolean) => void;
   /** Layout mode: 'compact' for dialogs, 'cards' for full-page desktop view */
   layout?: 'compact' | 'cards';
 }
@@ -118,7 +115,7 @@ const EMPTY_LINE_ITEM: PurchaseLineItem = {
   accountId: '',
 };
 
-export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloadedFileConsumed, onScannerActiveChange, layout = 'compact' }: AddTransactionFormProps) {
+export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloadedFileConsumed, layout = 'compact' }: AddTransactionFormProps) {
   const { t, tc, language } = useTranslation();
   const isDa = language === 'da';
   const { handleMutationError } = useAccessErrorHandler();
@@ -146,9 +143,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [receiptNaturalWidth, setReceiptNaturalWidth] = useState<number | null>(null);
   const [originalWasPdf, setOriginalWasPdf] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
-  const [scannerOpen, setScannerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const preloadedConsumedRef = useRef(false);
+  const lastConsumedScanIdRef = useRef<number>(0);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptPreviewUrlRef = useRef<string | null>(null);
   const dateManuallySetRef = useRef(false);
@@ -166,10 +163,33 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [descriptionsLoading, setDescriptionsLoading] = useState(false);
   const [showDescriptionSuggestions, setShowDescriptionSuggestions] = useState(false);
 
-  // Notify parent when scanner is active
+  // ─── Standalone scanner integration (zustand store) ───
+  // When the user taps "Scan kvittering" inside the dialog, we open the
+  // standalone scanner (rendered at the page level in page.tsx). This avoids
+  // Radix Dialog interference (scroll-lock, focus-trap, aria-hidden).
+  // We subscribe to pendingResult and consume it when it arrives.
+  const scannerPendingResult = useScannerStore((s) => s.pendingResult);
+
   useEffect(() => {
-    onScannerActiveChange?.(scannerOpen);
-  }, [scannerOpen, onScannerActiveChange]);
+    if (!scannerPendingResult) return;
+    // Avoid consuming the same result twice (React strict mode double-fire)
+    if (scannerPendingResult.id === lastConsumedScanIdRef.current) return;
+    lastConsumedScanIdRef.current = scannerPendingResult.id;
+
+    const file = scannerPendingResult.file;
+    // Consume from store (atomic — only one consumer gets it)
+    useScannerStore.getState().consumeResult();
+
+    // Apply to form
+    if (receiptPreviewUrlRef.current) {
+      URL.revokeObjectURL(receiptPreviewUrlRef.current);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    receiptPreviewUrlRef.current = previewUrl;
+    setReceiptFile(file);
+    setReceiptPreview(previewUrl);
+    setOriginalWasPdf(false);
+  }, [scannerPendingResult]);
 
   // Fetch expense accounts (6000-9500) on mount
   useEffect(() => {
@@ -530,20 +550,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
   }, [preloadedReceiptFile, onPreloadedFileConsumed]);
 
-  const handleScannerCapture = useCallback((file: File) => {
-    if (receiptPreviewUrlRef.current) {
-      URL.revokeObjectURL(receiptPreviewUrlRef.current);
-    }
-    const previewUrl = URL.createObjectURL(file);
-    receiptPreviewUrlRef.current = previewUrl;
-    setReceiptFile(file);
-    setReceiptPreview(previewUrl);
-    setScannerOpen(false);
-    setOriginalWasPdf(false);
-  }, []);
-
-  const handleScannerDismiss = useCallback(() => {
-    setScannerOpen(false);
+  const handleOpenScanner = useCallback(() => {
+    useScannerStore.getState().openScanner();
   }, []);
 
   const handleUseDescription = useCallback((desc: string) => {
@@ -950,7 +958,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               type="button"
               variant="outline"
               className="h-16 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
-              onClick={() => setScannerOpen(true)}
+              onClick={handleOpenScanner}
               disabled={isLoading}
             >
               <div className="flex flex-col items-center gap-1">
@@ -974,12 +982,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
             </Button>
           )}
         </div>
-      )}
-      {scannerOpen && (
-        <ReceiptScanner
-          onCapture={handleScannerCapture}
-          onDismiss={handleScannerDismiss}
-        />
       )}
     </div>
   );

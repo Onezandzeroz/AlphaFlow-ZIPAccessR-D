@@ -1309,6 +1309,10 @@ export function useScannerEngine() {
     }
     setScannedUrl(null);
     setScannedFile(null);
+    // Immediately dismiss so the portal removes its black overlay.
+    // If the caller needs a different phase (e.g. retake → 'permission_pending'),
+    // they set it after calling discardScan — React batches so the last setPhase wins.
+    setPhase('dismissed');
   }, []);
 
   // ── Retake ───────────────────────────────────────────────────────
