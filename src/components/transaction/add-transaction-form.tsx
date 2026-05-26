@@ -944,7 +944,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       {receiptPreview ? (
         renderDocumentPreview()
       ) : (
-        <div className={`grid gap-2 ${layout === 'cards' ? 'grid-cols-1' : 'grid-cols-2'}`}>
+        <div className="grid gap-2 grid-cols-1">
           {layout !== 'cards' && (
             <Button
               type="button"
@@ -959,18 +959,20 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               </div>
             </Button>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            className={`border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488] ${layout === 'cards' ? 'h-20' : 'h-16'}`}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-          >
-            <div className="flex flex-col items-center gap-1">
-              <Upload className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-              <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Upload kvittering eller købsfaktura' : 'Upload receipt or purchase invoice'}</span>
-            </div>
-          </Button>
+          {layout === 'cards' && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-20 border-dashed border-2 hover:border-[#0d9488] hover:bg-[#0d9488]/5 transition-colors dark:border-white/20 dark:hover:border-[#0d9488]"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+            >
+              <div className="flex flex-col items-center gap-1">
+                <Upload className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                <span className="text-[11px] text-gray-600 dark:text-gray-400 font-medium">{isDa ? 'Upload kvittering eller købsfaktura' : 'Upload receipt or purchase invoice'}</span>
+              </div>
+            </Button>
+          )}
         </div>
       )}
       {scannerOpen && (

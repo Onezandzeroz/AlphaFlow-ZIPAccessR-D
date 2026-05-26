@@ -429,8 +429,8 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       if (hasData) {
         setIncomeStatement(isData);
         setBalanceSheet(bsData);
-        // Keep first 5 for recent display, but store all for chart aggregation
-        setJournalEntries(postedEntries.slice(0, 5));
+        // Keep first 20 for recent display, store all for chart aggregation
+        setJournalEntries(postedEntries.slice(0, 20));
         setAllPostedJournalEntries(postedEntries);
         setLedgerAccounts(ledgerData?.accounts || []);
         setVatRegister(vatData);
@@ -855,7 +855,6 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
       if (!months[month]) return;
 
       entry.lines.forEach((line) => {
-        const amt = line.debit - line.credit;
         if (line.account.type === 'REVENUE') {
           // Revenue normal balance is credit, so credit is positive revenue
           months[month].revenue += line.credit - line.debit;
@@ -902,7 +901,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
 
       if (month === currentMonthKey || month === prevMonthKey) {
         // Daily aggregation for recent months
-        const dayKey = entry.date; // "2025-05-21"
+        const dayKey = entry.date; // "2025-04-12T00:00:00.000Z"
         const dayLabel = format(entryDate, 'MMM d');
         let dayEntry = dataPoints.find(dp => dp.month === dayKey);
         if (!dayEntry) {
@@ -910,7 +909,7 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
           const monthIdx = dataPoints.findIndex(dp => dp.month === month);
           if (monthIdx >= 0) {
             dataPoints.splice(monthIdx + 1, 0, { month: dayKey, revenue: 0, expenses: 0, net: 0, label: dayLabel });
-            dayEntry = dataPoints[dataPoints.length - 1];
+            dayEntry = dataPoints[monthIdx + 1]; // Reference the newly inserted entry
           }
         }
         if (dayEntry) {
@@ -992,6 +991,38 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
   const getRelativeTime = useCallback((dateStr: string) => {
     return getRelativeDate(dateStr, language);
   }, [language]);
+
+  // ─── Unified Activity Feed ─────────────────────────────────────
+  // Merge journal entries and transactions into a single chronologically
+  // sorted feed. PURCHASE transactions that have a corresponding journal
+  // entry are shown only once (as the journal entry).
+  type ActivityItem =
+    | { kind: 'journal'; entry: JournalEntry; date: string }
+    | { kind: 'transaction'; tx: Transaction; date: string };
+
+  const unifiedActivity = useMemo((): ActivityItem[] => {
+    const items: ActivityItem[] = [];
+
+    // Journal entries (source of truth for posted entries)
+    for (const entry of journalEntries) {
+      items.push({ kind: 'journal', entry, date: entry.date });
+    }
+
+    // Non-PURCHASE transactions (SALE, SALARY, BANK, etc.) + PURCHASE without journal entry
+    for (const tx of transactions) {
+      if (tx.type === 'PURCHASE' && hasDoubleEntryData) continue; // shown via journal entry
+      items.push({ kind: 'transaction', tx, date: tx.date });
+    }
+
+    // Sort by date descending (newest first), then by creation order as tiebreaker
+    items.sort((a, b) => {
+      const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return 0;
+    });
+
+    return items;
+  }, [journalEntries, transactions, hasDoubleEntryData]);
 
   // ─── Financial Health Score ────────────────────────────────────
 
@@ -2847,106 +2878,119 @@ export function Dashboard({ user, onNavigate, onboardingStepJustDone, onOnboardi
               </div>
               <CardContent className="p-4 sm:p-5 pt-0">
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {/* Journal entries in activity feed */}
-                  {journalEntries.slice(0, 5).map((entry) => {
-                    const total = getJournalEntryTotal(entry);
+                  {/* Unified activity feed: journal entries + transactions, sorted by date */}
+                  {unifiedActivity.slice(0, 15).map((item) => {
+                    if (item.kind === 'journal') {
+                      const entry = item.entry;
+                      const total = getJournalEntryTotal(entry);
+                      return (
+                        <div
+                          key={`je-${entry.id}`}
+                          className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-[#1e2a28] transition-all duration-200 group cursor-pointer"
+                          onClick={() => onNavigate?.('journal')}
+                        >
+                          <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center shrink-0">
+                            <PenLine className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                              {entry.description || (language === 'da' ? 'Uden beskrivelse' : 'No description')}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-xs text-gray-500 dark:text-gray-400">{getRelativeTime(entry.date)}</span>
+                              <Badge
+                                className={`text-[8px] px-1 py-0 h-4 ${
+                                  entry.status === 'POSTED'
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                }`}
+                              >
+                                {entry.status}
+                              </Badge>
+                            </div>
+                          </div>
+                          <span className={`text-sm font-semibold tabular-nums ${
+                            total >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          }`}>
+                            {tc(total)}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    // Transaction item
+                    const tx = item.tx;
                     return (
                       <div
-                        key={`je-${entry.id}`}
+                        key={`tx-${tx.id}`}
                         className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-[#1e2a28] transition-all duration-200 group cursor-pointer"
-                        onClick={() => onNavigate?.('journal')}
+                        onClick={() => onNavigate?.('transactions')}
                       >
-                        <div className="h-8 w-8 rounded-lg bg-[#f0fdf9] dark:bg-[#1a2e2b] flex items-center justify-center shrink-0">
-                          <PenLine className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          tx.type === 'PURCHASE'
+                            ? 'bg-amber-50 dark:bg-amber-900/20'
+                            : tx.type === 'SALARY'
+                            ? 'bg-purple-50 dark:bg-purple-900/20'
+                            : tx.type === 'BANK'
+                            ? 'bg-blue-50 dark:bg-blue-900/20'
+                            : 'bg-[#f0fdf9] dark:bg-[#1a2e2b]'
+                        }`}>
+                          {tx.type === 'PURCHASE' ? (
+                            <ArrowDownRight className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                          ) : tx.type === 'SALARY' ? (
+                            <Wallet className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                          ) : tx.type === 'BANK' ? (
+                            <Landmark className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                          ) : (
+                            <ArrowUpRight className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf]" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                            {entry.description || (language === 'da' ? 'Uden beskrivelse' : 'No description')}
+                            {tx.description}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-xs text-gray-500 dark:text-gray-400">{getRelativeTime(entry.date)}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">{getRelativeTime(tx.date)}</span>
                             <Badge
                               className={`text-[8px] px-1 py-0 h-4 ${
-                                entry.status === 'POSTED'
-                                  ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                tx.type === 'PURCHASE'
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
+                                  : tx.type === 'SALARY'
+                                  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
+                                  : tx.type === 'BANK'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                                  : tx.type === 'Z_REPORT'
+                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
+                                  : tx.type === 'ADJUSTMENT'
+                                  ? 'bg-gray-100 text-gray-700 dark:bg-gray-900/50 dark:text-gray-300'
+                                  : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
                               }`}
                             >
-                              {entry.status}
+                              {tx.type === 'PURCHASE'
+                                ? (language === 'da' ? 'Køb' : 'Purchase')
+                                : tx.type === 'SALARY'
+                                ? (language === 'da' ? 'Løn' : 'Salary')
+                                : tx.type === 'BANK'
+                                ? (language === 'da' ? 'Bank' : 'Bank')
+                                : tx.type === 'Z_REPORT'
+                                ? (language === 'da' ? 'Moms' : 'VAT')
+                                : tx.type === 'ADJUSTMENT'
+                                ? (language === 'da' ? 'Justering' : 'Adjustment')
+                                : (language === 'da' ? 'Salg' : 'Sale')
+                              }
                             </Badge>
                           </div>
                         </div>
                         <span className={`text-sm font-semibold tabular-nums ${
-                          total >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                          tx.type === 'PURCHASE' ? 'text-amber-600 dark:text-amber-400' : tx.type === 'SALARY' ? 'text-purple-600 dark:text-purple-400' : tx.type === 'BANK' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'
                         }`}>
-                          {tc(total)}
+                          {tx.type === 'PURCHASE' ? '-' : tx.type === 'SALE' ? '+' : ''}{tc(tx.amount)}
                         </span>
                       </div>
                     );
                   })}
 
-                  {/* Recent transactions in activity feed */}
-                  {transactions.slice(0, 5).map((tx) => (
-                    <div
-                      key={`tx-${tx.id}`}
-                      className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-[#1e2a28] transition-all duration-200 group cursor-pointer"
-                    >
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        tx.type === 'PURCHASE'
-                          ? 'bg-amber-50 dark:bg-amber-900/20'
-                          : 'bg-[#f0fdf9] dark:bg-[#1a2e2b]'
-                      }`}>
-                        {tx.type === 'PURCHASE' ? (
-                          <ArrowDownRight className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
-                        ) : (
-                          <ArrowUpRight className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf]" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                          {tx.description}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">{getRelativeTime(tx.date)}</span>
-                          <Badge
-                            className={`text-[8px] px-1 py-0 h-4 ${
-                              tx.type === 'PURCHASE'
-                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300'
-                                : tx.type === 'SALARY'
-                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300'
-                                : tx.type === 'BANK'
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                                : tx.type === 'Z_REPORT'
-                                ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300'
-                                : tx.type === 'ADJUSTMENT'
-                                ? 'bg-gray-100 text-gray-700 dark:bg-gray-900/50 dark:text-gray-300'
-                                : 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                            }`}
-                          >
-                            {tx.type === 'PURCHASE'
-                              ? (language === 'da' ? 'Køb' : 'Purchase')
-                              : tx.type === 'SALARY'
-                              ? (language === 'da' ? 'Løn' : 'Salary')
-                              : tx.type === 'BANK'
-                              ? (language === 'da' ? 'Bank' : 'Bank')
-                              : tx.type === 'Z_REPORT'
-                              ? (language === 'da' ? 'Moms' : 'VAT')
-                              : tx.type === 'ADJUSTMENT'
-                              ? (language === 'da' ? 'Justering' : 'Adjustment')
-                              : (language === 'da' ? 'Salg' : 'Sale')
-                            }
-                          </Badge>
-                        </div>
-                      </div>
-                      <span className={`text-sm font-semibold tabular-nums ${
-                        tx.type === 'PURCHASE' ? 'text-amber-600 dark:text-amber-400' : tx.type === 'SALARY' ? 'text-purple-600 dark:text-purple-400' : tx.type === 'BANK' ? 'text-blue-600 dark:text-blue-400' : 'text-green-600 dark:text-green-400'
-                      }`}>
-                        {tx.type === 'PURCHASE' ? '-' : tx.type === 'SALE' ? '+' : ''}{tc(tx.amount)}
-                      </span>
-                    </div>
-                  ))}
-
-                  {journalEntries.length === 0 && transactions.length === 0 && (
+                  {unifiedActivity.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-8 gap-3">
                       <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                         <Activity className="h-5 w-5 text-gray-400 dark:text-gray-600" />
