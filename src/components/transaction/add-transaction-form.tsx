@@ -325,17 +325,24 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           `[PDF→PNG] Server-converted first page: ${(pngBlob.size / 1024).toFixed(0)}KB`,
         );
       } catch (err) {
-        console.error('[PDF→PNG] Conversion failed:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error('[PDF→PNG] Conversion failed:', errMsg);
         setReceiptFile(null);
         setReceiptPreview(null);
         setOriginalWasPdf(false);
 
-        const isDepError = err instanceof Error && (
-          err.message.includes('GraphicsMagick') ||
-          err.message.includes('Ghostscript') ||
-          err.message.includes('graphicsmagick') ||
-          err.message.includes('ghostscript')
-        );
+        // Detect missing system dependencies (gm/gs not found, spawn errors, etc.)
+        const errLower = errMsg.toLowerCase();
+        const isDepError =
+          errLower.includes('graphicsmagick') ||
+          errLower.includes('ghostscript') ||
+          errLower.includes('gm:') ||
+          errLower.includes('gs:') ||
+          errLower.includes('gm command') ||
+          errLower.includes('spawn') ||
+          errLower.includes('enotfound') ||
+          errLower.includes('ENOENT') ||
+          errLower.includes('no such file');
 
         toast.error(
           isDa ? 'Kunne ikke konvertere PDF' : 'Could not convert PDF',
@@ -344,10 +351,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               ? isDa
                 ? 'Server mangler GraphicsMagick/Ghostscript. Kør: sudo apt-get install -y graphicsmagick ghostscript'
                 : 'Server missing GraphicsMagick/Ghostscript. Run: sudo apt-get install -y graphicsmagick ghostscript'
-              : isDa
-                ? 'PDFen kunne ikke konverteres til billede. Prøv igen eller brug et screenshot i stedet.'
-                : 'The PDF could not be converted to image. Try again or use a screenshot instead.',
-            duration: 8000,
+              : `${isDa ? 'Fejl:' : 'Error:'} ${errMsg}`,
+            duration: 10000,
           },
         );
       }
