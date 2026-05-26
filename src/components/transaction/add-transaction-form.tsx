@@ -23,7 +23,6 @@ import {
   Package,
   Trash2,
   ScanSearch,
-  FileText,
 } from 'lucide-react';
 import {
   Select,
@@ -150,7 +149,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const preloadedConsumedRef = useRef(false);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptPreviewUrlRef = useRef<string | null>(null);
-  const originalPdfRef = useRef<File | null>(null);
   const dateManuallySetRef = useRef(false);
 
   // ─── Purchase line items (for OCR + manual entry) ───
@@ -281,137 +279,62 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
-      // ── PDF: Convert pages to image client-side via pdf.js CDN ──
-      // Preview: high-quality PNG data URL
-      // OCR file: JPEG 0.85 quality (5-10× smaller than PNG, perfect for OCR)
+      // ── PDF: Convert to PNG via server endpoint ──
       try {
         setReceiptPreview('loading');
-        originalPdfRef.current = file; // Preserve original PDF for upload
 
-        // Load pdf.js from CDN if not already loaded
-        if (!(window as any).pdfjsLib) {
-          await new Promise<void>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error('Failed to load pdf.js'));
-            document.head.appendChild(script);
-          });
-          (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        }
-
-        const pdfjsLib = (window as any).pdfjsLib;
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
-
-        const numPages = Math.min(pdf.numPages, 5);
-
-        // Use lower scale for multi-page PDFs to keep file size manageable
-        const scale = numPages <= 1 ? 2.0 : 1.5;
-        const MAX_COMBINED_WIDTH = 2000;
-        const MAX_COMBINED_HEIGHT = 4000;
-
-        // Render all pages and track dimensions for vertical stacking
-        const pageCanvases: HTMLCanvasElement[] = [];
-        let totalHeight = 0;
-        let maxWidth = 0;
-
-        for (let i = 1; i <= numPages; i++) {
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale });
-          const canvas = document.createElement('canvas');
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, viewport.width, viewport.height);
-          }
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-          pageCanvases.push(canvas);
-          totalHeight += viewport.height;
-          maxWidth = Math.max(maxWidth, viewport.width);
-        }
-
-        // Cap total dimensions to prevent huge images
-        let finalWidth = maxWidth;
-        let finalHeight = totalHeight;
-        if (finalHeight > MAX_COMBINED_HEIGHT) {
-          const ratio = MAX_COMBINED_HEIGHT / finalHeight;
-          finalWidth = Math.round(finalWidth * ratio);
-          finalHeight = MAX_COMBINED_HEIGHT;
-        }
-        if (finalWidth > MAX_COMBINED_WIDTH) {
-          const ratio = MAX_COMBINED_WIDTH / finalWidth;
-          finalHeight = Math.round(finalHeight * ratio);
-          finalWidth = MAX_COMBINED_WIDTH;
-        }
-
-        // Combine all pages into a single vertical image at final size
-        const combinedCanvas = document.createElement('canvas');
-        combinedCanvas.width = finalWidth;
-        combinedCanvas.height = finalHeight;
-        const combinedCtx = combinedCanvas.getContext('2d');
-        if (combinedCtx) {
-          combinedCtx.fillStyle = '#ffffff';
-          combinedCtx.fillRect(0, 0, finalWidth, finalHeight);
-        }
-
-        let yOffset = 0;
-        for (const pageCanvas of pageCanvases) {
-          const scaledHeight = Math.round((pageCanvas.height / totalHeight) * finalHeight);
-          combinedCtx?.drawImage(pageCanvas, 0, yOffset, finalWidth, scaledHeight);
-          yOffset += scaledHeight;
-        }
-
-        // ── Preview: PNG data URL (sharp quality for display) ──
-        const previewDataUrl = combinedCanvas.toDataURL('image/png');
-        receiptPreviewUrlRef.current = null;
-        setReceiptPreview(previewDataUrl);
-
-        // ── OCR file: JPEG at 0.85 quality (much smaller, great for OCR) ──
-        const jpegBlob = await new Promise<Blob>((resolve, reject) => {
-          combinedCanvas.toBlob(
-            (b) => b ? resolve(b) : reject(new Error('Canvas toBlob failed')),
-            'image/jpeg',
-            0.85,
-          );
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch('/api/convert-pdf', {
+          method: 'POST',
+          body: formData,
         });
 
-        const ocrFile = new File(
-          [jpegBlob],
-          file.name.replace(/\.pdf$/i, '.jpg'),
-          { type: 'image/jpeg' },
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          throw new Error(errText || `Server error ${response.status}`);
+        }
+
+        // Get PNG blob from server
+        const pngBlob = await response.blob();
+        const pngFile = new File(
+          [pngBlob],
+          file.name.replace(/\.pdf$/i, '.png'),
+          { type: 'image/png' },
         );
 
-        setReceiptFile(ocrFile);
+        // Create preview URL
+        const previewUrl = URL.createObjectURL(pngBlob);
+        if (receiptPreviewUrlRef.current) {
+          URL.revokeObjectURL(receiptPreviewUrlRef.current);
+        }
+        receiptPreviewUrlRef.current = previewUrl;
+
+        setReceiptFile(pngFile);
+        setReceiptPreview(previewUrl);
         setOriginalWasPdf(true);
 
         console.log(
-          `[PDF→Image] Converted ${numPages} page(s) to JPEG: ${(jpegBlob.size / 1024).toFixed(0)}KB, ` +
-          `canvas: ${finalWidth}×${finalHeight}`,
+          `[PDF→PNG] Converted via server: ${(pngBlob.size / 1024).toFixed(0)}KB`,
         );
       } catch (err) {
-        console.error('[PDF→Image] Conversion failed:', err);
-        // Fallback: keep original PDF, show placeholder
-        setReceiptFile(file);
-        setOriginalWasPdf(true);
-        originalPdfRef.current = file;
-        setReceiptPreview('pdf-fallback');
+        console.error('[PDF→PNG] Conversion failed:', err);
+        setReceiptFile(null);
+        setReceiptPreview(null);
+        setOriginalWasPdf(false);
 
         toast.error(
           isDa ? 'Kunne ikke konvertere PDF' : 'Could not convert PDF',
           {
             description: isDa
-              ? 'PDFen kunne ikke konverteres til billede. OCR fungerer muligvis ikke.'
-              : 'The PDF could not be converted to image. OCR may not work.',
+              ? 'PDFen kunne ikke konverteres til billede. Prøv igen eller brug et screenshot i stedet.'
+              : 'The PDF could not be converted to image. Try again or use a screenshot instead.',
             duration: 5000,
           },
         );
       }
     } else {
       // ── Images: use object URL directly ──
-      originalPdfRef.current = null;
       setOriginalWasPdf(false);
       setReceiptFile(file);
       const previewUrl = URL.createObjectURL(file);
@@ -422,7 +345,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
   const clearReceipt = useCallback(() => {
     setReceiptFile(null);
-    originalPdfRef.current = null;
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
       receiptPreviewUrlRef.current = null;
@@ -567,7 +489,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setReceiptPreview(previewUrl);
       // Scanner captures are always images, never PDFs
       setOriginalWasPdf(false);
-      originalPdfRef.current = null;
       onPreloadedFileConsumed?.();
     }
     if (!preloadedReceiptFile) {
@@ -585,7 +506,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setReceiptPreview(previewUrl);
     setScannerOpen(false);
     setOriginalWasPdf(false);
-    originalPdfRef.current = null;
   }, []);
 
   const handleScannerDismiss = useCallback(() => {
@@ -615,9 +535,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
     try {
       let receiptImagePath: string | null = null;
-      // Use the original PDF for upload if available (preserves document fidelity);
-      // otherwise use the receiptFile (PNG from PDF conversion or camera image).
-      const fileToUpload = originalPdfRef.current || receiptFile;
+      // receiptFile is always an image (PNG from PDF conversion or camera/upload)
+      const fileToUpload = receiptFile;
       if (fileToUpload) {
         const formData = new FormData();
         formData.append('file', fileToUpload);
@@ -830,11 +749,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const renderDocumentPreview = () => {
     if (!receiptPreview) return null;
 
-    const isPdf = receiptFile?.type === 'application/pdf';
     const isLoading = receiptPreview === 'loading';
-    const isFallback = receiptPreview === 'pdf-fallback';
-    const fileName = receiptFile?.name || '';
-    const isImagePreview = !isLoading && !isFallback && receiptPreview !== 'pdf-fallback';
+    const isImagePreview = !isLoading;
 
     return (
       <div className="space-y-3">
@@ -853,14 +769,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 className="w-full h-auto object-contain shadow-sm rounded"
                 style={{ maxHeight: '600px' }}
               />
-            </div>
-          ) : isFallback ? (
-            <div className="flex flex-col items-center justify-center py-10 gap-3 text-gray-400 dark:text-gray-500">
-              <FileText className="h-12 w-12" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{fileName}</p>
-                <p className="text-xs mt-0.5">PDF</p>
-              </div>
             </div>
           ) : null}
 
@@ -893,7 +801,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
               >
                 <ScanSearch className="h-3.5 w-3.5" />
               </Button>
-              {!isPdf && !isFallback && (
+              {isImagePreview && (
                 <Button
                   type="button"
                   variant="outline"
