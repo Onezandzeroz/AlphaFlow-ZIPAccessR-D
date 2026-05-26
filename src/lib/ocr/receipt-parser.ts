@@ -18,6 +18,13 @@
  *   Text-only lines (no monetary amounts) are accumulated as description
  *   text for the current purchase line.  Small integers like quantity "5" or
  *   VAT "25%" on their own line do NOT trigger a new line item.
+ *
+ * Description continuation rule:
+ *   When Tesseract splits a long description across visual lines (with numeric
+ *   column data interleaved), the continuation text may land in its own block
+ *   with no monetary data.  Such orphaned descriptive blocks are automatically
+ *   merged back into the previous block, ensuring complete descriptions like
+ *   "Konsulentydelse - Rådgivning mht. vedligehold & funktionalitetsforbedringer".
  */
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -145,6 +152,28 @@ function hasMonetaryAmount(line: string): boolean {
 }
 
 /**
+ * Check whether a line is a CONTINUATION of the previous description,
+ * as opposed to the start of a new line item.
+ *
+ * Continuation indicators:
+ *   - Starts with a lowercase letter (wrapped line from previous description)
+ *   - Starts with "&" (continuation after ampersand at end of previous line)
+ *   - Starts with common Danish conjunctions: "og", "eller", "samtidig"
+ *
+ * Non-continuation (starts new block):
+ *   - Starts with an uppercase letter (new item name)
+ *   - Contains a structural separator like " - " or ":"
+ */
+function isContinuationText(line: string): boolean {
+  const trimmed = line.trim();
+  // Starts with lowercase letter → continuation of wrapped line
+  if (/^[a-zæøåäö]/.test(trimmed)) return true;
+  // Starts with "&" → continuation after ampersand
+  if (/^[&]/.test(trimmed)) return true;
+  return false;
+}
+
+/**
  * Check whether a line contains actual descriptive text (words/letters),
  * as opposed to pure numbers, percentages, or empty content.
  *
@@ -193,7 +222,10 @@ function extractAllNumbers(line: string): number[] {
  *   3. Group lines into "blocks" — each block = one logical line item.
  *      A new block starts when we see descriptive text after a block
  *      that already contains monetary data.
- *   4. Each block is joined into one string and parsed for
+ *   4. Merge orphaned descriptive blocks (no monetary data) back into the
+ *      previous block. This handles long descriptions that Tesseract splits
+ *      across visual lines with numeric column data interleaved.
+ *   5. Each merged block is joined into one string and parsed for
  *      description, quantity, unit price, and VAT%.
  *
  * This correctly handles invoices where Tesseract splits table columns
@@ -204,6 +236,17 @@ function extractAllNumbers(line: string): number[] {
  *     25%
  *     7.500,00 kr.
  * All these lines belong to the same block (same invoice row).
+ *
+ * And it correctly handles long descriptions split by OCR:
+ *     Konsulentydelse - Rådgivning mht. vedligehold &
+ *     5
+ *     1.500,00 kr.
+ *     25%
+ *     7.500,00 kr.
+ *     funktionalitetsforbedringer       ← orphaned block (no monetary data)
+ * "funktionalitetsforbedringer" is merged back into the first block,
+ * giving description: "Konsulentydelse - Rådgivning mht. vedligehold &
+ * funktionalitetsforbedringer"
  *
  * And it correctly handles multiple line items:
  *     Webhosting  1  500,00  25%  500,00
@@ -245,12 +288,19 @@ function extractLineItems(text: string): ParsedLineItem[] {
   for (const line of contentLines) {
     const monetary = hasMonetaryAmount(line);
     const descriptive = isDescriptiveText(line);
-
     if (descriptive && blockHasMonetary && currentBlock.length > 0) {
-      // New descriptive text after monetary data → start a new block
-      blocks.push(currentBlock);
-      currentBlock = [line];
-      blockHasMonetary = monetary;
+      // Descriptive text after monetary data — but is it a continuation or new item?
+      if (isContinuationText(line)) {
+        // Looks like a continuation of the previous description (lowercase start)
+        // Keep in current block to preserve complete description
+        currentBlock.push(line);
+      } else {
+        // Looks like a new line item (uppercase start, structural separator)
+        // Start a new block
+        blocks.push(currentBlock);
+        currentBlock = [line];
+        blockHasMonetary = monetary;
+      }
     } else {
       currentBlock.push(line);
       if (monetary) blockHasMonetary = true;
@@ -260,11 +310,31 @@ function extractLineItems(text: string): ParsedLineItem[] {
     blocks.push(currentBlock);
   }
 
+  // ── Merge orphaned descriptive blocks back into previous block ──
+  // When Tesseract splits a long description across visual lines, the
+  // continuation text may end up in its own block with no monetary data.
+  // Such blocks get silently dropped, causing incomplete descriptions.
+  // Fix: merge any block without monetary data back into the previous block.
+  const mergedBlocks: string[][] = [];
+  for (const block of blocks) {
+    const combined = block.join(' ');
+    if (
+      mergedBlocks.length > 0 &&
+      !hasMonetaryAmount(combined) &&
+      block.some((l) => isDescriptiveText(l))
+    ) {
+      // Append this orphaned descriptive block to the previous block
+      mergedBlocks[mergedBlocks.length - 1].push(...block);
+    } else {
+      mergedBlocks.push([...block]);
+    }
+  }
+
   // ── Parse each block into a line item ──
   const items: ParsedLineItem[] = [];
   const defaultVat = extractVAT(text) ?? 25;
 
-  for (const block of blocks) {
+  for (const block of mergedBlocks) {
     const combined = block.join(' ');
     if (hasMonetaryAmount(combined)) {
       const item = parseSingleLineItem(combined, defaultVat);
@@ -353,14 +423,35 @@ function parseSingleLineItem(combined: string, defaultVat: number): ParsedLineIt
   // Remove the VAT percentage value from the number list (it's not a monetary amount)
   const monetaryNums = allNumbers.filter((n) => n !== lineVat);
 
-  // Extract description: text before the first digit
-  const descMatch = combined.match(/^(.*?)(?=\d)/);
-  const rawDescription = descMatch
-    ? descMatch[1]
-        .replace(/[|\-–—]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-    : '';
+  // Extract description: text before the first digit, PLUS text after the last
+  // monetary pattern. This handles cases where Tesseract places continuation
+  // description text after the numeric column data.
+  //
+  // Example: "Konsulentydelse - Rådgivning mht. vedligehold & 5 1.500,00 kr.
+  //           25% 7.500,00 kr. funktionalitetsforbedringer"
+  //   → before digit: "Konsulentydelse - Rådgivning mht. vedligehold & "
+  //   → after last kr.: "funktionalitetsforbedringer"
+  //   → combined description: "Konsulentydelse - Rådgivning mht. vedligehold &
+  //     funktionalitetsforbedringer"
+  const beforeDigit = combined.match(/^(.*?)(?=\d)/);
+  // Greedy .* matches up to the LAST "kr." — captures only trailing descriptive text
+  const afterLastKr = combined.match(/.*kr\.?\s+(.+)/i);
+  const afterMonetary = afterLastKr ? afterLastKr[1].trim() : '';
+
+  // Only append trailing text if it contains actual descriptive content (not
+  // just more numbers, %, or kr)
+  const trailingIsDescriptive = afterMonetary.length > 0 && isDescriptiveText(afterMonetary);
+
+  let rawDescription = '';
+  if (beforeDigit) {
+    rawDescription = beforeDigit[1]
+      .replace(/[|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (trailingIsDescriptive) {
+      rawDescription = rawDescription + ' ' + afterMonetary;
+    }
+  }
 
   const description = cleanDescription(rawDescription);
 
