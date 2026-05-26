@@ -279,24 +279,49 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
-      // ── PDF: Convert to PNG via server endpoint ──
+      // ── PDF: Convert first page to PNG using local pdf.js ──
       try {
         setReceiptPreview('loading');
 
-        const formData = new FormData();
-        formData.append('file', file);
-        const response = await fetch('/api/convert-pdf', {
-          method: 'POST',
-          body: formData,
-        });
+        // Load pdf.js from local static files (bundled in /public/pdfjs/)
+        if (!(window as any).pdfjsLib) {
+          const pdfjsScript = document.createElement('script');
+          pdfjsScript.src = '/pdfjs/pdf.min.js';
+          document.head.appendChild(pdfjsScript);
 
-        if (!response.ok) {
-          const errText = await response.text().catch(() => '');
-          throw new Error(errText || `Server error ${response.status}`);
+          await new Promise<void>((resolve, reject) => {
+            pdfjsScript.onload = () => resolve();
+            pdfjsScript.onerror = () => reject(new Error('pdf.js load failed'));
+          });
         }
 
-        // Get PNG blob from server
-        const pngBlob = await response.blob();
+        const pdfjsLib = (window as any).pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js';
+
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+
+        // Render first page only
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, viewport.width, viewport.height);
+        }
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        // Convert canvas to PNG blob
+        const pngBlob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob(
+            (b) => b ? resolve(b) : reject(new Error('Canvas toBlob failed')),
+            'image/png',
+          );
+        });
+
         const pngFile = new File(
           [pngBlob],
           file.name.replace(/\.pdf$/i, '.png'),
@@ -315,7 +340,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         setOriginalWasPdf(true);
 
         console.log(
-          `[PDF→PNG] Converted via server: ${(pngBlob.size / 1024).toFixed(0)}KB`,
+          `[PDF→PNG] Converted first page: ${viewport.width}x${viewport.height}, PNG: ${(pngBlob.size / 1024).toFixed(0)}KB`,
         );
       } catch (err) {
         console.error('[PDF→PNG] Conversion failed:', err);
