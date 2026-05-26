@@ -281,7 +281,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
-      // ── PDF: Convert ALL pages to PNG client-side via pdf.js CDN ──
+      // ── PDF: Convert pages to image client-side via pdf.js CDN ──
+      // Preview: high-quality PNG data URL
+      // OCR file: JPEG 0.85 quality (5-10× smaller than PNG, perfect for OCR)
       try {
         setReceiptPreview('loading');
         originalPdfRef.current = file; // Preserve original PDF for upload
@@ -302,8 +304,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
 
-        const numPages = Math.min(pdf.numPages, 5); // Cap at 5 pages
-        const scale = 2.0;
+        const numPages = Math.min(pdf.numPages, 5);
+
+        // Use lower scale for multi-page PDFs to keep file size manageable
+        const scale = numPages <= 1 ? 2.0 : 1.5;
+        const MAX_COMBINED_WIDTH = 2000;
+        const MAX_COMBINED_HEIGHT = 4000;
 
         // Render all pages and track dimensions for vertical stacking
         const pageCanvases: HTMLCanvasElement[] = [];
@@ -318,7 +324,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           canvas.height = viewport.height;
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            // White background (transparent → white for OCR quality)
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, viewport.width, viewport.height);
           }
@@ -328,48 +333,66 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           maxWidth = Math.max(maxWidth, viewport.width);
         }
 
-        // Combine all pages into a single vertical image
+        // Cap total dimensions to prevent huge images
+        let finalWidth = maxWidth;
+        let finalHeight = totalHeight;
+        if (finalHeight > MAX_COMBINED_HEIGHT) {
+          const ratio = MAX_COMBINED_HEIGHT / finalHeight;
+          finalWidth = Math.round(finalWidth * ratio);
+          finalHeight = MAX_COMBINED_HEIGHT;
+        }
+        if (finalWidth > MAX_COMBINED_WIDTH) {
+          const ratio = MAX_COMBINED_WIDTH / finalWidth;
+          finalHeight = Math.round(finalHeight * ratio);
+          finalWidth = MAX_COMBINED_WIDTH;
+        }
+
+        // Combine all pages into a single vertical image at final size
         const combinedCanvas = document.createElement('canvas');
-        combinedCanvas.width = maxWidth;
-        combinedCanvas.height = totalHeight;
+        combinedCanvas.width = finalWidth;
+        combinedCanvas.height = finalHeight;
         const combinedCtx = combinedCanvas.getContext('2d');
         if (combinedCtx) {
           combinedCtx.fillStyle = '#ffffff';
-          combinedCtx.fillRect(0, 0, maxWidth, totalHeight);
+          combinedCtx.fillRect(0, 0, finalWidth, finalHeight);
         }
 
         let yOffset = 0;
         for (const pageCanvas of pageCanvases) {
-          combinedCtx?.drawImage(pageCanvas, 0, yOffset);
-          yOffset += pageCanvas.height;
+          const scaledHeight = Math.round((pageCanvas.height / totalHeight) * finalHeight);
+          combinedCtx?.drawImage(pageCanvas, 0, yOffset, finalWidth, scaledHeight);
+          yOffset += scaledHeight;
         }
 
-        // Convert combined canvas to PNG blob → File
-        const blob = await new Promise<Blob>((resolve, reject) => {
+        // ── Preview: PNG data URL (sharp quality for display) ──
+        const previewDataUrl = combinedCanvas.toDataURL('image/png');
+        receiptPreviewUrlRef.current = null;
+        setReceiptPreview(previewDataUrl);
+
+        // ── OCR file: JPEG at 0.85 quality (much smaller, great for OCR) ──
+        const jpegBlob = await new Promise<Blob>((resolve, reject) => {
           combinedCanvas.toBlob(
             (b) => b ? resolve(b) : reject(new Error('Canvas toBlob failed')),
-            'image/png',
+            'image/jpeg',
+            0.85,
           );
         });
 
-        const pngFile = new File(
-          [blob],
-          file.name.replace(/\.pdf$/i, '.png'),
-          { type: 'image/png' },
+        const ocrFile = new File(
+          [jpegBlob],
+          file.name.replace(/\.pdf$/i, '.jpg'),
+          { type: 'image/jpeg' },
         );
 
-        // Use the PNG as the receipt file (for OCR and preview)
-        setReceiptFile(pngFile);
+        setReceiptFile(ocrFile);
         setOriginalWasPdf(true);
 
-        // Show PNG preview (data URL — no need to revoke)
-        const dataUrl = combinedCanvas.toDataURL('image/png');
-        receiptPreviewUrlRef.current = null;
-        setReceiptPreview(dataUrl);
-
-        console.log(`[PDF→PNG] Converted ${numPages} page(s) to PNG: ${(blob.size / 1024).toFixed(0)}KB`);
+        console.log(
+          `[PDF→Image] Converted ${numPages} page(s) to JPEG: ${(jpegBlob.size / 1024).toFixed(0)}KB, ` +
+          `canvas: ${finalWidth}×${finalHeight}`,
+        );
       } catch (err) {
-        console.error('[PDF→PNG] Conversion failed:', err);
+        console.error('[PDF→Image] Conversion failed:', err);
         // Fallback: keep original PDF, show placeholder
         setReceiptFile(file);
         setOriginalWasPdf(true);
@@ -426,10 +449,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       toast.error(
         isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document',
         {
-          description: isDa
-            ? 'Tjek at filen er et gyldigt bilag og prøv igen, eller tilføj data manuelt'
-            : 'Make sure the file is a valid receipt/invoice and try again, or add data manually',
-          duration: 5000,
+          description: ocrError
+            ? ocrError
+            : isDa
+              ? 'Tjek at filen er et gyldigt bilag og prøv igen, eller tilføj data manuelt'
+              : 'Make sure the file is a valid receipt/invoice and try again, or add data manually',
+          duration: 6000,
         },
       );
       return;
@@ -526,7 +551,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         duration: 3000,
       });
     }
-  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR]);
+  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR, ocrError]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
