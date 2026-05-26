@@ -23,6 +23,7 @@ import {
   Package,
   Trash2,
   ScanSearch,
+  CalendarDays,
 } from 'lucide-react';
 import {
   Select,
@@ -128,6 +129,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [accountError, setAccountError] = useState('');
 
   const [date, setDate] = useState(defaultToday());
+  const [purchaseLinesDate, setPurchaseLinesDate] = useState(defaultToday());
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('DKK');
   const [exchangeRate, setExchangeRate] = useState('');
@@ -150,6 +152,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptPreviewUrlRef = useRef<string | null>(null);
   const dateManuallySetRef = useRef(false);
+  const purchaseLinesDateManuallySetRef = useRef(false);
 
   // ─── Purchase line items (for OCR + manual entry) ───
   const [purchaseLines, setPurchaseLines] = useState<PurchaseLineItem[]>([
@@ -377,6 +380,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setOriginalWasPdf(false);
     resetOCR();
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
+    setPurchaseLinesDate(defaultToday());
+    purchaseLinesDateManuallySetRef.current = false;
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, [resetOCR]);
 
@@ -444,12 +449,13 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     }
 
     // ── Apply OCR results ──
-    // Only the date goes to the Purchase Note & Receipts card.
-    // Everything else (amount, line items) goes to the Purchase Lines card.
+    // The date goes to the Purchase Lines card.
+    // Everything else (line items) also goes to the Purchase Lines card.
+    // The Purchase Note & Receipts card stays independent (user enters manually).
 
-    // Date → date field on the main card
-    if (result.date && !dateManuallySetRef.current) {
-      setDate(result.date);
+    // Date → date field on the Purchase Lines card
+    if (result.date && !purchaseLinesDateManuallySetRef.current) {
+      setPurchaseLinesDate(result.date);
     }
 
     // Build purchase lines from structured line items (VLM or Tesseract table extraction)
@@ -599,6 +605,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
       // Reset form
       setDate(defaultToday());
+      setPurchaseLinesDate(defaultToday());
+      purchaseLinesDateManuallySetRef.current = false;
       setAmount('');
       setCurrency('DKK');
       setExchangeRate('');
@@ -962,17 +970,23 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           <div className="flex flex-wrap gap-3 items-end">
             {/* Account selector */}
             <div className="w-48 space-y-1">
-              <Label className="text-xs text-gray-500 dark:text-gray-400">
-                {isDa ? 'Konto' : 'Account'}
-              </Label>
+              <div className="flex items-center gap-1.5">
+                <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                <Label className="text-xs text-gray-500 dark:text-gray-400">
+                  {isDa ? 'Konto' : 'Account'}
+                </Label>
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-600/10 text-emerald-600 dark:bg-emerald-400/20 dark:text-emerald-400">
+                  6xxx–9xxx
+                </span>
+              </div>
               <Select
                 value={item.accountId}
                 onValueChange={(val) => updatePurchaseLineItem(index, 'accountId', val)}
               >
-                <SelectTrigger className="h-10 bg-white dark:bg-white/5">
+                <SelectTrigger className="h-10 bg-gray-50 dark:bg-white/5">
                   <SelectValue placeholder={isDa ? 'Vælg konto...' : 'Select account...'} />
                 </SelectTrigger>
-                <SelectContent className="bg-white dark:bg-[#1a1f1e] dark:border-[#232740] max-h-64 overflow-y-auto">
+                <SelectContent className="bg-white dark:bg-[#1a1f1e] dark:border-[#232740] max-h-72 overflow-y-auto">
                   {groupedAccounts.map((group) => (
                     <SelectGroup key={group.labelDa}>
                       <SelectLabel className="text-xs font-semibold text-gray-500 dark:text-gray-400 px-2 py-1.5 select-none">
@@ -980,13 +994,23 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                       </SelectLabel>
                       {group.accounts.map((acc) => (
                         <SelectItem key={acc.id} value={acc.id}>
-                          <span className="font-mono text-xs mr-1">{acc.number}</span> {isDa ? acc.name : (acc.nameEn || acc.name)}
+                          <span className="font-mono text-xs text-gray-500 dark:text-gray-400 mr-2">{acc.number}</span>
+                          {isDa ? acc.name : (acc.nameEn || acc.name)}
                         </SelectItem>
                       ))}
                     </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>
+              {item.accountId && (() => {
+                const acc = expenseAccounts.find((a) => a.id === item.accountId);
+                return acc ? (
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                    <Info className="h-3 w-3 shrink-0" />
+                    {isDa ? `Valgt: ${acc.number} ${acc.name}` : `Selected: ${acc.number} ${acc.nameEn || acc.name}`}
+                  </p>
+                ) : null;
+              })()}
             </div>
             {/* Description */}
             <div className="flex-1 min-w-[180px] space-y-1">
@@ -1145,7 +1169,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
                 </div>
               </div>
               <div className="relative">
-                <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={isLoading} className="h-12 text-xl font-bold text-right pr-14 bg-gray-50 dark:bg-white/5 tabular-nums" />
+                <Input type="number" step="0.01" placeholder="0,00" value={amount} onChange={(e) => setAmount(e.target.value)} disabled={isLoading} className="h-12 text-xl font-bold text-right pr-14 bg-gray-50 dark:bg-white/5 tabular-nums" />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2"><span className="text-xs font-semibold text-gray-400 dark:text-gray-500">DKK</span></div>
               </div>
               {includesVAT && (
@@ -1252,6 +1276,15 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           </div>
         </CardHeader>
         <CardContent>
+          {/* Date field for purchase lines */}
+          <div className="space-y-1.5 mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+              <Label className="dark:text-gray-300 text-sm font-medium">{t('date')}</Label>
+            </div>
+            <Input type="date" value={purchaseLinesDate} onChange={(e) => { setPurchaseLinesDate(e.target.value); purchaseLinesDateManuallySetRef.current = true; }} className="bg-gray-50 dark:bg-white/5 text-sm" />
+          </div>
+
           {renderLineItems()}
 
           {/* Submit row */}
