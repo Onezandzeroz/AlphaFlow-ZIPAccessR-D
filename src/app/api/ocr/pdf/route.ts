@@ -10,28 +10,49 @@ import type { VisionMultimodalContentItem } from 'z-ai-web-dev-sdk';
  */
 export const maxDuration = 60;
 
-// Type declarations for runtime-loaded packages
-type CanvasModule = { createCanvas: (w: number, h: number) => CanvasInstance };
-type CanvasInstance = {
-  getContext(type: '2d'): CanvasContext;
-  toDataURL(mime: string): string;
-  width: number;
-  height: number;
-};
-type CanvasContext = {
-  fillRect(x: number, y: number, w: number, h: number): void;
-  drawImage(img: any, x: number, y: number): void;
-  getImageData(x: number, y: number, w: number, h: number): ImageData;
-};
+// ─── Canvas polyfill state ───────────────────────────────────────────
+// pdfjs-dist v4 uses `instanceof Image` and `instanceof Canvas` checks
+// internally (e.g. in paintInlineImageXObject). In Node.js these DOM
+// globals don't exist, causing "Image or Canvas expected" errors when
+// rendering PDFs with inline images (logos, stamps, etc.).
+//
+// We polyfill them once from the `canvas` npm package so all pdfjs-dist
+// code paths work transparently. The polyfill is idempotent — safe to
+// call on every request.
 
-async function getPdfjsLib(): Promise<any> {
-  // Both imports must be ignored by bundler — resolved at runtime on server
-  // where pdfjs-dist is installed in node_modules
-  return await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
+let canvasPolyfilled = false;
+
+async function ensureCanvasPolyfill(): Promise<typeof import('canvas')> {
+  if (canvasPolyfilled) {
+    return await import(/* webpackIgnore: true */ 'canvas' as string);
+  }
+
+  const nodeCanvas = await import(/* webpackIgnore: true */ 'canvas' as string) as any;
+
+  // Polyfill DOM globals that pdfjs-dist v4 checks with `instanceof`
+  if (typeof (globalThis as any).Image === 'undefined') {
+    (globalThis as any).Image = nodeCanvas.Image;
+  }
+  if (typeof (globalThis as any).Canvas === 'undefined') {
+    // The `canvas` package doesn't export `Canvas` as a named export directly,
+    // but createCanvas() returns an instance whose constructor IS the Canvas class.
+    const temp = nodeCanvas.createCanvas(1, 1);
+    (globalThis as any).Canvas = temp.constructor;
+  }
+  if (typeof (globalThis as any).ImageBitmap === 'undefined') {
+    // pdfjs-dist may also reference ImageBitmap in some code paths
+    (globalThis as any).ImageBitmap = class ImageBitmap {};
+  }
+
+  canvasPolyfilled = true;
+  console.log('[OCR] Canvas polyfill applied (Image, Canvas, ImageBitmap)');
+  return nodeCanvas;
 }
 
-async function getCanvas() {
-  return await import(/* webpackIgnore: true */ 'canvas' as string) as unknown as CanvasModule;
+// ─── pdfjs-dist loader ──────────────────────────────────────────────
+
+async function getPdfjsLib(): Promise<any> {
+  return await import(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.mjs' as string);
 }
 
 export async function POST(request: NextRequest) {
@@ -57,6 +78,9 @@ export async function POST(request: NextRequest) {
 
     if (isPdf) {
       // ── PDF: Render pages to images using pdfjs-dist + node-canvas ──
+      // Ensure canvas polyfill is applied before loading pdfjs-dist,
+      // so the legacy build picks up the correct Image/Canvas globals.
+      const nodeCanvas = await ensureCanvasPolyfill();
       const pdfjsLib = await getPdfjsLib();
 
       const cwd = process.cwd();
@@ -65,16 +89,36 @@ export async function POST(request: NextRequest) {
 
       pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
+      // canvasFactory: tells pdfjs-dist how to create Canvas objects in Node.js.
+      // This is required for v4 so that ALL internal canvas creation (including
+      // inline images in paintInlineImageXObject) uses node-canvas instead of
+      // trying to use the non-existent DOM Canvas.
+      const canvasFactory = {
+        create(width: number, height: number) {
+          const canvas = nodeCanvas.createCanvas(width, height);
+          return { canvas, context: canvas.getContext('2d') };
+        },
+        reset(canvasAndContext: { canvas: any }, width: number, height: number) {
+          canvasAndContext.canvas.width = width;
+          canvasAndContext.canvas.height = height;
+        },
+        destroy(canvasAndContext: { canvas: any }) {
+          canvasAndContext.canvas.width = 0;
+          canvasAndContext.canvas.height = 0;
+        },
+      };
+
       const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(arrayBuffer),
         useWorkerFetch: false,
         isEvalSupported: false,
         useSystemFonts: true,
         standardFontDataUrl: fontPath + '/',
+        canvasFactory,
       }).promise;
 
       const numPages = Math.min(pdf.numPages, 5);
-      const { createCanvas } = await getCanvas();
+      const { createCanvas } = nodeCanvas;
 
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
