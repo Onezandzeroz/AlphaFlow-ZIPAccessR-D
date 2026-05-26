@@ -39,7 +39,7 @@ export interface UseOcrReturn {
   /** Process a file with OCR (returns the result, or throws on error) */
   processFile: (
     file: File,
-    options?: { source?: OCRSource },
+    options?: { source?: OCRSource; processor?: 'tesseract' | 'vlm' | 'auto' },
   ) => Promise<OCRResult | null>;
 
   /** Current OCR result, or null if no document has been processed */
@@ -87,7 +87,7 @@ export function useOcr(): UseOcrReturn {
   const processFile = useCallback(
     async (
       file: File,
-      options?: { source?: OCRSource },
+      options?: { source?: OCRSource; processor?: 'tesseract' | 'vlm' | 'auto' },
     ): Promise<OCRResult | null> => {
       // Increment request ID to detect stale responses
       const requestId = ++activeRequestId.current;
@@ -108,6 +108,7 @@ export function useOcr(): UseOcrReturn {
       try {
         const processOptions: ProcessDocumentOptions = {
           source: options?.source,
+          processor: options?.processor,
           onProgress,
         };
 

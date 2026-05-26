@@ -143,12 +143,14 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [receiptNaturalWidth, setReceiptNaturalWidth] = useState<number | null>(null);
+  const [originalWasPdf, setOriginalWasPdf] = useState(false);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const preloadedConsumedRef = useRef(false);
   const descriptionInputRef = useRef<HTMLTextAreaElement>(null);
   const receiptPreviewUrlRef = useRef<string | null>(null);
+  const originalPdfRef = useRef<File | null>(null);
   const dateManuallySetRef = useRef(false);
 
   // ─── Purchase line items (for OCR + manual entry) ───
@@ -268,7 +270,6 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setError(isDa ? 'Filstørrelsen skal være under 10MB' : 'File size must be less than 10MB');
       return;
     }
-    setReceiptFile(file);
     setError('');
     // Clear any previous OCR line items when new document is uploaded
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
@@ -279,48 +280,117 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       receiptPreviewUrlRef.current = null;
     }
 
-    if (file.type === 'application/pdf') {
-      // Render PDF first page as image for clean preview (client-side via CDN)
+    if (file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')) {
+      // ── PDF: Convert ALL pages to PNG client-side via pdf.js CDN ──
       try {
         setReceiptPreview('loading');
-        
+        originalPdfRef.current = file; // Preserve original PDF for upload
+
         // Load pdf.js from CDN if not already loaded
         if (!(window as any).pdfjsLib) {
           await new Promise<void>((resolve, reject) => {
-            // Load pdf.js library
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
             script.onload = () => resolve();
             script.onerror = () => reject(new Error('Failed to load pdf.js'));
             document.head.appendChild(script);
           });
-          // Set worker
           (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
 
         const pdfjsLib = (window as any).pdfjsLib;
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const page = await pdf.getPage(1);
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
 
+        const numPages = Math.min(pdf.numPages, 5); // Cap at 5 pages
         const scale = 2.0;
-        const viewport = page.getViewport({ scale });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d');
 
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        // Render all pages and track dimensions for vertical stacking
+        const pageCanvases: HTMLCanvasElement[] = [];
+        let totalHeight = 0;
+        let maxWidth = 0;
 
-        const dataUrl = canvas.toDataURL('image/png');
-        receiptPreviewUrlRef.current = null; // data URL doesn't need revoke
+        for (let i = 1; i <= numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            // White background (transparent → white for OCR quality)
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, viewport.width, viewport.height);
+          }
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          pageCanvases.push(canvas);
+          totalHeight += viewport.height;
+          maxWidth = Math.max(maxWidth, viewport.width);
+        }
+
+        // Combine all pages into a single vertical image
+        const combinedCanvas = document.createElement('canvas');
+        combinedCanvas.width = maxWidth;
+        combinedCanvas.height = totalHeight;
+        const combinedCtx = combinedCanvas.getContext('2d');
+        if (combinedCtx) {
+          combinedCtx.fillStyle = '#ffffff';
+          combinedCtx.fillRect(0, 0, maxWidth, totalHeight);
+        }
+
+        let yOffset = 0;
+        for (const pageCanvas of pageCanvases) {
+          combinedCtx?.drawImage(pageCanvas, 0, yOffset);
+          yOffset += pageCanvas.height;
+        }
+
+        // Convert combined canvas to PNG blob → File
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          combinedCanvas.toBlob(
+            (b) => b ? resolve(b) : reject(new Error('Canvas toBlob failed')),
+            'image/png',
+          );
+        });
+
+        const pngFile = new File(
+          [blob],
+          file.name.replace(/\.pdf$/i, '.png'),
+          { type: 'image/png' },
+        );
+
+        // Use the PNG as the receipt file (for OCR and preview)
+        setReceiptFile(pngFile);
+        setOriginalWasPdf(true);
+
+        // Show PNG preview (data URL — no need to revoke)
+        const dataUrl = combinedCanvas.toDataURL('image/png');
+        receiptPreviewUrlRef.current = null;
         setReceiptPreview(dataUrl);
-      } catch {
-        // Fallback: show generic placeholder
+
+        console.log(`[PDF→PNG] Converted ${numPages} page(s) to PNG: ${(blob.size / 1024).toFixed(0)}KB`);
+      } catch (err) {
+        console.error('[PDF→PNG] Conversion failed:', err);
+        // Fallback: keep original PDF, show placeholder
+        setReceiptFile(file);
+        setOriginalWasPdf(true);
+        originalPdfRef.current = file;
         setReceiptPreview('pdf-fallback');
+
+        toast.error(
+          isDa ? 'Kunne ikke konvertere PDF' : 'Could not convert PDF',
+          {
+            description: isDa
+              ? 'PDFen kunne ikke konverteres til billede. OCR fungerer muligvis ikke.'
+              : 'The PDF could not be converted to image. OCR may not work.',
+            duration: 5000,
+          },
+        );
       }
     } else {
-      // Images: use object URL directly
+      // ── Images: use object URL directly ──
+      originalPdfRef.current = null;
+      setOriginalWasPdf(false);
+      setReceiptFile(file);
       const previewUrl = URL.createObjectURL(file);
       receiptPreviewUrlRef.current = previewUrl;
       setReceiptPreview(previewUrl);
@@ -329,12 +399,14 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
   const clearReceipt = useCallback(() => {
     setReceiptFile(null);
+    originalPdfRef.current = null;
     if (receiptPreviewUrlRef.current) {
       URL.revokeObjectURL(receiptPreviewUrlRef.current);
       receiptPreviewUrlRef.current = null;
     }
     setReceiptPreview(null);
     setReceiptNaturalWidth(null);
+    setOriginalWasPdf(false);
     resetOCR();
     setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -344,7 +416,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const handleManualOCR = useCallback(async () => {
     if (!receiptFile) return;
 
-    const result = await processOCR(receiptFile, { source: 'upload' });
+    // PDF-converted PNGs should use VLM for structured extraction (line items, description)
+    // Regular images (camera/upload) use auto-detect → Tesseract
+    const result = await processOCR(receiptFile, {
+      source: 'upload',
+      processor: originalWasPdf ? 'vlm' : 'auto',
+    });
     if (!result) {
       toast.error(
         isDa ? 'Kunne ikke læse dokumentet' : 'Could not read document',
@@ -449,7 +526,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         duration: 3000,
       });
     }
-  }, [receiptFile, amount, description, isDa, processOCR]);
+  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
@@ -463,6 +540,9 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       receiptPreviewUrlRef.current = previewUrl;
       setReceiptFile(preloadedReceiptFile);
       setReceiptPreview(previewUrl);
+      // Scanner captures are always images, never PDFs
+      setOriginalWasPdf(false);
+      originalPdfRef.current = null;
       onPreloadedFileConsumed?.();
     }
     if (!preloadedReceiptFile) {
@@ -479,6 +559,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     setReceiptFile(file);
     setReceiptPreview(previewUrl);
     setScannerOpen(false);
+    setOriginalWasPdf(false);
+    originalPdfRef.current = null;
   }, []);
 
   const handleScannerDismiss = useCallback(() => {
@@ -508,9 +590,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
     try {
       let receiptImagePath: string | null = null;
-      if (receiptFile) {
+      // Use the original PDF for upload if available (preserves document fidelity);
+      // otherwise use the receiptFile (PNG from PDF conversion or camera image).
+      const fileToUpload = originalPdfRef.current || receiptFile;
+      if (fileToUpload) {
         const formData = new FormData();
-        formData.append('file', receiptFile);
+        formData.append('file', fileToUpload);
         const uploadResponse = await fetch('/api/transactions/upload', { method: 'POST', body: formData });
         if (!uploadResponse.ok) throw new Error(isDa ? 'Kunne ikke uploade kvittering' : 'Failed to upload receipt');
         const uploadData = await uploadResponse.json();
