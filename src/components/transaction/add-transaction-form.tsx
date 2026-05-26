@@ -384,24 +384,47 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const handleManualOCR = useCallback(async () => {
     if (!receiptFile) return;
 
-    // All images (including PDF-converted PNGs) use auto-detect → Tesseract first.
-    // If Tesseract returns nothing useful, fall back to VLM (server-side Claude).
-    // This ensures OCR always works — Tesseract is client-side and never throws.
-    let result = await processOCR(receiptFile, {
-      source: 'upload',
-      processor: 'auto',
-    });
+    // Strategy:
+    //   - PDF-converted images → VLM first (AI vision understands structured invoices)
+    //     VLM fails gracefully with empty result, no throw
+    //   - Direct image uploads (camera/photo) → Tesseract first (fast, offline)
+    //     Falls back to VLM if Tesseract returns nothing useful
+    let result: Awaited<ReturnType<typeof processOCR>> | null;
 
-    // Fallback: if Tesseract produced an empty result, retry with VLM
-    // (useful for complex invoices where AI vision extracts more structure)
-    if (result && result.confidence < 30 && !result.amount && !result.date) {
-      console.log('[OCR] Tesseract returned low-confidence result, trying VLM fallback…');
-      const vlmResult = await processOCR(receiptFile, {
+    if (originalWasPdf) {
+      // PDF invoices are typically structured documents (tables, line items, VAT).
+      // VLM (Claude) handles these far better than Tesseract's raw text + regex.
+      result = await processOCR(receiptFile, {
         source: 'upload',
         processor: 'vlm',
       });
-      if (vlmResult && vlmResult.confidence > result.confidence) {
-        result = vlmResult;
+      // If VLM failed, fall back to Tesseract as last resort
+      if (!result || (result.confidence === 0 && !result.amount && !result.date)) {
+        console.log('[OCR] VLM returned empty result, trying Tesseract fallback…');
+        const tesseractResult = await processOCR(receiptFile, {
+          source: 'upload',
+          processor: 'tesseract',
+        });
+        if (tesseractResult && tesseractResult.confidence > (result?.confidence ?? 0)) {
+          result = tesseractResult;
+        }
+      }
+    } else {
+      // Camera / direct image uploads → Tesseract first (fast, client-side)
+      result = await processOCR(receiptFile, {
+        source: 'upload',
+        processor: 'auto',
+      });
+      // Fallback to VLM if Tesseract returned nothing useful
+      if (result && result.confidence < 30 && !result.amount && !result.date) {
+        console.log('[OCR] Tesseract returned low-confidence result, trying VLM fallback…');
+        const vlmResult = await processOCR(receiptFile, {
+          source: 'upload',
+          processor: 'vlm',
+        });
+        if (vlmResult && vlmResult.confidence > result.confidence) {
+          result = vlmResult;
+        }
       }
     }
 
@@ -511,7 +534,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         duration: 3000,
       });
     }
-  }, [receiptFile, amount, description, isDa, processOCR, ocrError]);
+  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR, ocrError]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
