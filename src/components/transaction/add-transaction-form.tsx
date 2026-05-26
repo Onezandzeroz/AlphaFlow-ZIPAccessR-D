@@ -624,9 +624,10 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
           response,
           isDa ? 'Opret indkøb' : 'Create purchase'
         );
-        if (isAccess) { setIsLoading(false); return; }
-        const data = await response.json();
-        throw new Error(data.error || (isDa ? 'Kunne ikke oprette indkøb' : 'Failed to create purchase'));
+        // handleMutationError already consumed the body (response.json())
+        // and showed a toast for non-access errors — just return
+        setIsLoading(false);
+        return;
       }
 
       // Reset form
