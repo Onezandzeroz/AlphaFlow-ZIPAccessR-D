@@ -37,10 +37,11 @@ export { processWithVLM } from './vlm-client';
 // ── Parser ──
 export {
   parseReceiptText,
+  parseInvoiceText,
   formatDanishCurrency,
   getTodayISO,
 } from './receipt-parser';
-export type { ParsedReceiptFields } from './receipt-parser';
+export type { ParsedReceiptFields, ParsedLineItem, ParsedInvoiceResult } from './receipt-parser';
 
 // ── Hooks ──
 export { useOcr } from './hooks/use-ocr';

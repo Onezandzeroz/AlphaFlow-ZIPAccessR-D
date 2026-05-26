@@ -443,70 +443,33 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       return;
     }
 
-    // Apply OCR results to form fields
-    if (result.amount !== null && !amount) {
-      setAmount(String(result.amount));
-    }
+    // ── Apply OCR results ──
+    // Only the date goes to the Purchase Note & Receipts card.
+    // Everything else (amount, line items) goes to the Purchase Lines card.
+
+    // Date → date field on the main card
     if (result.date && !dateManuallySetRef.current) {
       setDate(result.date);
     }
-    if (result.vatPercent !== null) {
-      setVatPercent(String(result.vatPercent));
-    }
-    if (result.amount !== null && result.vatPercent !== null && result.vatPercent > 0) {
-      setIncludesVAT(true);
-    }
 
-    // Use structured line items or description from OCR result
-    if (result.description && !description) {
-      setDescription(result.description);
-    }
-
+    // Build purchase lines from structured line items (VLM or Tesseract table extraction)
     let newLines: PurchaseLineItem[] = [];
 
     if (result.lineItems.length > 0) {
-      // Structured line items (from VLM PDF processing)
+      // Structured line items with description, quantity, unitPrice, vatPercent
       newLines = result.lineItems.map((line) => ({
         description: line.description || '',
         quantity: line.quantity || 1,
         unitPrice: line.unitPrice || 0,
-        vatPercent: line.vatPercent || (result.vatPercent ?? 25),
+        vatPercent: line.vatPercent || 25,
         accountId: '',
       }));
-    } else {
-      // Fallback: derive line items from raw OCR lines
-      const amountPattern = /(\d+(?:[.,]\d{1,2}))\s*(?:kr|DKK)?/;
-
-      for (const rawLine of result.rawLines) {
-        const trimmed = rawLine.trim();
-        if (!trimmed) continue;
-
-        const match = trimmed.match(amountPattern);
-        if (match) {
-          const lineAmount = parseFloat(match[1].replace(',', '.'));
-          const isTotalLine = /(?:total|sum|alt|betale|beløb|ialt)/i.test(trimmed);
-          if (isTotalLine) continue;
-          const isVatLine = /(?:moms|vat)/i.test(trimmed) && !/moms\s*(?:udgør|amount)/i.test(trimmed);
-          if (isVatLine && !amount) continue;
-
-          if (lineAmount > 0 && lineAmount < 100000) {
-            const desc = trimmed.replace(amountPattern, '').trim().replace(/\s+/g, ' ').slice(0, 80);
-            newLines.push({
-              description: desc || trimmed,
-              quantity: 1,
-              unitPrice: lineAmount,
-              vatPercent: result.vatPercent ?? 25,
-              accountId: '',
-            });
-          }
-        }
-      }
     }
 
-    // If no line items were extracted, create a single line from the total
+    // If no line items were extracted but we have a total, create a single line
     if (newLines.length === 0 && result.amount !== null) {
       newLines.push({
-        description: isDa ? 'Køb' : 'Purchase',
+        description: result.description || (isDa ? 'Køb' : 'Purchase'),
         quantity: 1,
         unitPrice: result.amount,
         vatPercent: result.vatPercent ?? 25,
@@ -534,7 +497,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         duration: 3000,
       });
     }
-  }, [receiptFile, originalWasPdf, amount, description, isDa, processOCR, ocrError]);
+  }, [receiptFile, originalWasPdf, isDa, processOCR, ocrError]);
 
   // When a preloaded file arrives from the standalone scanner (FAB flow),
   // auto-attach it to the form (OCR is manual now — user triggers it).
