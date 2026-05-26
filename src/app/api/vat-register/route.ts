@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         date: { gte: fromDate, lte: toDate },
       },
       include: { lines: { include: { account: true } } },
-      orderBy: { date: 'asc' },
+      orderBy: { date: 'desc' },
     });
 
     return NextResponse.json({
