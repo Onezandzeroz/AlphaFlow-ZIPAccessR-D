@@ -276,65 +276,6 @@ function extractLineItems(text: string): ParsedLineItem[] {
 }
 
 /**
- * Clean up OCR description text from Tesseract output.
- *
- * Tesseract commonly produces these artifacts in Danish invoice descriptions:
- *   1. Broken words at line breaks: "K lentydelse" instead of "Konsulentydelse"
- *      (Tesseract splits "Konsulent" across visual lines, overlapping chars)
- *   2. "ve dligehold" instead of "vedligehold" (end of word broken off)
- *   3. Extra spaces and stray punctuation (pipes, dashes)
- *
- * Rules applied (in order):
- *   1. Remove stray pipe characters
- *   2. Fix broken words: single uppercase letter + space + lowercase word (≥4 chars)
- *      e.g., "K lentydelse" → "Klentydelse"
- *   3. Fix broken words: single lowercase letter + space + lowercase word (≥4 chars)
- *      BUT only when preceded by start-of-string or already-merged text
- *      (not after short words like "af", "og", "til" which are valid Danish words)
- *      e.g., "ve dligehold" → "vedligehold", but "af system" stays as-is
- *   4. Normalize whitespace and trim
- *   5. Capitalize first letter
- */
-function cleanDescription(raw: string): string {
-  if (!raw) return '';
-
-  let desc = raw;
-
-  // Remove stray pipe characters used as column separators
-  desc = desc.replace(/[|]/g, '');
-
-  // Fix broken words: single uppercase letter + space + lowercase word (≥4 chars)
-  // Pattern: "K lentydelse" → "Klentydelse", "Ve dligehold" → "Vedligehold"
-  // Uses \b word boundary. Safe because single uppercase letters followed by long
-  // lowercase words are extremely rare in Danish invoice descriptions.
-  desc = desc.replace(/([A-ZÆØÅ])([ \u00A0])([a-zæøå]{4,})/g, '$1$3');
-
-  // Fix broken words at start-of-string (Tesseract line-break artifacts)
-  // Handles fragments of 1-2 characters before a space + word of ≥4 chars.
-  // Examples:
-  //   "ve dligehold" → "vedligehold"  (2-char fragment "ve" + space + "dligehold")
-  //   "a rberejde"   → "arbejde"     (1-char fragment "a" + space + "rberejde")
-  //   "K lentydelse" → "Klentydelse" (already handled by uppercase rule above)
-  const startMerge = /^([a-zæøå]{1,2})([ \u00A0])([a-zæøå]{4,})/;
-  desc = desc.replace(startMerge, '$1$3');
-  // Fix broken words after uppercase letter, digit, or punctuation
-  const midMerge = /([0-9A-ZÆØÅ.\-–—,(])([a-zæøå]{1,2})([ \u00A0])([a-zæøå]{4,})/g;
-  desc = desc.replace(midMerge, (_match, prefix, fragment, _space, rest) => {
-    return prefix + fragment + rest;
-  });
-
-  // Normalize whitespace
-  desc = desc.replace(/\s+/g, ' ').trim();
-
-  // Capitalize first letter of the description
-  if (desc.length > 0) {
-    desc = desc.charAt(0).toUpperCase() + desc.slice(1);
-  }
-
-  return desc.slice(0, 200);
-}
-
-/**
  * Parse a single line item from combined text.
  *
  * `combined` is all lines of one block joined with spaces, e.g.:
@@ -355,14 +296,13 @@ function parseSingleLineItem(combined: string, defaultVat: number): ParsedLineIt
 
   // Extract description: text before the first digit
   const descMatch = combined.match(/^(.*?)(?=\d)/);
-  const rawDescription = descMatch
+  const description = descMatch
     ? descMatch[1]
         .replace(/[|\-–—]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
+        .slice(0, 200)
     : '';
-
-  const description = cleanDescription(rawDescription);
 
   if (monetaryNums.length === 0) return null;
 
