@@ -4,21 +4,20 @@ import { NextRequest, NextResponse } from 'next/server';
  * POST /api/pdf-to-png
  *
  * Converts the first page of a PDF file to a PNG image using
- * GraphicsMagick + Ghostscript (via pdf2pic).
+ * pdfjs-dist + node-canvas (same stack as /api/ocr/pdf).
  *
  * System dependencies (install on production VPS):
  *   apt-get install -y graphicsmagick ghostscript
  *
- * NOTE: pdf2pic is loaded via dynamic import() to avoid Turbopack
- * bundling issues — it spawns native child processes (gm/gs) that
- * cannot be bundled. It is also listed in serverExternalPackages
- * in next.config.ts.
+ * Returns the PNG as a binary blob with Content-Type: image/png.
  */
 
-async function getPdf2pic() {
-  // Dynamic import — hidden from Turbopack static analysis at build time.
-  // Resolved at runtime from node_modules on the server.
-  return await import(/* webpackIgnore: true */ 'pdf2pic' as string);
+async function getPdfjsLib() {
+  return await import(/* webpackIgnore: true */ 'pdfjs-dist/build/pdf.js' as string);
+}
+
+async function getCanvas() {
+  return await import(/* webpackIgnore: true */ 'canvas' as string);
 }
 
 export async function POST(request: NextRequest) {
@@ -49,7 +48,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Read PDF bytes into a Buffer
     const arrayBuffer = await file.arrayBuffer();
     const pdfBuffer = Buffer.from(arrayBuffer);
 
@@ -57,35 +55,66 @@ export async function POST(request: NextRequest) {
       `[PDF→PNG] Converting: ${file.name}, ${(pdfBuffer.length / 1024).toFixed(1)}KB`,
     );
 
-    // Load pdf2pic at runtime (not bundled by Turbopack)
-    const pdf2pic = await getPdf2pic();
-    const { fromBuffer } = pdf2pic;
+    // Load pdfjs-dist + node-canvas at runtime (not bundled by Turbopack)
+    const pdfjsLib = await getPdfjsLib();
+    const nodeCanvas = await getCanvas();
+    const { createCanvas } = nodeCanvas;
 
-    // Convert page 1 to PNG (in-memory, no temp files)
-    const convert = fromBuffer(pdfBuffer, {
-      density: 150, // DPI — balanced quality vs file size
-      format: 'png',
-      width: 1200,
-      height: 1600,
-      preserveAspectRatio: true,
-    });
+    // Set up worker
+    const path = await import('path');
+    const cwd = process.cwd();
+    const workerPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'build', 'pdf.worker.min.js');
+    const fontPath = path.join(cwd, 'node_modules', 'pdfjs-dist', 'standard_fonts');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
-    const result = await convert(1, { responseType: 'buffer' });
+    // canvasFactory tells pdfjs-dist how to create Canvas objects in Node.js
+    const canvasFactory = {
+      create(width: number, height: number) {
+        const canvas = createCanvas(width, height);
+        return { canvas, context: canvas.getContext('2d') };
+      },
+      reset(canvasAndContext: { canvas: any }, width: number, height: number) {
+        canvasAndContext.canvas.width = width;
+        canvasAndContext.canvas.height = height;
+      },
+      destroy(canvasAndContext: { canvas: any }) {
+        canvasAndContext.canvas.width = 0;
+        canvasAndContext.canvas.height = 0;
+      },
+    };
 
-    if (!result?.buffer) {
-      console.error('[PDF→PNG] pdf2pic returned no buffer');
-      return NextResponse.json(
-        { error: 'PDF conversion failed — no image produced' },
-        { status: 500 },
-      );
-    }
+    // Parse PDF
+    const pdf = await pdfjsLib.getDocument({
+      data: new Uint8Array(arrayBuffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+      standardFontDataUrl: fontPath + '/',
+      canvasFactory,
+    }).promise;
+
+    // Render first page
+    const page = await pdf.getPage(1);
+    const scale = 2.0;
+    const viewport = page.getViewport({ scale });
+    const canvas = createCanvas(viewport.width, viewport.height);
+    const ctx = canvas.getContext('2d');
+
+    // White background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, viewport.width, viewport.height);
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    // Convert to PNG buffer
+    const pngBuffer = canvas.toBuffer('image/png');
 
     console.log(
-      `[PDF→PNG] Success: ${(result.buffer.length / 1024).toFixed(0)}KB PNG`,
+      `[PDF→PNG] Success: ${viewport.width}x${viewport.height}, ${(pngBuffer.length / 1024).toFixed(0)}KB PNG`,
     );
 
     // Stream the PNG back
-    return new NextResponse(result.buffer, {
+    return new NextResponse(pngBuffer, {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
@@ -96,20 +125,21 @@ export async function POST(request: NextRequest) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error('[PDF→PNG] Conversion error:', msg);
 
-    // Detect missing system dependencies
+    // Detect missing native dependencies
+    const errLower = msg.toLowerCase();
     if (
-      msg.includes('graphicsmagick') ||
-      msg.includes('gm') ||
-      msg.includes('ghostscript') ||
-      msg.includes('gs') ||
-      msg.includes('ENOTFOUND') ||
-      msg.includes('spawn')
+      errLower.includes('dlopen') ||
+      errLower.includes('cannot find module') ||
+      errLower.includes('canvas') ||
+      errLower.includes('native') ||
+      errLower.includes('ENOENT') ||
+      errLower.includes('spawn')
     ) {
       return NextResponse.json(
         {
           error:
-            'PDF conversion requires GraphicsMagick and Ghostscript. ' +
-            'Install with: sudo apt-get install -y graphicsmagick ghostscript',
+            'PDF conversion requires native dependencies. ' +
+            'Run: sudo apt-get install -y build-essential libcairo2-dev libjpeg-dev libpango1.0-dev',
         },
         { status: 500 },
       );

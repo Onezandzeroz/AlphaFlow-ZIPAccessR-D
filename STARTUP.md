@@ -38,21 +38,20 @@ bun --version
 
 ### 1.1. System Dependencies (Required)
 
-The app uses **pdf2pic** (via GraphicsMagick + Ghostscript) for server-side PDF-to-PNG conversion (e.g., uploading purchase invoices). Install these before running the app:
+The app uses **node-canvas** for server-side PDF-to-PNG conversion (e.g., uploading purchase invoices). Install the native libraries it needs:
 
 ```bash
 # Ubuntu / Debian
-sudo apt-get install -y graphicsmagick ghostscript
+sudo apt-get install -y build-essential libcairo2-dev libjpeg-dev libpango1.0-dev
 
 # macOS (Homebrew)
-brew install graphicsmagick ghostscript
+brew install cairo pango libjpeg
 
 # Verify
-gm version    # GraphicsMagick
-gs --version  # Ghostscript
+pkg-config --libs cairo  # should list linker flags without error
 ```
 
-> **If you skip this step**, PDF uploads on the "Add purchase" page will fail with a clear error message telling you to install these dependencies. Direct image uploads (PNG, JPEG) are unaffected.
+> **If you skip this step**, PDF uploads on the "Add purchase" page will fail with a clear error message. Direct image uploads (PNG, JPEG) are unaffected.
 
 ### 1.2. Clone and Configure
 
@@ -170,7 +169,7 @@ To test real emails during development, configure SMTP in `.env` (see [Environme
 sudo apt update && sudo apt upgrade -y
 
 # Install essential tools
-sudo apt install -y git curl ufw graphicsmagick ghostscript
+sudo apt install -y git curl ufw build-essential libcairo2-dev libjpeg-dev libpango1.0-dev
 
 # Install Bun
 curl -fsSL https://bun.sh/install | bash
