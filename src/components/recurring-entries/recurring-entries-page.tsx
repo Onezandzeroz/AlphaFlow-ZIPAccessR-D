@@ -792,6 +792,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                       )}
                                     </div>
                                   </div>
+                                </div>
 
                                   {/* Today marker */}
                                   {timeline.length > 0 && (
