@@ -95,12 +95,83 @@ export async function POST(request: NextRequest) {
     if (demoBlocked) return demoBlocked;
 
     const body = await request.json();
-    const { name, description, frequency, startDate, endDate, lines, reference } = body;
+    const { name, description, frequency, startDate, endDate, lines, reference, accountId, amount, vatPercent } = body;
 
-    // Validate required fields
-    if (!name || !description || !frequency || !startDate || !lines) {
+    // Validate required fields (name, frequency, startDate always required)
+    if (!name || !frequency || !startDate) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, description, frequency, startDate, lines' },
+        { error: 'Missing required fields: name, frequency, startDate' },
+        { status: 400 }
+      );
+    }
+
+    // If no explicit lines provided, require purchase-based fields
+    let resolvedLines = lines;
+    if (!resolvedLines && accountId && amount !== undefined && vatPercent !== undefined) {
+      // Auto-build lines for purchase-type recurring entries
+      const netAmt = typeof amount === 'number' ? amount : parseFloat(amount);
+      const vatPct = typeof vatPercent === 'number' ? vatPercent : parseFloat(vatPercent);
+      const vatAmt = Math.round(netAmt * vatPct / 100 * 100) / 100;
+      const grossAmt = Math.round((netAmt + vatAmt) * 100) / 100;
+
+      // Look up the VAT input account (account starting with 54xx)
+      const vatAccount = await db.account.findFirst({
+        where: {
+          number: { startsWith: '54' },
+          ...tenantFilter(ctx),
+          isActive: true,
+        },
+      });
+
+      // Look up the bank/cash account (account 1100 or similar)
+      const bankAccount = await db.account.findFirst({
+        where: {
+          number: { startsWith: '1100' },
+          ...tenantFilter(ctx),
+          isActive: true,
+        },
+      });
+
+      if (!bankAccount) {
+        return NextResponse.json(
+          { error: 'Bank account (1100) not found. Please create it first.' },
+          { status: 400 }
+        );
+      }
+
+      const entryName = name || 'Purchase';
+      resolvedLines = [
+        {
+          accountId,
+          debit: netAmt,
+          credit: 0,
+          description: entryName,
+        },
+      ];
+
+      // Only add VAT line if VAT amount > 0 and VAT account exists
+      if (vatAmt > 0 && vatAccount) {
+        resolvedLines.push({
+          accountId: vatAccount.id,
+          debit: vatAmt,
+          credit: 0,
+          description: `Input VAT ${vatPct}%`,
+        });
+      }
+
+      // Credit bank account (gross amount)
+      resolvedLines.push({
+        accountId: bankAccount.id,
+        debit: 0,
+        credit: grossAmt,
+        description: entryName,
+      });
+    }
+
+    // Validate lines are present (either provided or auto-built)
+    if (!resolvedLines) {
+      return NextResponse.json(
+        { error: 'Missing required fields: provide either lines or accountId/amount/vatPercent for purchase-based creation' },
         { status: 400 }
       );
     }
@@ -114,14 +185,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate lines
-    if (!Array.isArray(lines) || lines.length < 2) {
+    if (!Array.isArray(resolvedLines) || resolvedLines.length < 2) {
       return NextResponse.json(
         { error: 'A recurring entry must have at least 2 lines (double-entry)' },
         { status: 400 }
       );
     }
 
-    for (const line of lines) {
+    for (const line of resolvedLines) {
       if (!line.accountId) {
         return NextResponse.json(
           { error: 'Each line must have an accountId' },
@@ -143,7 +214,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify all referenced accounts exist and belong to the user
-    const accountIds = [...new Set(lines.map((l: { accountId: string }) => l.accountId))];
+    const accountIds = [...new Set(resolvedLines.map((l: { accountId: string }) => l.accountId))];
         const accounts = await db.account.findMany({
       where: {
         id: { in: accountIds },
@@ -162,8 +233,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate double-entry balance
-    const totalDebit = lines.reduce((sum: number, l: { debit: number }) => sum + l.debit, 0);
-    const totalCredit = lines.reduce((sum: number, l: { credit: number }) => sum + l.credit, 0);
+    const totalDebit = resolvedLines.reduce((sum: number, l: { debit: number }) => sum + l.debit, 0);
+    const totalCredit = resolvedLines.reduce((sum: number, l: { credit: number }) => sum + l.credit, 0);
 
     if (Math.abs(totalDebit - totalCredit) > 0.005) {
       return NextResponse.json(
@@ -179,12 +250,12 @@ export async function POST(request: NextRequest) {
     const entry = await db.recurringEntry.create({
       data: {
         name,
-        description,
+        description: description || name,
         frequency,
         startDate: start,
         endDate: endDate ? new Date(endDate) : null,
         nextExecution,
-        lines,
+        lines: resolvedLines,
         reference: reference || null,
         userId: ctx.id,
         companyId: ctx.activeCompanyId!,
@@ -195,7 +266,7 @@ export async function POST(request: NextRequest) {
       ctx.id,
       'RecurringEntry',
       entry.id,
-      { name, description, frequency, startDate, endDate, reference, lineCount: lines.length, totalDebit, totalCredit },
+      { name, description: description || name, frequency, startDate, endDate, reference, lineCount: resolvedLines.length, totalDebit, totalCredit },
       requestMetadata(request),
       ctx.activeCompanyId
     );

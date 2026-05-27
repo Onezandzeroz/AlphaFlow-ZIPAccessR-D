@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Receipt, RefreshCw, Plus, ArrowRight } from 'lucide-react';
+import { Receipt, RefreshCw, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWriteAccessGuard } from '@/hooks/use-write-access-guard';
 
@@ -35,8 +35,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
   const [activeTab, setActiveTab] = useState<'transactions' | 'recurring'>(defaultTab);
   const [currentView, setCurrentView] = useState<PageView>('list');
   const [isMobileDialogOpen, setIsMobileDialogOpen] = useState(false);
-  const [recurringTrigger, setRecurringTrigger] = useState(0);
-
   // ── Viewport detection (lg = 1024px) ──
   const subscribeToMedia = useCallback((cb: () => void) => {
     const mql = window.matchMedia('(min-width: 1024px)');
@@ -94,23 +92,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
     setIsMobileDialogOpen(false);
     setPreloadedFile(null);
   }, []);
-
-  const handleOpenRecurringDialog = useCallback(() => {
-    guardWriteAccess(
-      isDa ? 'Opret tilbagevendende postering' : 'Create recurring entry',
-      () => setRecurringTrigger((prev) => prev + 1),
-    );
-  }, [guardWriteAccess, isDa]);
-
-  const handleSwitchToRecurring = useCallback(() => {
-    setCurrentView('list');
-    setIsMobileDialogOpen(false);
-    setActiveTab('recurring');
-    setTimeout(() => guardWriteAccess(
-      isDa ? 'Opret tilbagevendende postering' : 'Create recurring entry',
-      () => setRecurringTrigger((prev) => prev + 1),
-    ), 100);
-  }, [guardWriteAccess, isDa]);
 
   const handleCancel = useCallback(() => {
     setCurrentView('list');
@@ -172,19 +153,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           preloadedReceiptFile={preloadedFile}
           onPreloadedFileConsumed={handlePreloadedFileConsumed}
         />
-        <div className="pt-3 mt-3">
-          <button
-            type="button"
-            onClick={handleSwitchToRecurring}
-            className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/5 dark:hover:bg-[#2dd4bf]/5 transition-colors cursor-pointer"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span className="flex-1 text-left font-medium">
-              {isDa ? 'Tilføj gentagende indkøb' : 'Add recurring purchase'}
-            </span>
-            <ArrowRight className="h-3.5 w-3.5 opacity-50" />
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -211,19 +179,6 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           preloadedReceiptFile={preloadedFile}
           onPreloadedFileConsumed={handlePreloadedFileConsumed}
         />
-        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-white/10">
-          <button
-            type="button"
-            onClick={handleSwitchToRecurring}
-            className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg text-sm text-[#0d9488] dark:text-[#2dd4bf] hover:bg-[#0d9488]/5 dark:hover:bg-[#2dd4bf]/5 transition-colors cursor-pointer"
-          >
-            <RefreshCw className="h-4 w-4" />
-            <span className="flex-1 text-left font-medium">
-              {isDa ? 'Tilføj gentagende indkøb' : 'Add recurring purchase'}
-            </span>
-            <ArrowRight className="h-3.5 w-3.5 opacity-50" />
-          </button>
-        </div>
       </DialogContent>
     </Dialog>
   );
@@ -298,7 +253,7 @@ export function PosteringerPage({ user, defaultTab = 'transactions' }: Postering
           {activeTab === 'transactions' ? (
             <TransactionsPage user={user} hideHeader defaultTypeFilter="PURCHASE" />
           ) : (
-            <RecurringEntriesPage user={user} hideHeader triggerCreate={recurringTrigger} />
+            <RecurringEntriesPage user={user} hideHeader />
           )}
         </div>
       </div>

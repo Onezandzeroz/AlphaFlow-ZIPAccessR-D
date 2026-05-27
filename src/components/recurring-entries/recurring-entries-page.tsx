@@ -7,9 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -17,14 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,18 +34,13 @@ import {
 } from '@/components/ui/table';
 import {
   Loader2,
-  Plus,
   RefreshCw,
   Play,
   Pause,
-  Pencil,
   Trash2,
   AlertTriangle,
   CalendarClock,
   Repeat,
-  CheckCircle2,
-  FileText,
-  X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { useWriteAccessGuard } from '@/hooks/use-write-access-guard';
@@ -77,21 +61,6 @@ interface RecurringEntry {
   reference: string | null;
 }
 
-interface Account {
-  id: string;
-  number: string;
-  name: string;
-  type: string;
-  isActive: boolean;
-}
-
-interface RecurringLine {
-  accountId: string;
-  debit: number;
-  credit: number;
-  description: string;
-}
-
 // ─── Constants ────────────────────────────────────────────────────
 
 const FREQUENCY_LABELS: Record<string, { da: string; en: string }> = {
@@ -102,8 +71,6 @@ const FREQUENCY_LABELS: Record<string, { da: string; en: string }> = {
   YEARLY: { da: 'Årlig', en: 'Yearly' },
 };
 
-const FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'];
-
 const STATUS_CONFIG: Record<string, { label_da: string; label_en: string; className: string }> = {
   ACTIVE: { label_da: 'Aktiv', label_en: 'Active', className: 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 border-green-500/20' },
   PAUSED: { label_da: 'Pauset', label_en: 'Paused', className: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-amber-500/20' },
@@ -112,33 +79,17 @@ const STATUS_CONFIG: Record<string, { label_da: string; label_en: string; classN
 
 // ─── Component ────────────────────────────────────────────────────
 
-export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user: User; hideHeader?: boolean; triggerCreate?: number }) {
-  const { language, tc, td, t } = useTranslation();
+export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHeader?: boolean }) {
+  const { language, td } = useTranslation();
   const { guardWriteAccess } = useWriteAccessGuard(user);
   const [entries, setEntries] = useState<RecurringEntry[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [executingId, setExecutingId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Form state
-  const [formName, setFormName] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formFrequency, setFormFrequency] = useState('MONTHLY');
-  const [formStartDate, setFormStartDate] = useState('');
-  const [formEndDate, setFormEndDate] = useState('');
-  const [formReference, setFormReference] = useState('');
-  const [formLines, setFormLines] = useState<RecurringLine[]>([
-    { accountId: '', debit: 0, credit: 0, description: '' },
-    { accountId: '', debit: 0, credit: 0, description: '' },
-  ]);
 
   // ─── Fetch data ────────────────────────────────────────────────
 
@@ -146,19 +97,13 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
     setIsLoading(true);
     setError(null);
     try {
-      const [entriesRes, accountsRes] = await Promise.all([
-        fetch('/api/recurring-entries'),
-        fetch('/api/accounts'),
-      ]);
+      const entriesRes = await fetch('/api/recurring-entries');
 
       if (!entriesRes.ok) throw new Error('Failed to fetch recurring entries');
-      if (!accountsRes.ok) throw new Error('Failed to fetch accounts');
 
       const entriesData = await entriesRes.json();
-      const accountsData = await accountsRes.json();
 
       setEntries(entriesData.recurringEntries || []);
-      setAccounts((accountsData.accounts || []).filter((a: Account) => a.isActive));
     } catch (err) {
       console.error('Fetch error:', err);
       setError(language === 'da' ? 'Kunne ikke hente data' : 'Failed to fetch data');
@@ -170,110 +115,6 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  // ─── External trigger for create dialog (from parent PosteringerPage) ────
-  useEffect(() => {
-    if (triggerCreate && triggerCreate > 0) {
-      resetForm();
-      guardWriteAccess(language === 'da' ? 'Opret gentagende postering' : 'Create recurring entry', () => {
-        setIsDialogOpen(true);
-      });
-    }
-  }, [triggerCreate, guardWriteAccess, language]);
-
-  // ─── Form helpers ──────────────────────────────────────────────
-
-  const resetForm = useCallback(() => {
-    setEditingId(null);
-    setFormName('');
-    setFormDescription('');
-    setFormFrequency('MONTHLY');
-    setFormStartDate('');
-    setFormEndDate('');
-    setFormReference('');
-    setFormLines([
-      { accountId: '', debit: 0, credit: 0, description: '' },
-      { accountId: '', debit: 0, credit: 0, description: '' },
-    ]);
-  }, []);
-
-  const totalDebit = formLines.reduce((s, l) => s + (l.debit || 0), 0);
-  const totalCredit = formLines.reduce((s, l) => s + (l.credit || 0), 0);
-  const isBalanced = Math.abs(totalDebit - totalCredit) < 0.01;
-
-  const addLine = () => {
-    setFormLines([...formLines, { accountId: '', debit: 0, credit: 0, description: '' }]);
-  };
-
-  const removeLine = (index: number) => {
-    if (formLines.length <= 2) return;
-    setFormLines(formLines.filter((_, i) => i !== index));
-  };
-
-  const updateLine = (index: number, field: keyof RecurringLine, value: string | number) => {
-    const updated = [...formLines];
-    (updated[index] as unknown as Record<string, unknown>)[field] = value;
-    setFormLines(updated);
-  };
-
-  // ─── Open edit dialog ─────────────────────────────────────────
-
-  const openEdit = (entry: RecurringEntry) => {
-    setEditingId(entry.id);
-    setFormName(entry.name);
-    setFormDescription(entry.description);
-    setFormFrequency(entry.frequency);
-    setFormStartDate(entry.startDate.substring(0, 10));
-    setFormEndDate(entry.endDate ? entry.endDate.substring(0, 10) : '');
-    setFormReference(entry.reference || '');
-    setFormLines((entry.lines as any) || [
-      { accountId: '', debit: 0, credit: 0, description: '' },
-      { accountId: '', debit: 0, credit: 0, description: '' },
-    ]);
-    setIsDialogOpen(true);
-  };
-
-  // ─── Save handler ─────────────────────────────────────────────
-
-  const handleSave = async () => {
-    if (!formName.trim() || !formStartDate) return;
-
-    const validLines = formLines.filter((l) => l.accountId && (l.debit > 0 || l.credit > 0));
-    if (validLines.length < 2) return;
-
-    setIsSaving(true);
-    try {
-      const body = {
-        ...(editingId ? { id: editingId } : {}),
-        name: formName.trim(),
-        description: formDescription.trim(),
-        frequency: formFrequency,
-        startDate: formStartDate,
-        endDate: formEndDate || null,
-        reference: formReference.trim() || null,
-        lines: validLines,
-      };
-
-      const res = await fetch('/api/recurring-entries', {
-        method: editingId ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to save');
-      }
-
-      setIsDialogOpen(false);
-      resetForm();
-      fetchData();
-    } catch (err) {
-      console.error('Save error:', err);
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   // ─── Execute handler ──────────────────────────────────────────
 
@@ -391,19 +232,10 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
           ? 'Automatisér gentagende bilag som husleje, løn og abonnementer'
           : 'Automate recurring postings like rent, salaries, and subscriptions'}
         action={
-          <div className="flex items-center gap-2">
-            <Button onClick={fetchData} className="bg-[#0d9488] hover:bg-[#0f766e] text-white border border-[#0d9488] gap-2 font-medium transition-all lg:bg-white/20 lg:hover:bg-white/30 lg:border-white/30 lg:backdrop-blur-sm">
-              <RefreshCw className="h-4 w-4" />
-              {language === 'da' ? 'Opdater' : 'Refresh'}
-            </Button>
-            <Button
-              onClick={() => { resetForm(); guardWriteAccess(language === 'da' ? 'Opret gentagende postering' : 'Create recurring entry', () => setIsDialogOpen(true)); }}
-              className="bg-[#0d9488] hover:bg-[#0f766e] text-white border border-[#0d9488] gap-2 font-medium transition-all lg:bg-white/20 lg:hover:bg-white/30 lg:border-white/30 lg:backdrop-blur-sm"
-            >
-              <Plus className="h-4 w-4" />
-              {language === 'da' ? 'Opret ny' : 'Create New'}
-            </Button>
-          </div>
+          <Button onClick={fetchData} className="bg-[#0d9488] hover:bg-[#0f766e] text-white border border-[#0d9488] gap-2 font-medium transition-all lg:bg-white/20 lg:hover:bg-white/30 lg:border-white/30 lg:backdrop-blur-sm">
+            <RefreshCw className="h-4 w-4" />
+            {language === 'da' ? 'Opdater' : 'Refresh'}
+          </Button>
         }
       />
       )}
@@ -483,13 +315,11 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
                   ? 'Ingen gentagende posteringer endnu'
                   : 'No recurring entries yet'}
               </p>
-              <Button
-                onClick={() => { resetForm(); guardWriteAccess(language === 'da' ? 'Opret gentagende postering' : 'Create recurring entry', () => setIsDialogOpen(true)); }}
-                className="gap-2 bg-[#0d9488] hover:bg-[#0f766e] text-white"
-              >
-                <Plus className="h-4 w-4" />
-                {language === 'da' ? 'Opret den første' : 'Create the first one'}
-              </Button>
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                {language === 'da'
+                  ? 'Opret gentagende indkøb fra indkøbsformularen ved at slå "Gentagende indkøb" til'
+                  : 'Create recurring purchases from the purchase form by toggling "Recurring Purchase" on'}
+              </p>
             </div>
           ) : (
             <div className="max-h-96 overflow-y-auto">
@@ -561,17 +391,6 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-8 w-8 p-0"
-                              onClick={() => openEdit(entry)}
-                              title={language === 'da' ? 'Rediger' : 'Edit'}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          )}
-                          {entry.status !== 'COMPLETED' && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
                               className="h-8 w-8 p-0 text-red-500 hover:text-red-600"
                               onClick={() => { setDeleteId(entry.id); setIsDeleteDialogOpen(true); }}
                               title={language === 'da' ? 'Annuller' : 'Cancel'}
@@ -589,191 +408,6 @@ export function RecurringEntriesPage({ user, hideHeader, triggerCreate }: { user
           )}
         </CardContent>
       </Card>
-
-      {/* ═══ Create/Edit Dialog ═══ */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
-        <DialogContent className="bg-white dark:bg-[#1a1f1e] max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="dark:text-white flex items-center gap-2">
-              <Repeat className="h-5 w-5 text-[#0d9488]" />
-              {editingId
-                ? (language === 'da' ? 'Rediger gentagende postering' : 'Edit Recurring Entry')
-                : (language === 'da' ? 'Opret gentagende postering' : 'Create Recurring Entry')}
-            </DialogTitle>
-            <DialogDescription className="dark:text-gray-400">
-              {language === 'da'
-                ? 'Opret en skabelon der automatisk opretter journalposter'
-                : 'Create a template that automatically generates journal entries'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            {/* Name & Frequency */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">{language === 'da' ? 'Navn *' : 'Name *'}</Label>
-                <Input
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder={language === 'da' ? 'F.eks. Husleje, Løn' : 'E.g. Rent, Salary'}
-                  className="bg-gray-50 dark:bg-white/5 border-0"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">{language === 'da' ? 'Frekvens *' : 'Frequency *'}</Label>
-                <Select value={formFrequency} onValueChange={setFormFrequency}>
-                  <SelectTrigger className="bg-gray-50 dark:bg-white/5 border-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FREQUENCIES.map((f) => (
-                      <SelectItem key={f} value={f}>
-                        {getFrequencyLabel(f)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Description */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">{language === 'da' ? 'Beskrivelse' : 'Description'}</Label>
-              <Textarea
-                value={formDescription}
-                onChange={(e) => setFormDescription(e.target.value)}
-                placeholder={language === 'da' ? 'Valgfri beskrivelse...' : 'Optional description...'}
-                rows={2}
-                className="bg-gray-50 dark:bg-white/5 border-0"
-              />
-            </div>
-
-            {/* Dates */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">{language === 'da' ? 'Startdato *' : 'Start Date *'}</Label>
-                <Input
-                  type="date"
-                  value={formStartDate}
-                  onChange={(e) => setFormStartDate(e.target.value)}
-                  className="bg-gray-50 dark:bg-white/5 border-0"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-sm font-medium">{language === 'da' ? 'Slutdato' : 'End Date'}</Label>
-                <Input
-                  type="date"
-                  value={formEndDate}
-                  onChange={(e) => setFormEndDate(e.target.value)}
-                  className="bg-gray-50 dark:bg-white/5 border-0"
-                />
-              </div>
-            </div>
-
-            {/* Reference */}
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">{language === 'da' ? 'Reference præfiks' : 'Reference Prefix'}</Label>
-              <Input
-                value={formReference}
-                onChange={(e) => setFormReference(e.target.value)}
-                placeholder={language === 'da' ? 'F.eks. HL-, LN-' : 'E.g. RENT-, SAL-'}
-                className="bg-gray-50 dark:bg-white/5 border-0"
-              />
-            </div>
-
-            {/* Lines */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">{language === 'da' ? 'Posteringslinjer *' : 'Entry Lines *'}</Label>
-                <div className="flex items-center gap-3 text-xs">
-                  <span className={isBalanced ? 'text-green-600' : 'text-red-600'}>
-                    {language === 'da' ? 'Debet' : 'Debit'}: {tc(totalDebit)}
-                  </span>
-                  <span className={isBalanced ? 'text-green-600' : 'text-red-600'}>
-                    {language === 'da' ? 'Kredit' : 'Credit'}: {tc(totalCredit)}
-                  </span>
-                  {isBalanced ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {formLines.map((line, index) => (
-                  <div key={index} className="flex items-start gap-2 p-2 rounded-lg bg-gray-50 dark:bg-white/5">
-                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <Select
-                        value={line.accountId}
-                        onValueChange={(v) => updateLine(index, 'accountId', v)}
-                      >
-                        <SelectTrigger className="text-xs bg-white dark:bg-white/5">
-                          <SelectValue placeholder={language === 'da' ? 'Vælg konto' : 'Select account'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {accounts.map((acc) => (
-                            <SelectItem key={acc.id} value={acc.id}>
-                              {acc.number} — {acc.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder={language === 'da' ? 'Debet' : 'Debit'}
-                        value={line.debit || ''}
-                        onChange={(e) => updateLine(index, 'debit', parseFloat(e.target.value) || 0)}
-                        className="text-xs bg-white dark:bg-white/5"
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        placeholder={language === 'da' ? 'Kredit' : 'Credit'}
-                        value={line.credit || ''}
-                        onChange={(e) => updateLine(index, 'credit', parseFloat(e.target.value) || 0)}
-                        className="text-xs bg-white dark:bg-white/5"
-                      />
-                    </div>
-                    {formLines.length > 2 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-red-500 shrink-0"
-                        onClick={() => removeLine(index)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <Button variant="outline" size="sm" onClick={addLine} className="gap-1.5 w-full">
-                <Plus className="h-3.5 w-3.5" />
-                {language === 'da' ? 'Tilføj linje' : 'Add line'}
-              </Button>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
-              {language === 'da' ? 'Annuller' : 'Cancel'}
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={isSaving || !formName.trim() || !formStartDate || formLines.filter((l) => l.accountId).length < 2 || !isBalanced}
-              className="gap-2 bg-[#0d9488] hover:bg-[#0f766e] text-white"
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              {editingId ? (language === 'da' ? 'Gem ændringer' : 'Save Changes') : (language === 'da' ? 'Opret' : 'Create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* ═══ Execute Confirmation Dialog ═══ */}
       <AlertDialog open={isExecuteDialogOpen} onOpenChange={setIsExecuteDialogOpen}>

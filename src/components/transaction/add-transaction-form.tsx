@@ -24,6 +24,7 @@ import {
   Trash2,
   ScanSearch,
   CalendarDays,
+  Repeat,
 } from 'lucide-react';
 import {
   Select,
@@ -107,6 +108,15 @@ function defaultYesterday(): string {
   return `${y}-${m}-${day}`;
 }
 
+const FREQUENCY_LABELS: Record<string, { da: string; en: string }> = {
+  DAILY: { da: 'Daglig', en: 'Daily' },
+  WEEKLY: { da: 'Ugentlig', en: 'Weekly' },
+  MONTHLY: { da: 'Månedlig', en: 'Monthly' },
+  QUARTERLY: { da: 'Kvartalsvis', en: 'Quarterly' },
+  YEARLY: { da: 'Årlig', en: 'Yearly' },
+};
+const FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY'];
+
 const EMPTY_LINE_ITEM: PurchaseLineItem = {
   description: '',
   quantity: 1,
@@ -134,6 +144,12 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
   const [description, setDescription] = useState('');
 
   const [vatPercent, setVatPercent] = useState('25');
+
+  // ─── Recurring purchase state ───
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState('MONTHLY');
+  const [recurringStartDate, setRecurringStartDate] = useState('');
+  const [recurringEndDate, setRecurringEndDate] = useState('');
 
   // ─── OCR (unified hook — manages loading, progress, result, error) ───
   const { processFile: processOCR, result: ocrResult, loading: ocrLoading, progress: ocrProgress, error: ocrError, reset: resetOCR } = useOcr();
@@ -667,6 +683,46 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         return;
       }
 
+      // If recurring, create a recurring entry based on purchase data
+      if (isRecurring && txAccountId) {
+        try {
+          const recurringBody: Record<string, unknown> = {
+            name: txDescription || (isDa ? 'Køb' : 'Purchase'),
+            description: txDescription || '',
+            frequency: recurringFrequency,
+            startDate: recurringStartDate || txDate,
+            endDate: recurringEndDate || null,
+            accountId: txAccountId,
+            amount: txAmount,
+            vatPercent: txVatPercent,
+          };
+          const recurringResponse = await fetch('/api/recurring-entries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(recurringBody),
+          });
+          if (recurringResponse.ok) {
+            toast.success(isDa ? 'Gentagende indkøb oprettet' : 'Recurring purchase created', {
+              description: isDa
+                ? `Gentagende postering oprettet med frekvens: ${FREQUENCY_LABELS[recurringFrequency]?.da || recurringFrequency}`
+                : `Recurring entry created with frequency: ${FREQUENCY_LABELS[recurringFrequency]?.en || recurringFrequency}`,
+              duration: 4000,
+            });
+          } else {
+            const errData = await recurringResponse.json().catch(() => ({ error: 'Failed' }));
+            toast.warning(isDa ? 'Gentagende postering ikke oprettet' : 'Recurring entry not created', {
+              description: errData.error || (isDa ? 'Kunne ikke oprette gentagende postering' : 'Could not create recurring entry'),
+              duration: 5000,
+            });
+          }
+        } catch {
+          toast.warning(isDa ? 'Gentagende postering ikke oprettet' : 'Recurring entry not created', {
+            description: isDa ? 'Kunne ikke oprette gentagende postering' : 'Could not create recurring entry',
+            duration: 5000,
+          });
+        }
+      }
+
       // Reset form
       setDate(defaultToday());
       setPurchaseLinesDate(defaultToday());
@@ -681,6 +737,10 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
       setPurchaseLines([{ ...EMPTY_LINE_ITEM }]);
       resetOCR();
       clearReceipt();
+      setIsRecurring(false);
+      setRecurringFrequency('MONTHLY');
+      setRecurringStartDate('');
+      setRecurringEndDate('');
 
       toast.success(isDa ? 'Indkøb bogført' : 'Purchase recorded', {
         description: isDa
@@ -1185,6 +1245,80 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     </Button>
   );
 
+  // ─── Shared: Recurring purchase section ───
+  const renderRecurringSection = () => (
+    <div className="space-y-3">
+      <Separator className="dark:bg-white/10" />
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Repeat className="h-4 w-4 text-[#0d9488] dark:text-[#2dd4bf]" />
+          <Label className="dark:text-gray-300 text-sm font-medium">
+            {isDa ? 'Gentagende indkøb' : 'Recurring Purchase'}
+          </Label>
+        </div>
+        <ResponsiveSwitch checked={isRecurring} onCheckedChange={setIsRecurring} disabled={isLoading} />
+      </div>
+      {isRecurring && (
+        <div className="space-y-3 overflow-hidden transition-all duration-300">
+          <div className="space-y-1.5">
+            <Label className="dark:text-gray-300 text-sm font-medium">
+              {isDa ? 'Frekvens' : 'Frequency'}
+            </Label>
+            <Select value={recurringFrequency} onValueChange={setRecurringFrequency} disabled={isLoading}>
+              <SelectTrigger className="bg-gray-50 dark:bg-white/5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-white dark:bg-[#1a1f1e]">
+                {FREQUENCIES.map((f) => (
+                  <SelectItem key={f} value={f}>
+                    {isDa ? FREQUENCY_LABELS[f].da : FREQUENCY_LABELS[f].en}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="dark:text-gray-300 text-sm font-medium">
+                {isDa ? 'Startdato' : 'Start Date'}
+                <span className="text-[10px] text-red-500 dark:text-red-400 ml-1">*</span>
+              </Label>
+              <Input
+                type="date"
+                value={recurringStartDate}
+                onChange={(e) => setRecurringStartDate(e.target.value)}
+                required
+                disabled={isLoading}
+                className="bg-gray-50 dark:bg-white/5 text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="dark:text-gray-300 text-sm font-medium">
+                {isDa ? 'Slutdato' : 'End Date'}
+                <span className="text-[10px] text-gray-400 ml-1">({isDa ? 'valgfrit' : 'optional'})</span>
+              </Label>
+              <Input
+                type="date"
+                value={recurringEndDate}
+                onChange={(e) => setRecurringEndDate(e.target.value)}
+                disabled={isLoading}
+                className="bg-gray-50 dark:bg-white/5 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-[#0d9488]/5 dark:bg-[#2dd4bf]/5 border border-[#0d9488]/10 dark:border-[#2dd4bf]/10">
+            <Info className="h-3.5 w-3.5 text-[#0d9488] dark:text-[#2dd4bf] shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[#0d9488] dark:text-[#2dd4bf]">
+              {isDa
+                ? 'Den gentagende postering oprettes baseret på indkøbsdata ovenfor'
+                : 'The recurring entry will be created based on the purchase data above'}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // ─── Compact layout (for mobile dialog) ───
   if (layout === 'compact') {
     return (
@@ -1198,6 +1332,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
         {renderAccountSelect()}
         {renderReceiptUpload()}
         {renderDescription()}
+        {renderRecurringSection()}
         {renderSubmit()}
       </form>
     );
@@ -1298,6 +1433,8 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
 
             {/* ── 4. Fra konto ── */}
             {renderAccountSelect(!receiptCardHasData)}
+            {/* ── 5. Recurring purchase ── */}
+            {renderRecurringSection()}
           </CardContent>
         </Card>
 
