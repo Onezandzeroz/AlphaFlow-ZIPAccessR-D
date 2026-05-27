@@ -275,9 +275,21 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
         throw new Error(data.error || 'Failed to execute');
       }
 
+      // Use the response to immediately update the entry in local state
+      const { recurringEntry } = await res.json();
+
+      if (recurringEntry) {
+        setEntries(prev =>
+          prev.map(e =>
+            e.id === recurringEntry.id
+              ? { ...e, ...recurringEntry }
+              : e
+          )
+        );
+      }
+
       setIsExecuteDialogOpen(false);
       setExecutingId(null);
-      fetchData();
     } catch (err) {
       console.error('Execute error:', err);
     } finally {
