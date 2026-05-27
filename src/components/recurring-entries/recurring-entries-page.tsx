@@ -85,7 +85,7 @@ const FREQUENCY_LABELS: Record<string, { da: string; en: string }> = {
 
 const STATUS_CONFIG: Record<string, { label_da: string; label_en: string; className: string }> = {
   ACTIVE: { label_da: 'Aktiv', label_en: 'Active', className: 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 border-green-500/20' },
-  PAUSED: { label_da: 'Pauset', label_en: 'Paused', className: 'bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-amber-500/20' },
+  PAUSED: { label_da: 'Pauset', label_en: 'Paused', className: 'bg-orange-500/10 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400 border-orange-500/20' },
   COMPLETED: { label_da: 'Afsluttet', label_en: 'Completed', className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400 border-gray-500/20' },
 };
 
@@ -717,12 +717,14 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                         {language === 'da' ? 'Udført' : 'Done'}
                                       </span>
                                       <span className="flex items-center gap-1">
-                                        <span className="inline-block w-2 h-2 rounded-full bg-teal-500 ring-2 ring-teal-500/30" />
+                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-500' : 'bg-teal-500'} ring-2 ring-teal-500/30`} />
                                         {language === 'da' ? 'Næste' : 'Next'}
                                       </span>
                                       <span className="flex items-center gap-1">
-                                        <span className="inline-block w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
-                                        {language === 'da' ? 'Fremtidig' : 'Future'}
+                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-300 dark:bg-orange-400/50' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                                        {entry.status === 'PAUSED'
+                                          ? (language === 'da' ? 'Pauset' : 'Paused')
+                                          : (language === 'da' ? 'Fremtidig' : 'Future')}
                                       </span>
                                     </div>
                                   </div>
@@ -735,18 +737,27 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                       <div className="absolute top-[17px] left-2 right-2 h-[2px] bg-gray-200 dark:bg-gray-700 z-0" />
 
                                       {timeline.map((item, idx) => {
+                                        const isPaused = entry.status === 'PAUSED';
                                         const dotClass = (() => {
                                           switch (item.status) {
                                             case 'past':
                                               return 'bg-green-500 dark:bg-green-400';
                                             case 'today':
-                                              return 'bg-teal-500 dark:bg-teal-400 dot-pulse';
+                                              return isPaused
+                                                ? 'bg-orange-500 dark:bg-orange-400'
+                                                : 'bg-teal-500 dark:bg-teal-400 dot-pulse';
                                             case 'next':
-                                              return 'bg-teal-500 dark:bg-teal-400 dot-pulse scale-125';
+                                              return isPaused
+                                                ? 'bg-orange-500 dark:bg-orange-400 dot-pulse scale-125'
+                                                : 'bg-teal-500 dark:bg-teal-400 dot-pulse scale-125';
                                             case 'future':
-                                              return 'bg-gray-300 dark:bg-gray-600';
+                                              return isPaused
+                                                ? 'bg-orange-300 dark:bg-orange-400/50'
+                                                : 'bg-gray-300 dark:bg-gray-600';
                                             default:
-                                              return 'bg-gray-300 dark:bg-gray-600';
+                                              return isPaused
+                                                ? 'bg-orange-300 dark:bg-orange-400/50'
+                                                : 'bg-gray-300 dark:bg-gray-600';
                                           }
                                         })();
 
@@ -762,6 +773,10 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                                 <span className={`text-[9px] sm:text-[10px] mt-1.5 whitespace-nowrap ${
                                                   item.status === 'past'
                                                     ? 'text-green-600 dark:text-green-400 font-medium'
+                                                    : isPaused && (item.status === 'next' || item.status === 'today')
+                                                    ? 'text-orange-600 dark:text-orange-400 font-bold'
+                                                    : isPaused
+                                                    ? 'text-orange-400 dark:text-orange-400/60'
                                                     : item.status === 'next' || item.status === 'today'
                                                     ? 'text-teal-600 dark:text-teal-400 font-bold'
                                                     : 'text-gray-400 dark:text-gray-500'
@@ -775,9 +790,11 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                             </TooltipTrigger>
                                             <TooltipContent side="top" className="text-xs">
                                               {td(item.date)}
-                                              {item.status === 'next' && ` — ${language === 'da' ? 'næste betaling' : 'next payment'}`}
+                                              {item.status === 'next' && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
+                                              {item.status === 'next' && !isPaused && ` — ${language === 'da' ? 'næste betaling' : 'next payment'}`}
                                               {item.status === 'past' && ` — ${language === 'da' ? 'udført' : 'executed'}`}
-                                              {item.status === 'today' && ` — ${language === 'da' ? 'i dag' : 'today'}`}
+                                              {item.status === 'today' && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
+                                              {item.status === 'today' && !isPaused && ` — ${language === 'da' ? 'i dag' : 'today'}`}
                                             </TooltipContent>
                                           </Tooltip>
                                         );
