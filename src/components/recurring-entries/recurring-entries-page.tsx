@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 
-import { toLocalDate, isToday, daysBetween } from '@/lib/date-utils';
+import { toLocalDate, daysBetween } from '@/lib/date-utils';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ interface RecurringEntry {
 
 interface TimelineDate {
   date: Date;
-  status: 'past' | 'today' | 'next' | 'future';
+  status: 'past' | 'next' | 'future';
   isLastExecuted?: boolean;
 }
 
@@ -120,8 +120,12 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const start = toLocalDate(entry.startDate);
   const end = entry.endDate ? toLocalDate(entry.endDate) : null;
   const today = toLocalDate(new Date());
-  const nextExec = toLocalDate(entry.nextExecution);
   const lastExec = entry.lastExecuted ? toLocalDate(entry.lastExecuted) : null;
+
+  // "Next" is always lastExecuted + 1 frequency, or startDate if never executed
+  const nextPaymentDate = lastExec
+    ? toLocalDate(addFrequency(new Date(lastExec), entry.frequency))
+    : new Date(start);
 
   let current = new Date(start);
   let dotCount = 0;
@@ -132,30 +136,26 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
     // Stop if past end date
     if (end && localDate > end) break;
 
-    // Determine status
-    let status: TimelineDate['status'] = 'future';
-    if (isToday(localDate)) {
-      status = 'today';
-    } else if (daysBetween(today, localDate) > 0) {
-      status = 'future';
-    } else if (daysBetween(today, localDate) <= 0) {
+    let status: TimelineDate['status'];
+
+    const isNext = daysBetween(nextPaymentDate, localDate) === 0;
+    const isLastExec = lastExec ? daysBetween(lastExec, localDate) === 0 : false;
+
+    if (isLastExec) {
       status = 'past';
-    }
-
-    // Mark the next execution specifically
-    if (daysBetween(nextExec, localDate) === 0 && status !== 'past') {
+    } else if (isNext) {
       status = 'next';
-    }
-
-    // If nextExecution is in the past, mark the first date >= today as 'next'
-    if (daysBetween(nextExec, localDate) < 0 && daysBetween(today, localDate) >= 0 && status === 'future') {
-      status = 'next';
+    } else if (lastExec && daysBetween(lastExec, localDate) > 0) {
+      // Date is before lastExecuted → already executed in the past
+      status = 'past';
+    } else {
+      status = 'future';
     }
 
     dates.push({
       date: localDate,
       status,
-      isLastExecuted: lastExec ? daysBetween(lastExec, localDate) === 0 : false,
+      isLastExecuted: isLastExec,
     });
 
     dotCount++;
@@ -713,15 +713,15 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                     </p>
                                     <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
                                       <span className="flex items-center gap-1">
-                                        <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                                        <span className="inline-block w-2 h-2 rounded-full bg-[#05df72]" />
                                         {language === 'da' ? 'Udført' : 'Done'}
                                       </span>
                                       <span className="flex items-center gap-1">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-500' : 'bg-teal-500'} ring-2 ring-teal-500/30`} />
+                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-500' : 'bg-[#00d5be]'}`} />
                                         {language === 'da' ? 'Næste' : 'Next'}
                                       </span>
                                       <span className="flex items-center gap-1">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-300 dark:bg-orange-400/50' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-300 dark:bg-orange-400/50' : 'bg-[#4a5565]'}`} />
                                         {entry.status === 'PAUSED'
                                           ? (language === 'da' ? 'Pauset' : 'Paused')
                                           : (language === 'da' ? 'Fremtidig' : 'Future')}
@@ -741,23 +741,19 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                         const dotClass = (() => {
                                           switch (item.status) {
                                             case 'past':
-                                              return 'bg-green-500 dark:bg-green-400';
-                                            case 'today':
-                                              return isPaused
-                                                ? 'bg-orange-500 dark:bg-orange-400'
-                                                : 'bg-teal-500 dark:bg-teal-400 dot-pulse';
+                                              return 'bg-[#05df72]';
                                             case 'next':
                                               return isPaused
-                                                ? 'bg-orange-500 dark:bg-orange-400 dot-pulse scale-125'
-                                                : 'bg-teal-500 dark:bg-teal-400 dot-pulse scale-125';
+                                                ? 'bg-orange-500 dot-pulse scale-125'
+                                                : 'bg-[#00d5be] dot-pulse scale-125';
                                             case 'future':
                                               return isPaused
                                                 ? 'bg-orange-300 dark:bg-orange-400/50'
-                                                : 'bg-gray-300 dark:bg-gray-600';
+                                                : 'bg-[#4a5565]';
                                             default:
                                               return isPaused
                                                 ? 'bg-orange-300 dark:bg-orange-400/50'
-                                                : 'bg-gray-300 dark:bg-gray-600';
+                                                : 'bg-[#4a5565]';
                                           }
                                         })();
 
@@ -772,14 +768,14 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                                 {/* Label */}
                                                 <span className={`text-[9px] sm:text-[10px] mt-1.5 whitespace-nowrap ${
                                                   item.status === 'past'
-                                                    ? 'text-green-600 dark:text-green-400 font-medium'
-                                                    : isPaused && (item.status === 'next' || item.status === 'today')
+                                                    ? 'text-[#05df72] font-medium'
+                                                    : isPaused && item.status === 'next'
                                                     ? 'text-orange-600 dark:text-orange-400 font-bold'
                                                     : isPaused
                                                     ? 'text-orange-400 dark:text-orange-400/60'
-                                                    : item.status === 'next' || item.status === 'today'
-                                                    ? 'text-teal-600 dark:text-teal-400 font-bold'
-                                                    : 'text-gray-400 dark:text-gray-500'
+                                                    : item.status === 'next'
+                                                    ? 'text-[#00d5be] font-bold'
+                                                    : 'text-[#4a5565]'
                                                 }`}>
                                                   {item.date.toLocaleDateString(language === 'da' ? 'da-DK' : 'en-GB', {
                                                     day: 'numeric',
@@ -793,8 +789,6 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                               {item.status === 'next' && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
                                               {item.status === 'next' && !isPaused && ` — ${language === 'da' ? 'næste betaling' : 'next payment'}`}
                                               {item.status === 'past' && ` — ${language === 'da' ? 'udført' : 'executed'}`}
-                                              {item.status === 'today' && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
-                                              {item.status === 'today' && !isPaused && ` — ${language === 'da' ? 'i dag' : 'today'}`}
                                             </TooltipContent>
                                           </Tooltip>
                                         );
@@ -803,7 +797,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                       {/* More indicator if there could be more dates */}
                                       {!entry.endDate && timeline.length >= 24 && (
                                         <div className="relative flex flex-col items-center w-8 ml-1">
-                                          <div className="w-3 h-3 rounded-full z-10 bg-gray-300 dark:bg-gray-600" />
+                                          <div className="w-3 h-3 rounded-full z-10 bg-[#4a5565]" />
                                           <span className="text-[9px] text-gray-400 dark:text-gray-500 mt-1.5">…</span>
                                         </div>
                                       )}
