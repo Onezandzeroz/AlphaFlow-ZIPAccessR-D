@@ -55,14 +55,15 @@ export async function GET(request: NextRequest) {
       orderBy: { nextExecution: 'asc' },
     });
 
-    // Determine isOverdue: nextExecution < today (strictly past, not due today) and status is ACTIVE
+    // Determine isOverdue: nextExecution < today, status ACTIVE, AND has been executed at least once
+    // An entry that has never been executed is not overdue (e.g. just created with past start date)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const enrichedEntries = entries.map((entry) => {
       const nextExec = new Date(entry.nextExecution);
       nextExec.setHours(0, 0, 0, 0);
-      const isOverdue = entry.status === 'ACTIVE' && nextExec < today;
+      const isOverdue = entry.status === 'ACTIVE' && entry.lastExecuted !== null && nextExec < today;
       return { ...entry, isOverdue };
     });
 

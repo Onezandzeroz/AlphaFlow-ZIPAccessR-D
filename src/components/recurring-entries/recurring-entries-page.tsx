@@ -346,7 +346,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
 
   const isEntryOverdue = (entry: RecurringEntry) => {
     // Use server-provided isOverdue if available, otherwise calculate client-side
+    // Never overdue if never executed (e.g. just created with past start date)
     if (entry.isOverdue !== undefined) return entry.isOverdue;
+    if (!entry.lastExecuted) return false;
     const nextExec = toLocalDate(new Date(entry.nextExecution));
     const today = toLocalDate(new Date());
     return entry.status === 'ACTIVE' && nextExec < today;
