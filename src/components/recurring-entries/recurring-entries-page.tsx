@@ -728,10 +728,11 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                   </div>
 
                                   {/* Timeline track */}
-                                  <div className="relative overflow-x-auto pb-2">
-                                    <div className="flex items-center min-w-max gap-0">
+                                  <div className="overflow-x-auto">
+                                    <div className="relative min-w-max pt-3 pb-2">
+                                      <div className="flex items-center gap-0">
                                       {/* The track line */}
-                                      <div className="absolute top-3 left-2 right-2 h-[2px] bg-gray-200 dark:bg-gray-700" />
+                                      <div className="absolute top-[17px] left-2 right-2 h-[2px] bg-gray-200 dark:bg-gray-700 z-0" />
 
                                       {timeline.map((item, idx) => {
                                         const dotClass = (() => {
@@ -755,9 +756,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                               <div className="relative flex flex-col items-center w-10 sm:w-12">
                                                 {/* Dot */}
                                                 <div
-                                          className={`w-3 h-3 rounded-full z-10 transition-all ${dotClass} ${
-                                                    item.status === 'next' ? 'dot-pulse' : ''
-                                                  }`}
+                                                  className={`w-3 h-3 rounded-full relative z-20 transition-all ${dotClass}`}
                                                 />
                                                 {/* Label */}
                                                 <span className={`text-[9px] sm:text-[10px] mt-1.5 whitespace-nowrap ${
