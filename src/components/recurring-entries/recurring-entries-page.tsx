@@ -70,7 +70,6 @@ interface RecurringEntry {
 interface TimelineDate {
   date: Date;
   status: 'past' | 'next' | 'future';
-  isLastExecuted?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -119,16 +118,11 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const dates: TimelineDate[] = [];
   const start = toLocalDate(entry.startDate);
   const end = entry.endDate ? toLocalDate(entry.endDate) : null;
-  const today = toLocalDate(new Date());
   const lastExec = entry.lastExecuted ? toLocalDate(entry.lastExecuted) : null;
-
-  // "Next" is always lastExecuted + 1 frequency, or startDate if never executed
-  const nextPaymentDate = lastExec
-    ? toLocalDate(addFrequency(new Date(lastExec), entry.frequency))
-    : new Date(start);
 
   let current = new Date(start);
   let dotCount = 0;
+  let foundNext = false;
 
   while (dotCount < maxDots) {
     const localDate = toLocalDate(current);
@@ -138,24 +132,32 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
 
     let status: TimelineDate['status'];
 
-    const isNext = daysBetween(nextPaymentDate, localDate) === 0;
-    const isLastExec = lastExec ? daysBetween(lastExec, localDate) === 0 : false;
-
-    if (isLastExec) {
-      status = 'past';
-    } else if (isNext) {
-      status = 'next';
-    } else if (lastExec && daysBetween(lastExec, localDate) > 0) {
-      // Date is before lastExecuted → already executed in the past
-      status = 'past';
+    if (lastExec) {
+      const cmp = daysBetween(lastExec, localDate);
+      if (cmp >= 0) {
+        // Dot is on or before lastExecuted → already executed (past)
+        status = 'past';
+      } else if (!foundNext) {
+        // First dot AFTER lastExecuted → this is the "next" payment
+        status = 'next';
+        foundNext = true;
+      } else {
+        // Subsequent dots → future
+        status = 'future';
+      }
     } else {
-      status = 'future';
+      // Never executed → first dot is "next", rest are "future"
+      if (!foundNext) {
+        status = 'next';
+        foundNext = true;
+      } else {
+        status = 'future';
+      }
     }
 
     dates.push({
       date: localDate,
       status,
-      isLastExecuted: isLastExec,
     });
 
     dotCount++;
@@ -721,10 +723,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                         {language === 'da' ? 'Næste' : 'Next'}
                                       </span>
                                       <span className="flex items-center gap-1">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${entry.status === 'PAUSED' ? 'bg-orange-300 dark:bg-orange-400/50' : 'bg-[#4a5565]'}`} />
-                                        {entry.status === 'PAUSED'
-                                          ? (language === 'da' ? 'Pauset' : 'Paused')
-                                          : (language === 'da' ? 'Fremtidig' : 'Future')}
+                                        <span className="inline-block w-2 h-2 rounded-full bg-[#4a5565]" />
+                                        {language === 'da' ? 'Fremtidig' : 'Future'}
                                       </span>
                                     </div>
                                   </div>
@@ -747,13 +747,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                                 ? 'bg-orange-500 dot-pulse scale-125'
                                                 : 'bg-[#00d5be] dot-pulse scale-125';
                                             case 'future':
-                                              return isPaused
-                                                ? 'bg-orange-300 dark:bg-orange-400/50'
-                                                : 'bg-[#4a5565]';
+                                              return 'bg-[#4a5565]';
                                             default:
-                                              return isPaused
-                                                ? 'bg-orange-300 dark:bg-orange-400/50'
-                                                : 'bg-[#4a5565]';
+                                              return 'bg-[#4a5565]';
                                           }
                                         })();
 
@@ -769,10 +765,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                                 <span className={`text-[9px] sm:text-[10px] mt-1.5 whitespace-nowrap ${
                                                   item.status === 'past'
                                                     ? 'text-[#05df72] font-medium'
-                                                    : isPaused && item.status === 'next'
+                                                    : item.status === 'next' && isPaused
                                                     ? 'text-orange-600 dark:text-orange-400 font-bold'
-                                                    : isPaused
-                                                    ? 'text-orange-400 dark:text-orange-400/60'
                                                     : item.status === 'next'
                                                     ? 'text-[#00d5be] font-bold'
                                                     : 'text-[#4a5565]'
