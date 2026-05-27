@@ -119,9 +119,11 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const start = toLocalDate(entry.startDate);
   const end = entry.endDate ? toLocalDate(entry.endDate) : null;
 
-  // Use nextExecution from DB — it's already advanced after each execution
-  // and always aligns with the scheduled dot grid.
-  // Dots before it = past (executed), the dot ON it = next, dots after = future.
+  // Use nextExecution from DB — it's already advanced after each execution.
+  // We compare each timeline dot against it:
+  //   dot < nextExecution → past (executed)
+  //   dot == nextExecution → next (upcoming)
+  //   dot > nextExecution → future
   const nextExec = toLocalDate(new Date(entry.nextExecution));
   const hasBeenExecuted = !!entry.lastExecuted;
 
@@ -146,16 +148,25 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
         status = 'future';
       }
     } else {
-      const cmp = daysBetween(nextExec, localDate);
-      if (cmp === 0) {
+      // Compare using plain date arithmetic (getTime) to avoid DST / timezone issues
+      const dotMs = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate()).getTime();
+      const nextMs = new Date(nextExec.getFullYear(), nextExec.getMonth(), nextExec.getDate()).getTime();
+
+      if (dotMs < nextMs) {
+        // Dot is strictly BEFORE nextExecution → already executed (past)
+        status = 'past';
+      } else if (dotMs === nextMs) {
         // This dot IS the next scheduled execution
         status = 'next';
         foundNext = true;
-      } else if (cmp > 0) {
-        // Dot is BEFORE nextExecution → already executed (past)
-        status = 'past';
+      } else if (!foundNext) {
+        // Dot is past nextExecution but we haven't marked a "next" yet — 
+        // this means nextExecution fell between two dots or on a non-scheduled date.
+        // Mark this dot as "next" (the next upcoming one).
+        status = 'next';
+        foundNext = true;
       } else {
-        // Dot is AFTER nextExecution → future
+        // Subsequent dots → future
         status = 'future';
       }
     }
