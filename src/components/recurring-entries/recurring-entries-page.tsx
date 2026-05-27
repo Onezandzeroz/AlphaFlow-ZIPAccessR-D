@@ -693,7 +693,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                       <p className="text-sm text-gray-900 dark:text-white mt-0.5">
                                         {entry.lastExecuted
                                           ? td(new Date(entry.lastExecuted))
-                                          : (language === 'da' ? 'Aldrig' : 'Never')}
+                                          : daysBetween(new Date(), new Date(entry.startDate)) >= 0
+                                            ? td(new Date(entry.startDate))
+                                            : (language === 'da' ? 'Aldrig' : 'Never')}
                                       </p>
                                     </div>
                                   </div>
