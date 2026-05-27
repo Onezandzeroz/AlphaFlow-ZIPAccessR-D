@@ -118,7 +118,12 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const dates: TimelineDate[] = [];
   const start = toLocalDate(entry.startDate);
   const end = entry.endDate ? toLocalDate(entry.endDate) : null;
-  const lastExec = entry.lastExecuted ? toLocalDate(entry.lastExecuted) : null;
+
+  // Use nextExecution from DB — it's already advanced after each execution
+  // and always aligns with the scheduled dot grid.
+  // Dots before it = past (executed), the dot ON it = next, dots after = future.
+  const nextExec = toLocalDate(new Date(entry.nextExecution));
+  const hasBeenExecuted = !!entry.lastExecuted;
 
   let current = new Date(start);
   let dotCount = 0;
@@ -132,25 +137,25 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
 
     let status: TimelineDate['status'];
 
-    if (lastExec) {
-      const cmp = daysBetween(lastExec, localDate);
-      if (cmp >= 0) {
-        // Dot is on or before lastExecuted → already executed (past)
-        status = 'past';
-      } else if (!foundNext) {
-        // First dot AFTER lastExecuted → this is the "next" payment
-        status = 'next';
-        foundNext = true;
-      } else {
-        // Subsequent dots → future
-        status = 'future';
-      }
-    } else {
+    if (!hasBeenExecuted) {
       // Never executed → first dot is "next", rest are "future"
       if (!foundNext) {
         status = 'next';
         foundNext = true;
       } else {
+        status = 'future';
+      }
+    } else {
+      const cmp = daysBetween(nextExec, localDate);
+      if (cmp === 0) {
+        // This dot IS the next scheduled execution
+        status = 'next';
+        foundNext = true;
+      } else if (cmp > 0) {
+        // Dot is BEFORE nextExecution → already executed (past)
+        status = 'past';
+      } else {
+        // Dot is AFTER nextExecution → future
         status = 'future';
       }
     }
