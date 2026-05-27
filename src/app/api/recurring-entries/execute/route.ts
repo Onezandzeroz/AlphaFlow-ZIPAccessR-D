@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthContext } from '@/lib/session';
 import { auditCreate, requestMetadata } from '@/lib/audit';
-import { RecurringFrequency } from '@prisma/client';
+import { RecurringFrequency, RecurringStatus } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { requirePermission, tenantFilter, companyScope, Permission, blockOversightMutation, requireNotDemoCompany } from '@/lib/rbac';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
@@ -160,19 +160,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. Determine if recurring entry should be set to COMPLETED
-    const updateData: Record<string, unknown> = {
-      lastExecuted: new Date(),
-      nextExecution,
-    };
-
-    if (recurring.endDate && nextExecution > new Date(recurring.endDate)) {
-      updateData.status = 'COMPLETED';
-    }
+    const statusUpdate: RecurringStatus | undefined =
+      (recurring.endDate && nextExecution > new Date(recurring.endDate))
+        ? 'COMPLETED'
+        : undefined;
 
     // 5. Update recurring entry
-    const updatedRecurring = await db.recurringEntry.update({
+    await db.recurringEntry.update({
       where: { id: recurring.id },
-      data: updateData,
+      data: {
+        lastExecuted: new Date(),
+        nextExecution,
+        ...(statusUpdate && { status: statusUpdate }),
+      },
+    });
+
+    // Re-fetch the entry to ensure we have the latest committed state
+    const updatedRecurring = await db.recurringEntry.findFirst({
+      where: { id: recurring.id },
     });
 
     // 7. Log to audit trail

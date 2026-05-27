@@ -282,7 +282,12 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
         setEntries(prev =>
           prev.map(e =>
             e.id === recurringEntry.id
-              ? { ...e, ...recurringEntry }
+              ? {
+                  ...e,
+                  ...recurringEntry,
+                  // Ensure lastExecuted is properly set from the response
+                  lastExecuted: recurringEntry.lastExecuted || new Date().toISOString(),
+                }
               : e
           )
         );
@@ -290,6 +295,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
 
       setIsExecuteDialogOpen(false);
       setExecutingId(null);
+
+      // Background refetch after a short delay to ensure DB consistency
+      setTimeout(() => fetchData(), 500);
     } catch (err) {
       console.error('Execute error:', err);
     } finally {
