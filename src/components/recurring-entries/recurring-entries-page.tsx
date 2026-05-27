@@ -739,9 +739,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                             case 'past':
                                               return 'bg-green-500 dark:bg-green-400';
                                             case 'today':
-                                              return 'bg-teal-500 dark:bg-teal-400 ring-2 ring-teal-500/30';
+                                              return 'bg-teal-500 dark:bg-teal-400 dot-pulse';
                                             case 'next':
-                                              return 'bg-teal-500 dark:bg-teal-400 ring-2 ring-teal-500/30 scale-125';
+                                              return 'bg-teal-500 dark:bg-teal-400 dot-pulse scale-125';
                                             case 'future':
                                               return 'bg-gray-300 dark:bg-gray-600';
                                             default:
@@ -755,8 +755,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                               <div className="relative flex flex-col items-center w-10 sm:w-12">
                                                 {/* Dot */}
                                                 <div
-                                                  className={`w-3 h-3 rounded-full z-10 transition-all ${dotClass} ${
-                                                    item.status === 'next' ? 'animate-pulse' : ''
+                                          className={`w-3 h-3 rounded-full z-10 transition-all ${dotClass} ${
+                                                    item.status === 'next' ? 'dot-pulse' : ''
                                                   }`}
                                                 />
                                                 {/* Label */}
