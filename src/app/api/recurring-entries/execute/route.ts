@@ -149,8 +149,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 5. Calculate next execution date
-    const nextExecution = addFrequency(executionDate, recurring.frequency as RecurringFrequency);
+    // 5. Calculate next execution date — always ensure it's in the future
+    let nextExecution = addFrequency(executionDate, recurring.frequency as RecurringFrequency);
+    const todayMidnight = new Date();
+    todayMidnight.setHours(23, 59, 59, 999);
+
+    // Fast-forward past any already-passed dates (handles overdue entries)
+    while (nextExecution <= todayMidnight && (!recurring.endDate || nextExecution <= new Date(recurring.endDate))) {
+      nextExecution = addFrequency(nextExecution, recurring.frequency as RecurringFrequency);
+    }
 
     // 6. Determine if recurring entry should be set to COMPLETED
     const updateData: Record<string, unknown> = {
