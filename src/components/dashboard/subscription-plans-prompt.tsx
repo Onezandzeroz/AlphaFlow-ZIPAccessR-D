@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from '@/lib/use-translation';
 import { useAuthStore } from '@/lib/auth-store';
 import { useSubscriptionPlansStore } from '@/lib/subscription-plans-store';
+import { useAccessCacheStore } from '@/hooks/use-write-access-guard';
+import { hasAccess } from '@/lib/tokenpay';
 import {
   X,
   ArrowRight,
@@ -529,7 +531,15 @@ export function SubscriptionPlansPrompt() {
     return unsub;
   }, []);
 
-  // Detect first-login per user
+  // Detect first-login per user.
+  // Users who already have valid access (tbkey proof or active trial) should
+  // never be shown the purchase prompt, even on a brand-new device where
+  // localStorage has no record of them.  We wait for the access cache to
+  // settle (if loading), then decide.
+  const accessResult = useAccessCacheStore((s) => s.result);
+  const accessIsLoading = useAccessCacheStore((s) => s.isLoading);
+  const accessIsOwner = useAccessCacheStore((s) => s.isOwner);
+
   useEffect(() => {
     if (!user || hasScheduled.current) return;
     if (user.isSuperDev) return;
@@ -540,6 +550,19 @@ export function SubscriptionPlansPrompt() {
     if (localStorage.getItem(dismissedKey) === 'true') return;
     if (localStorage.getItem(everLoggedKey) === 'true') return;
 
+    // If the access cache is still loading, wait — don't show the prompt
+    // until we know whether the user already has write access.
+    if (accessIsLoading) return;
+
+    // User already has valid read_write access (tbkey or active trial).
+    // Silently mark this device as "ever logged" so we never prompt again.
+    if (accessIsOwner || (accessResult && hasAccess(accessResult))) {
+      localStorage.setItem(everLoggedKey, 'true');
+      localStorage.setItem(dismissedKey, 'true');
+      hasScheduled.current = true;
+      return;
+    }
+
     localStorage.setItem(everLoggedKey, 'true');
     hasScheduled.current = true;
 
@@ -547,7 +570,7 @@ export function SubscriptionPlansPrompt() {
       setAnimatingIn(true);
       setVisible(true);
     }, 800);
-  }, [user]);
+  }, [user, accessResult, accessIsLoading, accessIsOwner]);
 
   const dismiss = useCallback(() => {
     setAnimatingOut(true);
