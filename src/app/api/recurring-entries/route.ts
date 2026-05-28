@@ -154,9 +154,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate frequency
-    if (!Object.values(RecurringFrequency).includes(frequency)) {
+    if (!Object.values(PrismaFrequency).includes(frequency)) {
       return NextResponse.json(
-        { error: `Invalid frequency. Must be one of: ${Object.values(RecurringFrequency).join(', ')}` },
+        { error: `Invalid frequency. Must be one of: ${Object.values(PrismaFrequency).join(', ')}` },
         { status: 400 }
       );
     }
@@ -305,9 +305,9 @@ export async function PUT(request: NextRequest) {
     }
 
     // Validate frequency if provided
-    if (frequency !== undefined && !Object.values(RecurringFrequency).includes(frequency)) {
+    if (frequency !== undefined && !Object.values(PrismaFrequency).includes(frequency)) {
       return NextResponse.json(
-        { error: `Invalid frequency. Must be one of: ${Object.values(RecurringFrequency).join(', ')}` },
+        { error: `Invalid frequency. Must be one of: ${Object.values(PrismaFrequency).join(', ')}` },
         { status: 400 }
       );
     }
