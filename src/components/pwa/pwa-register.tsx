@@ -11,7 +11,7 @@ interface BeforeInstallPromptEvent extends Event {
 
 // ─── Expected SW version — MUST match CACHE_VERSION in sw.js ────────────
 // If this doesn't match the running SW's version, we force an update.
-const EXPECTED_SW_VERSION = 'alphaai-v3';
+const EXPECTED_SW_VERSION = 'alphaai-v4';
 
 // ─── Camera permission helpers ─────────────────────────────────────────
 
@@ -254,25 +254,17 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
           setTimeout(checkVersion, 500);
         }
 
-        // ── STEP 5: Nuclear fallback — if version was never confirmed ──
-        // If after 3 seconds we still haven't confirmed the right version,
-        // ask the SW to clear all caches and force a reload
+        // ── STEP 5: Gentle fallback — if version was never confirmed ──
+        // If after 5 seconds we still haven't confirmed the right version,
+        // request an SW update. We do NOT clear all caches anymore — the old
+        // nuclear fallback was wiping PWA-critical icon/manifest caches which
+        // caused the install prompt to silently vanish.
         setTimeout(() => {
           if (needsSWUpdate()) {
-            console.log('[PWA] Nuclear fallback: clearing caches');
-            // Send message to SW to clear caches
-            if (navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_ALL_CACHES' });
-            }
-            // Also clear from the cache API directly (in case SW doesn't respond)
-            caches.keys().then((names) => {
-              Promise.all(names.map((n) => caches.delete(n))).then(() => {
-                // Force the SW to update after clearing caches
-                registration.update();
-              });
-            });
+            console.log('[PWA] Version not confirmed after timeout — requesting SW update');
+            registration.update();
           }
-        }, 3000);
+        }, 5000);
       })
       .catch((err) => {
         console.warn('[PWA] SW registration failed:', err);

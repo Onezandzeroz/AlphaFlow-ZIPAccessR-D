@@ -1,17 +1,20 @@
-// ── Service Worker v3 — nuclear cache fix ──────────────────────────
+// ── Service Worker v4 — installability fix ──────────────────────────
 //
-// ROOT CAUSE of previous issues: the OLD SW (v1) used cache-first strategy
-// for .js files with 24h TTL. This meant code changes NEVER reached users
-// even after reinstalling the app, because the SW cache is separate from
-// the browser's regular site cache.
+// Changes from v3:
+//   - manifest.json is now NETWORK ONLY (never intercepted/cached by SW)
+//     because Chrome uses the manifest to determine installability. If the
+//     SW serves a stale or empty cached manifest, the install prompt vanishes.
+//   - PWA-critical files (icons, manifest) are excluded from static asset
+//     classification so they always come from the network.
+//   - Nuclear cache-clear fallback is gentler: no longer nukes icon caches.
 //
-// This v3 SW uses a completely different approach:
-//   - JS/CSS: NETWORK ONLY — never cached, always fetched fresh
-//   - Pages: NETWORK ONLY — always fresh HTML so bundle references update
-//   - Static assets (images/fonts): stale-while-revalidate (safe to cache)
-//   - Version message: allows the app to query the SW version and force updates
+// Unchanged from v3:
+//   - JS/CSS: NETWORK ONLY — never cached
+//   - Pages: NETWORK ONLY — always fresh HTML
+//   - Static assets (images/fonts): stale-while-revalidate
+//   - Version message: allows the app to query SW version and force updates
 //
-const CACHE_VERSION = 'alphaai-v3';
+const CACHE_VERSION = 'alphaai-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
@@ -21,11 +24,17 @@ const STATIC_ASSETS = [
   '/logo.png',
   '/logo-clean.png',
   '/favicon.png',
+  '/apple-touch-icon.png',
+];
+
+// PWA-critical files: icons and manifest MUST always come from the network.
+// If the SW serves a stale version of these, Chrome won't offer install.
+const PWA_CRITICAL = [
   '/icon-192.png',
   '/icon-512.png',
   '/icon-maskable-512.png',
-  '/apple-touch-icon.png',
   '/manifest.json',
+  '/sw.js',
 ];
 
 // ── Install: pre-cache static assets only ─────────────────────────
@@ -123,7 +132,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets (images, fonts, icons): cache-first with revalidation
+  // PWA-critical files (icons, manifest, sw.js): NETWORK ONLY
+  // Chrome checks these during install eligibility. Stale cached copies
+  // cause the install prompt to silently disappear.
+  if (isPwaCritical(url)) {
+    event.respondWith(networkOnly(request));
+    return;
+  }
+
+  // Static assets (images, fonts): cache-first with revalidation
+  // NOTE: .json files are excluded — manifest.json must not be cached.
   if (isStaticAsset(url)) {
     event.respondWith(staleWhileRevalidate(request, STATIC_CACHE));
     return;
@@ -211,7 +229,13 @@ function isAppBundle(url) {
 function isStaticAsset(url) {
   const staticExtensions = [
     '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
-    '.woff', '.woff2', '.ttf', '.eot', '.otf', '.ico', '.json',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf', '.ico',
+    // NOTE: .json is intentionally EXCLUDED so manifest.json
+    // always goes to the network and is never intercepted by SW.
   ];
   return staticExtensions.some((ext) => url.pathname.endsWith(ext));
+}
+
+function isPwaCritical(url) {
+  return PWA_CRITICAL.some((p) => url.pathname === p || url.pathname.endsWith(p));
 }
