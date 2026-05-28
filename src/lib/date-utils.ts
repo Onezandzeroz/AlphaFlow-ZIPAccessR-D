@@ -24,6 +24,71 @@
  *     (e.g. audit log entries, createdAt).
  */
 
+// ── Recurring frequency helpers ─────────────────────────────────────
+
+/**
+ * Supported recurring frequencies.
+ * Kept in sync with Prisma enum RecurringFrequency.
+ */
+export type RecurringFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+
+/**
+ * Add one frequency cycle to a date-only value.
+ *
+ * IMPORTANT: The input `baseDate` MUST be a local-midnight date (i.e. produced by
+ * `toLocalDate()` or `parseLocalDate()`). This function returns a new Date at local
+ * midnight — it does NOT introduce UTC drift.
+ *
+ * Uses calendar-day arithmetic (not millisecond addition) so that monthly and
+ * quarterly additions handle month-end roll-over correctly (e.g. Jan 31 + 1 month
+ * → Feb 28/29).
+ */
+export function addFrequency(baseDate: Date, frequency: RecurringFrequency): Date {
+  const next = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate(), // same local midnight
+  );
+  switch (frequency) {
+    case 'DAILY':
+      next.setDate(next.getDate() + 1);
+      break;
+    case 'WEEKLY':
+      next.setDate(next.getDate() + 7);
+      break;
+    case 'MONTHLY':
+      next.setMonth(next.getMonth() + 1);
+      break;
+    case 'QUARTERLY':
+      next.setMonth(next.getMonth() + 3);
+      break;
+    case 'YEARLY':
+      next.setFullYear(next.getFullYear() + 1);
+      break;
+  }
+  return next;
+}
+
+/**
+ * Parse a "YYYY-MM-DD" string as a LOCAL midnight date.
+ *
+ * JavaScript's `new Date("2025-06-25")` parses date-only strings as UTC midnight,
+ * which causes off-by-one bugs in timezones ahead of UTC (e.g. Copenhagen CEST).
+ * This function always interprets the string in local time.
+ */
+export function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/**
+ * Get today as a local-midnight Date (time-safe).
+ */
+export function todayLocal(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
 // ── Calendar date helpers ────────────────────────────────────────────
 
 /**

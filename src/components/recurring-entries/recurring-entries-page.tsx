@@ -48,7 +48,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 
-import { toLocalDate, daysBetween } from '@/lib/date-utils';
+import { toLocalDate, daysBetween, addFrequency, parseLocalDate } from '@/lib/date-utils';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -88,54 +88,36 @@ const STATUS_CONFIG: Record<string, { label_da: string; label_en: string; classN
   COMPLETED: { label_da: 'Afsluttet', label_en: 'Completed', className: 'bg-gray-500/10 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400 border-gray-500/20' },
 };
 
-// ─── Helper: Add frequency to a date ──────────────────────────────
-
-function addFrequency(baseDate: Date, frequency: string): Date {
-  const next = new Date(baseDate);
-  switch (frequency) {
-    case 'DAILY':
-      next.setDate(next.getDate() + 1);
-      break;
-    case 'WEEKLY':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'MONTHLY':
-      next.setMonth(next.getMonth() + 1);
-      break;
-    case 'QUARTERLY':
-      next.setMonth(next.getMonth() + 3);
-      break;
-    case 'YEARLY':
-      next.setFullYear(next.getFullYear() + 1);
-      break;
-  }
-  return next;
-}
+// ─── Helper: Add frequency to a date (imported from date-utils) ───
+// Kept as local alias for component use
 
 // ─── Helper: Generate timeline dates ──────────────────────────────
 
 function generateTimeline(entry: RecurringEntry, maxDots: number = 24): TimelineDate[] {
   const dates: TimelineDate[] = [];
-  const start = toLocalDate(entry.startDate);
-  const end = entry.endDate ? toLocalDate(entry.endDate) : null;
+  // Parse all dates as local midnight — avoids UTC timezone drift
+  const start = parseLocalDate(entry.startDate.split('T')[0]);
+  const end = entry.endDate ? parseLocalDate(entry.endDate.split('T')[0]) : null;
 
   // Use nextExecution from DB — it's already advanced after each execution.
   // We compare each timeline dot against it:
   //   dot < nextExecution → past (executed)
   //   dot == nextExecution → next (upcoming)
   //   dot > nextExecution → future
-  const nextExec = toLocalDate(new Date(entry.nextExecution));
+  const nextExec = parseLocalDate(entry.nextExecution.split('T')[0]);
   const hasBeenExecuted = !!entry.lastExecuted;
 
-  let current = new Date(start);
+  let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   let dotCount = 0;
   let foundNext = false;
 
   while (dotCount < maxDots) {
-    const localDate = toLocalDate(current);
+    const dotMs = new Date(
+      current.getFullYear(), current.getMonth(), current.getDate()
+    ).getTime();
 
     // Stop if past end date
-    if (end && localDate > end) break;
+    if (end && dotMs > end.getTime()) break;
 
     let status: TimelineDate['status'];
 
@@ -148,9 +130,7 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
         status = 'future';
       }
     } else {
-      // Compare using plain date arithmetic (getTime) to avoid DST / timezone issues
-      const dotMs = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate()).getTime();
-      const nextMs = new Date(nextExec.getFullYear(), nextExec.getMonth(), nextExec.getDate()).getTime();
+      const nextMs = nextExec.getTime();
 
       if (dotMs < nextMs) {
         // Dot is strictly BEFORE nextExecution → already executed (past)
@@ -160,9 +140,9 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
         status = 'next';
         foundNext = true;
       } else if (!foundNext) {
-        // Dot is past nextExecution but we haven't marked a "next" yet — 
-        // this means nextExecution fell between two dots or on a non-scheduled date.
-        // Mark this dot as "next" (the next upcoming one).
+        // Dot is past nextExecution but we haven't marked a "next" yet —
+        // this means nextExecution fell between two dots.
+        // Mark this first future dot as "next" (fallback).
         status = 'next';
         foundNext = true;
       } else {
@@ -172,7 +152,7 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
     }
 
     dates.push({
-      date: localDate,
+      date: new Date(current),
       status,
     });
 

@@ -2,34 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthContext } from '@/lib/session';
 import { auditCreate, auditUpdate, auditCancel, requestMetadata } from '@/lib/audit';
-import { RecurringFrequency, RecurringStatus, Prisma } from '@prisma/client';
+import { RecurringFrequency as PrismaFrequency, RecurringStatus, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { requirePermission, tenantFilter, companyScope, Permission, blockOversightMutation, requireNotDemoCompany } from '@/lib/rbac';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
-
-// ─── Helper: Calculate next execution date based on frequency ─────────────
-
-function addFrequency(baseDate: Date, frequency: RecurringFrequency): Date {
-  const next = new Date(baseDate);
-  switch (frequency) {
-    case 'DAILY':
-      next.setDate(next.getDate() + 1);
-      break;
-    case 'WEEKLY':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'MONTHLY':
-      next.setMonth(next.getMonth() + 1);
-      break;
-    case 'QUARTERLY':
-      next.setMonth(next.getMonth() + 3);
-      break;
-    case 'YEARLY':
-      next.setFullYear(next.getFullYear() + 1);
-      break;
-  }
-  return next;
-}
+import { addFrequency, parseLocalDate, todayLocal } from '@/lib/date-utils';
 
 // ─── GET - List recurring entries for the authenticated user ──────────────
 
@@ -55,15 +32,14 @@ export async function GET(request: NextRequest) {
       orderBy: { nextExecution: 'asc' },
     });
 
-    // Determine isOverdue: nextExecution < today, status ACTIVE, AND has been executed at least once
+    // Determine isOverdue: nextExecution < today (both local-midnight), status ACTIVE,
+    // AND has been executed at least once.
     // An entry that has never been executed is not overdue (e.g. just created with past start date)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = todayLocal();
 
     const enrichedEntries = entries.map((entry) => {
-      const nextExec = new Date(entry.nextExecution);
-      nextExec.setHours(0, 0, 0, 0);
-      const isOverdue = entry.status === 'ACTIVE' && entry.lastExecuted !== null && nextExec < today;
+      const nextExecLocal = parseLocalDate(entry.nextExecution.toISOString().split('T')[0]);
+      const isOverdue = entry.status === 'ACTIVE' && entry.lastExecuted !== null && nextExecLocal < today;
       return { ...entry, isOverdue };
     });
 
@@ -244,9 +220,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Compute nextExecution from startDate
-    const start = new Date(startDate);
-    const nextExecution = new Date(start);
+    // Compute nextExecution from startDate (timezone-safe: parse as local date)
+    const start = parseLocalDate(startDate);
+    const nextExecution = new Date(start.getFullYear(), start.getMonth(), start.getDate());
 
     const entry = await db.recurringEntry.create({
       data: {
@@ -254,7 +230,7 @@ export async function POST(request: NextRequest) {
         description: description || name,
         frequency,
         startDate: start,
-        endDate: endDate ? new Date(endDate) : null,
+        endDate: endDate ? parseLocalDate(endDate) : null,
         nextExecution,
         lines: resolvedLines,
         reference: reference || null,
@@ -403,7 +379,7 @@ export async function PUT(request: NextRequest) {
     if (description !== undefined) updateData.description = description;
     if (frequency !== undefined) updateData.frequency = frequency;
     if (status !== undefined) updateData.status = status;
-    if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
+    if (endDate !== undefined) updateData.endDate = endDate ? parseLocalDate(endDate) : null;
     if (lines !== undefined) updateData.lines = lines;
     if (reference !== undefined) updateData.reference = reference || null;
 
@@ -415,14 +391,14 @@ export async function PUT(request: NextRequest) {
     if (frequencyChanged || endDateChanged) {
       // Use current nextExecution as the base, recalculating from the existing lastExecuted or startDate
       const baseDate = existing.lastExecuted
-        ? new Date(existing.lastExecuted)
-        : new Date(existing.startDate);
+        ? parseLocalDate(existing.lastExecuted.toISOString().split('T')[0])
+        : parseLocalDate(existing.startDate.toISOString().split('T')[0]);
 
       const newFrequency = frequency || existing.frequency;
-      const recalculatedNext = addFrequency(baseDate, newFrequency as RecurringFrequency);
+      const recalculatedNext = addFrequency(baseDate, newFrequency as PrismaFrequency);
 
       // If recalculated next is past endDate, set to COMPLETED
-      const newEndDate = endDate !== undefined ? (endDate ? new Date(endDate) : null) : existing.endDate;
+      const newEndDate = endDate !== undefined ? (endDate ? parseLocalDate(endDate) : null) : existing.endDate;
 
       if (newEndDate && recalculatedNext > newEndDate) {
         updateData.status = 'COMPLETED' as RecurringStatus;

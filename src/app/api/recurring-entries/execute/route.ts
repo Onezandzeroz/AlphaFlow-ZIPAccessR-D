@@ -2,33 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getAuthContext } from '@/lib/session';
 import { auditCreate, requestMetadata } from '@/lib/audit';
-import { RecurringFrequency, RecurringStatus } from '@prisma/client';
+import { RecurringFrequency as PrismaFrequency, RecurringStatus } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { requirePermission, tenantFilter, companyScope, Permission, blockOversightMutation, requireNotDemoCompany } from '@/lib/rbac';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
+import { addFrequency, parseLocalDate, todayLocal } from '@/lib/date-utils';
 
-// ─── Helper: Calculate next execution date based on frequency ─────────────
-
-function addFrequency(baseDate: Date, frequency: RecurringFrequency): Date {
-  const next = new Date(baseDate);
-  switch (frequency) {
-    case 'DAILY':
-      next.setDate(next.getDate() + 1);
-      break;
-    case 'WEEKLY':
-      next.setDate(next.getDate() + 7);
-      break;
-    case 'MONTHLY':
-      next.setMonth(next.getMonth() + 1);
-      break;
-    case 'QUARTERLY':
-      next.setMonth(next.getMonth() + 3);
-      break;
-    case 'YEARLY':
-      next.setFullYear(next.getFullYear() + 1);
-      break;
-  }
-  return next;
+// ─── Helper: Calculate next execution date based on frequency (timezone-safe) ──
+// Uses shared addFrequency from date-utils.ts. Kept here as a thin wrapper
+// that ensures the input is always a local-midnight date.
+function advanceByFrequency(baseDate: Date, frequency: string): Date {
+  const localBase = parseLocalDate(baseDate.toISOString().split('T')[0]);
+  return addFrequency(localBase, frequency as PrismaFrequency);
 }
 
 // ─── POST - Execute a recurring entry: create a POSTED journal entry ──────
@@ -149,19 +134,23 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // 5. Calculate next execution date — always ensure it's in the future
-    let nextExecution = addFrequency(executionDate, recurring.frequency as RecurringFrequency);
-    const todayMidnight = new Date();
-    todayMidnight.setHours(23, 59, 59, 999);
+    // 5. Calculate next execution date — timezone-safe local-midnight arithmetic
+    let nextExecution = advanceByFrequency(executionDate, recurring.frequency);
+    const today = todayLocal();
+    const endDateLocal = recurring.endDate
+      ? parseLocalDate(recurring.endDate.toISOString().split('T')[0])
+      : null;
 
     // Fast-forward past any already-passed dates (handles overdue entries)
-    while (nextExecution <= todayMidnight && (!recurring.endDate || nextExecution <= new Date(recurring.endDate))) {
-      nextExecution = addFrequency(nextExecution, recurring.frequency as RecurringFrequency);
+    // All comparisons use local-midnight dates — no UTC vs local confusion
+    while (nextExecution <= today) {
+      if (endDateLocal && nextExecution > endDateLocal) break;
+      nextExecution = advanceByFrequency(nextExecution, recurring.frequency);
     }
 
     // 6. Determine if recurring entry should be set to COMPLETED
     const statusUpdate: RecurringStatus | undefined =
-      (recurring.endDate && nextExecution > new Date(recurring.endDate))
+      (endDateLocal && nextExecution > endDateLocal)
         ? 'COMPLETED'
         : undefined;
 
@@ -174,8 +163,6 @@ export async function POST(request: NextRequest) {
         ...(statusUpdate && { status: statusUpdate }),
       },
     });
-
-    // Re-fetch the entry to ensure we have the latest committed state
     const updatedRecurring = await db.recurringEntry.findFirst({
       where: { id: recurring.id },
     });
