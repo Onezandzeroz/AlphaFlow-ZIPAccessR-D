@@ -539,6 +539,17 @@ export function SubscriptionPlansPrompt() {
   const accessResult = useAccessCacheStore((s) => s.result);
   const accessIsLoading = useAccessCacheStore((s) => s.isLoading);
   const accessIsOwner = useAccessCacheStore((s) => s.isOwner);
+  const fetchAccess = useAccessCacheStore((s) => s.fetch);
+
+  // Track whether we've already kicked off a fetch for this user.
+  // Prevents infinite retries if the TokenPay service is unreachable.
+  const fetchAttempted = useRef(false);
+
+  // Reset the fetch flag when the user changes so a fresh fetch is
+  // attempted for the new user.
+  useEffect(() => {
+    fetchAttempted.current = false;
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user || hasScheduled.current) return;
@@ -554,9 +565,24 @@ export function SubscriptionPlansPrompt() {
     // until we know whether the user already has write access.
     if (accessIsLoading) return;
 
+    // No access result yet.  This can happen on a fresh device where the
+    // useWriteAccessGuard hook hasn't called fetchAccess yet, or when
+    // the store hasn't been populated at all.  Kick off a fetch ourselves
+    // and wait for the result before making a decision.
+    if (!accessResult) {
+      if (!fetchAttempted.current) {
+        fetchAttempted.current = true;
+        fetchAccess(user.id);
+      }
+      // Don't proceed until we have a definitive result.
+      // If the fetch ultimately fails (service down), we fail-safe:
+      // don't block the user with a purchase dialog.
+      return;
+    }
+
     // User already has valid read_write access (tbkey or active trial).
     // Silently mark this device as "ever logged" so we never prompt again.
-    if (accessIsOwner || (accessResult && hasAccess(accessResult))) {
+    if (accessIsOwner || hasAccess(accessResult)) {
       localStorage.setItem(everLoggedKey, 'true');
       localStorage.setItem(dismissedKey, 'true');
       hasScheduled.current = true;
@@ -570,7 +596,7 @@ export function SubscriptionPlansPrompt() {
       setAnimatingIn(true);
       setVisible(true);
     }, 800);
-  }, [user, accessResult, accessIsLoading, accessIsOwner]);
+  }, [user, accessResult, accessIsLoading, accessIsOwner, fetchAccess]);
 
   const dismiss = useCallback(() => {
     setAnimatingOut(true);
