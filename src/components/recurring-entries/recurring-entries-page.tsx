@@ -100,12 +100,15 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const start = parseLocalDate(entry.startDate.split('T')[0]);
   const end = entry.endDate ? parseLocalDate(entry.endDate.split('T')[0]) : null;
 
+  const completed = entry.status === 'COMPLETED';
+
   // Timeline is calendar-based relative to TODAY:
   //   dot <= today   → "past"  (green — purchase already done)
   //   first > today  → "next"  (pulsing blue — upcoming payment)
   //   subsequent      → "future" (gray)
   // The first dot (startDate) is ALWAYS green — it represents the
   // first purchase in the cycle.
+  // For COMPLETED entries: no "next" or "future" dots — all are "past".
   const today = todayLocal();
   const todayMs = today.getTime();
 
@@ -123,8 +126,9 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
 
     let status: TimelineDate['status'];
 
-    if (dotMs <= todayMs) {
-      // Today or in the past → purchase already done
+    if (completed || dotMs <= todayMs) {
+      // Completed entry → all dots are past (no pulse, no future)
+      // Or today/in the past → purchase already done
       status = 'past';
     } else if (!foundNext) {
       // First date strictly after today → next upcoming purchase
@@ -471,7 +475,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
       <Card className="stat-card border-0 shadow-lg dark:border dark:border-white/5">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white">
-            {language === 'da' ? 'Skabeloner' : 'Templates'}
+            {language === 'da' ? 'Posteringer' : 'Entries'}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -505,6 +509,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                 <TableBody>
                   {entries.map((entry) => {
                     const overdue = isEntryOverdue(entry);
+                    const isCompleted = entry.status === 'COMPLETED';
                     const isExpanded = expandedId === entry.id;
                     const actions = getActionHandlers(entry);
                     const timeline = generateTimeline(entry);
@@ -518,7 +523,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                       <React.Fragment key={entry.id}>
                         {/* Main row — clickable */}
                         <TableRow
-                          className={`${overdue ? 'bg-red-50 dark:bg-red-500/5' : ''} ${isExpanded ? 'border-b-0' : ''} cursor-pointer hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors`}
+                          className={`${overdue ? 'bg-red-50 dark:bg-red-500/5' : ''} ${isExpanded ? 'border-b-0' : ''} ${isCompleted ? 'opacity-50' : ''} cursor-pointer hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors`}
                           onClick={() => handleRowClick(entry.id)}
                         >
                           {/* Expand/collapse chevron */}
@@ -597,7 +602,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
 
                         {/* Expanded details row */}
                         {isExpanded && (
-                          <TableRow className="bg-gray-50/50 dark:bg-white/[0.02] hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
+                          <TableRow className={`${isCompleted ? 'opacity-50' : ''} bg-gray-50/50 dark:bg-white/[0.02] hover:bg-gray-50/50 dark:hover:bg-white/[0.02]`}>
                             <TableCell colSpan={6} className="p-0">
                               <div className="px-4 py-4 sm:px-6 sm:py-5 space-y-4">
                                 {/* Detail grid */}
@@ -806,8 +811,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
             </AlertDialogTitle>
             <AlertDialogDescription>
               {language === 'da'
-                ? 'Skabelonen markeres som afsluttet. Allerede oprettede poster bevares.'
-                : 'The template will be marked as completed. Already created entries are preserved.'}
+                ? 'Posteringen markeres som afsluttet. Allerede oprettede poster bevares.'
+                : 'The entry will be marked as completed. Already created entries are preserved.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -816,7 +821,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
               onClick={handleDelete}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {language === 'da' ? 'Afslut skabelon' : 'Complete Template'}
+              {language === 'da' ? 'Afslut postering' : 'Complete Entry'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
