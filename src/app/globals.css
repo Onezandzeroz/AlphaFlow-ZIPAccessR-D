@@ -2297,22 +2297,34 @@ input[type="date"] {
   animation: notificationBadgePulse 2s ease-in-out infinite;
 }
 
-/* Pulsing dot for timeline "next" indicator — uses box-shadow to avoid ring clipping */
+/* Pulsing dot for timeline "next" indicator — prominent ring + scale animation */
 @keyframes dotPulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0.5);
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0.6);
   }
   50% {
-    box-shadow: 0 2px 8px 4px rgba(0, 213, 190, 0);
+    transform: scale(1.15);
+    box-shadow: 0 0 0 6px rgba(0, 213, 190, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0);
   }
 }
 
 @keyframes dotPulseDark {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0.4);
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0.5);
   }
   50% {
-    box-shadow: 0 2px 8px 4px rgba(0, 213, 190, 0);
+    transform: scale(1.15);
+    box-shadow: 0 0 0 6px rgba(0, 213, 190, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 213, 190, 0);
   }
 }
 

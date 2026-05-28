@@ -45,6 +45,7 @@ import {
   ChevronUp,
   Calendar,
   Clock,
+  Check,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 
@@ -201,19 +202,27 @@ function countTotalPayments(entry: RecurringEntry): number {
 }
 
 // ─── Helper: Count past executed payments ─────────────────────────
+// Uses nextExecution from the DB (advanced after each execution) to count
+// how many payment dates have actually been executed. This is accurate
+// even when entries are paused, resumed, or have gaps.
 
-function countPastPayments(entry: RecurringEntry, today: Date): number {
-  const start = toLocalDate(entry.startDate);
-  let current = new Date(start);
+function countPastPayments(entry: RecurringEntry): number {
+  if (!entry.lastExecuted) return 0;
+
+  // Count how many scheduled dates fall BEFORE nextExecution (i.e. already executed)
+  const start = parseLocalDate(entry.startDate.split('T')[0]);
+  const nextExec = parseLocalDate(entry.nextExecution.split('T')[0]);
+
+  let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   let count = 0;
+  const maxCount = 1000;
 
-  while (toLocalDate(current) < today) {
+  while (count < maxCount) {
+    const dotMs = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+    if (dotMs >= nextExec.getTime()) break;
     count++;
     current = addFrequency(current, entry.frequency as RecurringFrequency);
   }
-
-  // Include today if nextExecution is today or earlier
-  if (toLocalDate(current) <= today) count++;
 
   return count;
 }
@@ -533,7 +542,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                     const timeline = generateTimeline(entry);
                     const amount = getAmountFromLines(entry.lines);
                     const totalPayments = entry.endDate ? countTotalPayments(entry) : null;
-                    const pastPayments = countPastPayments(entry, new Date());
+                    const pastPayments = countPastPayments(entry);
 
                     return (
                       <React.Fragment key={entry.id}>
@@ -730,41 +739,40 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                   <div className="overflow-x-auto">
                                     <div className="relative min-w-max pt-3 pb-2">
                                       <div className="flex items-center gap-0">
-                                      {/* The track line */}
-                                      <div className="absolute top-[17px] left-2 right-2 h-[2px] bg-gray-200 dark:bg-gray-700 z-0" />
+                                      {/* The track line — centered on 12px dots (pt-3 + 6px) */}
+                                      <div className="absolute top-[18px] left-2 right-2 h-[2px] bg-gray-200 dark:bg-gray-700 z-0" />
 
                                       {timeline.map((item, idx) => {
                                         const isPaused = entry.status === 'PAUSED';
-                                        const dotClass = (() => {
-                                          switch (item.status) {
-                                            case 'past':
-                                              return 'bg-[#05df72]';
-                                            case 'next':
-                                              return isPaused
-                                                ? 'bg-orange-500 dot-pulse scale-125'
-                                                : 'bg-[#00d5be] dot-pulse scale-125';
-                                            case 'future':
-                                              return 'bg-[#4a5565]';
-                                            default:
-                                              return 'bg-[#4a5565]';
-                                          }
-                                        })();
+                                        const isPast = item.status === 'past';
+                                        const isNext = item.status === 'next';
+                                        const isFuture = item.status === 'future';
 
                                         return (
                                           <Tooltip key={idx}>
                                             <TooltipTrigger asChild>
                                               <div className="relative flex flex-col items-center w-10 sm:w-12">
                                                 {/* Dot */}
-                                                <div
-                                                  className={`w-3 h-3 rounded-full relative z-20 transition-all ${dotClass}`}
-                                                />
+                                                {isPast ? (
+                                                  <div className="w-3 h-3 rounded-full bg-[#05df72] relative z-20 flex items-center justify-center">
+                                                    <Check className="h-2 w-2 text-white" strokeWidth={3} />
+                                                  </div>
+                                                ) : isNext ? (
+                                                  <div className="relative z-20">
+                                                    <div className={`w-4 h-4 rounded-full ${isPaused ? 'bg-orange-500' : 'bg-[#00d5be]'} dot-pulse flex items-center justify-center`}>
+                                                      <div className={`w-2 h-2 rounded-full ${isPaused ? 'bg-orange-300' : 'bg-[#00ffcc]'}`} />
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <div className="w-3 h-3 rounded-full bg-[#4a5565] relative z-20" />
+                                                )}
                                                 {/* Label */}
                                                 <span className={`text-[9px] sm:text-[10px] mt-1.5 whitespace-nowrap ${
-                                                  item.status === 'past'
+                                                  isPast
                                                     ? 'text-[#05df72] font-medium'
-                                                    : item.status === 'next' && isPaused
+                                                    : isNext && isPaused
                                                     ? 'text-orange-600 dark:text-orange-400 font-bold'
-                                                    : item.status === 'next'
+                                                    : isNext
                                                     ? 'text-[#00d5be] font-bold'
                                                     : 'text-[#4a5565]'
                                                 }`}>
@@ -777,9 +785,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                             </TooltipTrigger>
                                             <TooltipContent side="top" className="text-xs">
                                               {td(item.date)}
-                                              {item.status === 'next' && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
-                                              {item.status === 'next' && !isPaused && ` — ${language === 'da' ? 'næste betaling' : 'next payment'}`}
-                                              {item.status === 'past' && ` — ${language === 'da' ? 'udført' : 'executed'}`}
+                                              {isNext && isPaused && ` — ${language === 'da' ? 'pauset' : 'paused'}`}
+                                              {isNext && !isPaused && ` — ${language === 'da' ? 'næste betaling' : 'next payment'}`}
+                                              {isPast && ` — ${language === 'da' ? 'udført' : 'executed'}`}
                                             </TooltipContent>
                                           </Tooltip>
                                         );
