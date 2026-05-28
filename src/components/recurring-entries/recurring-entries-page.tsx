@@ -49,6 +49,7 @@ import {
 import { PageHeader } from '@/components/shared/page-header';
 
 import { toLocalDate, daysBetween, addFrequency, parseLocalDate } from '@/lib/date-utils';
+import { RecurringFrequency } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -157,7 +158,7 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
     });
 
     dotCount++;
-    current = addFrequency(current, entry.frequency);
+    current = addFrequency(current, entry.frequency as RecurringFrequency);
   }
 
   return dates;
@@ -193,7 +194,7 @@ function countTotalPayments(entry: RecurringEntry): number {
   while (count < maxCount) {
     if (end && toLocalDate(current) > end) break;
     count++;
-    current = addFrequency(current, entry.frequency);
+    current = addFrequency(current, entry.frequency as RecurringFrequency);
   }
 
   return count;
@@ -208,7 +209,7 @@ function countPastPayments(entry: RecurringEntry, today: Date): number {
 
   while (toLocalDate(current) < today) {
     count++;
-    current = addFrequency(current, entry.frequency);
+    current = addFrequency(current, entry.frequency as RecurringFrequency);
   }
 
   // Include today if nextExecution is today or earlier
