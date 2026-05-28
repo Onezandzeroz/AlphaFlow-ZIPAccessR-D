@@ -754,7 +754,7 @@ export function AddTransactionForm({ onSuccess, preloadedReceiptFile, onPreloade
     } finally {
       setIsLoading(false);
     }
-  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError, receiptCardHasData, purchaseLinesHasData, purchaseLines, purchaseLinesDate, lineTotals]);
+  }, [date, amount, currency, exchangeRate, includesVAT, netAmount, parsedAmount, description, vatPercent, receiptFile, selectedAccountId, clearReceipt, onSuccess, isDa, handleMutationError, receiptCardHasData, purchaseLinesHasData, purchaseLines, purchaseLinesDate, lineTotals, isRecurring, recurringFrequency, recurringStartDate, recurringEndDate]);
 
   // ─── RENDER ───
 
