@@ -6,7 +6,7 @@ import { RecurringFrequency as PrismaFrequency, RecurringStatus, Prisma } from '
 import { logger } from '@/lib/logger';
 import { requirePermission, tenantFilter, companyScope, Permission, blockOversightMutation, requireNotDemoCompany } from '@/lib/rbac';
 import { requireTokenPayAccess } from '@/lib/tokenpay';
-import { addFrequency, parseLocalDate, todayLocal } from '@/lib/date-utils';
+import { addFrequency, parseLocalDate, todayLocal, formatDateLocal } from '@/lib/date-utils';
 
 // ─── GET - List recurring entries for the authenticated user ──────────────
 
@@ -238,6 +238,110 @@ export async function POST(request: NextRequest) {
         companyId: ctx.activeCompanyId!,
       },
     });
+
+    // ─── Backfill: post all missed entries if startDate is in the past ──
+    // When a recurring purchase is created with a start date before today,
+    // every scheduled payment date from startDate up to (and including)
+    // today must be posted as individual journal entries with their correct
+    // date. This ensures the ledger is complete from the moment the recurring
+    // entry is created.
+    const today = todayLocal();
+    const todayMs = today.getTime();
+    const endDateLocal = entry.endDate
+      ? parseLocalDate(entry.endDate.toISOString().split('T')[0])
+      : null;
+
+    if (start.getTime() <= todayMs) {
+      let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      let postedCount = 0;
+      const maxBackfill = 3650; // Safety limit: ~10 years of daily entries
+
+      while (postedCount < maxBackfill) {
+        const dotMs = new Date(
+          current.getFullYear(), current.getMonth(), current.getDate()
+        ).getTime();
+
+        // Stop if past endDate
+        if (endDateLocal && dotMs > endDateLocal.getTime()) break;
+        // Stop if past today (we don't post for future dates)
+        if (dotMs > todayMs) break;
+
+        // Build the journal entry date string
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        const journalDescription = `${name} — ${dateStr}`;
+
+        // Compute sequential reference number
+        let sequenceNumber = 1;
+        if (reference) {
+          const existingCount = await db.journalEntry.count({
+            where: { companyId: ctx.activeCompanyId!, reference: { startsWith: reference } },
+          });
+          sequenceNumber = existingCount + 1;
+        }
+        const ref = reference
+          ? `${reference}${String(sequenceNumber).padStart(3, '0')}`
+          : null;
+
+        // Create a POSTED journal entry with the scheduled date
+        await db.journalEntry.create({
+          data: {
+            date: new Date(current),
+            description: journalDescription,
+            reference: ref,
+            status: 'POSTED',
+            companyId: ctx.activeCompanyId!,
+            lines: {
+              create: (resolvedLines as Array<{ accountId: string; debit: number; credit: number; description?: string }>).map((l) => ({
+                companyId: ctx.activeCompanyId!,
+                accountId: l.accountId,
+                debit: l.debit,
+                credit: l.credit,
+                description: l.description || null,
+              })),
+            },
+          },
+        });
+
+        postedCount++;
+        current = addFrequency(current, frequency as 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY');
+      }
+
+      // Calculate the next execution date (first date AFTER today)
+      let nextExec = new Date(current.getFullYear(), current.getMonth(), current.getDate());
+      const shouldComplete = endDateLocal !== null && nextExec.getTime() > endDateLocal.getTime();
+
+      // Update the recurring entry with correct nextExecution and lastExecuted
+      await db.recurringEntry.update({
+        where: { id: entry.id },
+        data: {
+          lastExecuted: new Date(),
+          nextExecution: nextExec,
+          ...(shouldComplete ? { status: 'COMPLETED' } : {}),
+        },
+      });
+
+      // Re-read the updated entry for the response
+      const updatedEntry = await db.recurringEntry.findFirst({
+        where: { id: entry.id },
+      });
+
+      if (postedCount > 0) {
+        logger.info(
+          `[RECURRING-CREATE] Backfilled ${postedCount} journal entries for "${name}" (${startDate} → ${formatDateLocal(today)}) in company ${ctx.activeCompanyId}`,
+        );
+      }
+
+      await auditCreate(
+        ctx.id,
+        'RecurringEntry',
+        entry.id,
+        { name, description: description || name, frequency, startDate, endDate, reference, lineCount: resolvedLines.length, totalDebit, totalCredit, backfilledCount: postedCount },
+        requestMetadata(request),
+        ctx.activeCompanyId
+      );
+
+      return NextResponse.json({ recurringEntry: updatedEntry || entry, backfilledCount: postedCount }, { status: 201 });
+    }
 
     await auditCreate(
       ctx.id,
