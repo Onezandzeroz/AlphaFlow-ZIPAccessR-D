@@ -320,7 +320,7 @@ function PlanCard({
       </ul>
 
       {/* Binding / Limitation */}
-      <div className={`${isMobile ? 'mt-3 pt-3' : 'mt-2 sm:mt-2.5 pt-2 sm:pt-2.5'} border-t border-white/[0.06]`}>
+      <div className={`${isMobile ? 'mt-3 pt-2 pb-3' : 'mt-2 sm:mt-2.5 pt-1.5 sm:pt-2 pb-2 sm:pb-2.5'} border-t border-white/[0.06]`}>
         <p className={`text-white/30 ${isMobile ? 'text-xs' : 'text-[10px] sm:text-xs'}`}>
           {isDa ? `Binding: ${plan.bindDa}` : `Commitment: ${plan.bindEn}`}
         </p>
@@ -946,10 +946,6 @@ export function SubscriptionPlansPrompt() {
             {/* Mobile: stacked features */}
             <div className="sm:hidden space-y-2.5">
               <div className="flex items-center justify-center gap-2 text-white/35 text-xs">
-                <Gift className="h-4 w-4 text-[#2dd4bf]/70" />
-                <span>{t('2 måneder gratis', '2 months free')}</span>
-              </div>
-              <div className="flex items-center justify-center gap-2 text-white/35 text-xs">
                 <ShieldCheck className="h-4 w-4 text-[#2dd4bf]/70" />
                 <span>{t('Fuld adgang', 'Full access')}</span>
               </div>
@@ -961,10 +957,6 @@ export function SubscriptionPlansPrompt() {
 
             {/* Desktop: inline features row */}
             <div className="hidden sm:flex items-center justify-center gap-3 sm:gap-5 lg:gap-6 text-white/35 text-[10px] sm:text-xs lg:text-sm">
-              <div className="flex items-center gap-1">
-                <Gift className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#2dd4bf]/70" />
-                <span>{t('2 måneder gratis', '2 months free')}</span>
-              </div>
               <div className="flex items-center gap-1">
                 <ShieldCheck className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-[#2dd4bf]/70" />
                 <span>{t('Fuld adgang', 'Full access')}</span>
