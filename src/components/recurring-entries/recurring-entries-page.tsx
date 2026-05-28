@@ -33,7 +33,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  Loader2,
   RefreshCw,
   Play,
   Pause,
@@ -257,10 +256,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
   const { language, td } = useTranslation();
   const [entries, setEntries] = useState<RecurringEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isExecuteDialogOpen, setIsExecuteDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [executingId, setExecutingId] = useState<string | null>(null);
-  const [isExecuting, setIsExecuting] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -289,53 +285,6 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  // ─── Execute handler ──────────────────────────────────────────
-
-  const handleExecute = async () => {
-    if (!executingId) return;
-    setIsExecuting(true);
-    try {
-      const res = await fetch('/api/recurring-entries/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: executingId }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to execute');
-      }
-
-      // Use the response to immediately update the entry in local state
-      const { recurringEntry } = await res.json();
-
-      if (recurringEntry) {
-        setEntries(prev =>
-          prev.map(e =>
-            e.id === recurringEntry.id
-              ? {
-                  ...e,
-                  ...recurringEntry,
-                  // Ensure lastExecuted is properly set from the response
-                  lastExecuted: recurringEntry.lastExecuted || new Date().toISOString(),
-                }
-              : e
-          )
-        );
-      }
-
-      setIsExecuteDialogOpen(false);
-      setExecutingId(null);
-
-      // Background refetch after a short delay to ensure DB consistency
-      setTimeout(() => fetchData(), 500);
-    } catch (err) {
-      console.error('Execute error:', err);
-    } finally {
-      setIsExecuting(false);
-    }
-  };
 
   // ─── Toggle pause ─────────────────────────────────────────────
 
@@ -407,11 +356,6 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
 
   const getActionHandlers = (entry: RecurringEntry) => {
     return {
-      execute: (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setExecutingId(entry.id);
-        setIsExecuteDialogOpen(true);
-      },
       togglePause: (e: React.MouseEvent) => {
         e.stopPropagation();
         handleTogglePause(entry);
@@ -625,17 +569,6 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                           {/* Actions */}
                           <TableCell>
                             <div className="flex items-center justify-end gap-1">
-                              {entry.status === 'ACTIVE' && (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0 text-green-600 hover:text-green-700"
-                                  onClick={actions.execute}
-                                  title={language === 'da' ? 'Udfør nu' : 'Execute now'}
-                                >
-                                  <Play className="h-4 w-4" />
-                                </Button>
-                              )}
                               {(entry.status === 'ACTIVE' || entry.status === 'PAUSED') && (
                                 <Button
                                   size="sm"
@@ -862,34 +795,6 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
           )}
         </CardContent>
       </Card>
-
-      {/* ═══ Execute Confirmation Dialog ═══ */}
-      <AlertDialog open={isExecuteDialogOpen} onOpenChange={setIsExecuteDialogOpen}>
-        <AlertDialogContent className="bg-white dark:bg-[#1a1f1e]">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Play className="h-5 w-5 text-green-600" />
-              {language === 'da' ? 'Udfør postering?' : 'Execute Entry?'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {language === 'da'
-                ? 'Dette opretter en ny bogført journalpost baseret på skabelonen. Handlingen kan ikke fortrydes.'
-                : 'This will create a new posted journal entry based on the template. This action cannot be undone.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{language === 'da' ? 'Annuller' : 'Cancel'}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleExecute}
-              disabled={isExecuting}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {isExecuting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Play className="h-4 w-4 mr-2" />}
-              {language === 'da' ? 'Udfør' : 'Execute'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* ═══ Delete Confirmation Dialog ═══ */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
