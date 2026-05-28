@@ -274,6 +274,16 @@ function PlanCard({
         )}
       </div>
 
+      {/* Trial badge (Free plan only) */}
+      {isFree && (
+        <div className="mt-2 inline-flex items-center justify-center gap-1.5 mx-auto px-3 py-1 rounded-full bg-[#0d9488]/20 border border-[#0d9488]/30">
+          <Gift className={`text-[#2dd4bf] ${isMobile ? 'h-3.5 w-3.5' : 'h-3 w-3 sm:h-3.5 sm:w-3.5'}`} />
+          <span className={`font-semibold text-[#2dd4bf] tracking-wide leading-tight ${isMobile ? 'text-[10px]' : 'text-[9px] sm:text-[10px]'}`}>
+            {t('2 MDR. GRATIS · FULD ADGANG', '2 MOS. FREE · FULL ACCESS')}
+          </span>
+        </div>
+      )}
+
       {/* Savings badge */}
       <div className={`${isMobile ? 'mt-2 h-7' : 'mt-1 sm:mt-1.5 h-[18px] sm:h-[22px]'} flex items-center justify-center`}>
         {plan.savingsDa && (
@@ -315,16 +325,6 @@ function PlanCard({
           {isDa ? `Binding: ${plan.bindDa}` : `Commitment: ${plan.bindEn}`}
         </p>
       </div>
-
-      {/* Trial badge (Free plan only) */}
-      {isFree && (
-        <div className="mt-2.5 inline-flex items-center justify-center gap-1.5 mx-auto px-3 py-1 rounded-full bg-[#0d9488]/20 border border-[#0d9488]/30">
-          <Gift className={`text-[#2dd4bf] ${isMobile ? 'h-3.5 w-3.5' : 'h-3 w-3 sm:h-3.5 sm:w-3.5'}`} />
-          <span className={`font-semibold text-[#2dd4bf] tracking-wide leading-tight ${isMobile ? 'text-[10px]' : 'text-[9px] sm:text-[10px]'}`}>
-            {t('2 MDR. GRATIS · FULD ADGANG', '2 MOS. FREE · FULL ACCESS')}
-          </span>
-        </div>
-      )}
 
       {/* CTA button */}
       <button
@@ -905,8 +905,8 @@ export function SubscriptionPlansPrompt() {
             </h2>
             <p className="mt-2 sm:mt-1.5 text-sm sm:text-sm lg:text-base text-white/50 max-w-2xl mx-auto leading-relaxed">
               {t(
-                'Vælg en plan, der passer til din virksomhed, med det samme. På den måde bevarer du skriveadgangen og undgår afbrydelser i arbejdets kontinuitet, når prøveperioden slutter.',
-                'Choose a plan that fits your business right away. That way you keep write access and avoid interruptions to your work continuity when the trial ends.',
+                'Start bogføringen af din Start-Up eller SMV på få minutter. Find den plan, der passer bedst til din virksomhed, og fortsæt ubesværet efter prøveperioden.',
+                'Start bookkeeping for your Start-Up or SME in minutes. Find the plan that best suits your business and continue seamlessly after the trial period.',
               )}
             </p>
           </div>
