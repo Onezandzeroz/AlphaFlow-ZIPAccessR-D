@@ -49,7 +49,7 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 
-import { toLocalDate, daysBetween, addFrequency, parseLocalDate } from '@/lib/date-utils';
+import { toLocalDate, daysBetween, addFrequency, parseLocalDate, todayLocal } from '@/lib/date-utils';
 import { RecurringFrequency } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -101,13 +101,14 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
   const start = parseLocalDate(entry.startDate.split('T')[0]);
   const end = entry.endDate ? parseLocalDate(entry.endDate.split('T')[0]) : null;
 
-  // Use nextExecution from DB — it's already advanced after each execution.
-  // We compare each timeline dot against it:
-  //   dot < nextExecution → past (executed)
-  //   dot == nextExecution → next (upcoming)
-  //   dot > nextExecution → future
-  const nextExec = parseLocalDate(entry.nextExecution.split('T')[0]);
-  const hasBeenExecuted = !!entry.lastExecuted;
+  // Timeline is calendar-based relative to TODAY:
+  //   dot <= today   → "past"  (green — purchase already done)
+  //   first > today  → "next"  (pulsing blue — upcoming payment)
+  //   subsequent      → "future" (gray)
+  // The first dot (startDate) is ALWAYS green — it represents the
+  // first purchase in the cycle.
+  const today = todayLocal();
+  const todayMs = today.getTime();
 
   let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   let dotCount = 0;
@@ -123,34 +124,16 @@ function generateTimeline(entry: RecurringEntry, maxDots: number = 24): Timeline
 
     let status: TimelineDate['status'];
 
-    if (!hasBeenExecuted) {
-      // Never executed → first dot is "next", rest are "future"
-      if (!foundNext) {
-        status = 'next';
-        foundNext = true;
-      } else {
-        status = 'future';
-      }
+    if (dotMs <= todayMs) {
+      // Today or in the past → purchase already done
+      status = 'past';
+    } else if (!foundNext) {
+      // First date strictly after today → next upcoming purchase
+      status = 'next';
+      foundNext = true;
     } else {
-      const nextMs = nextExec.getTime();
-
-      if (dotMs < nextMs) {
-        // Dot is strictly BEFORE nextExecution → already executed (past)
-        status = 'past';
-      } else if (dotMs === nextMs) {
-        // This dot IS the next scheduled execution
-        status = 'next';
-        foundNext = true;
-      } else if (!foundNext) {
-        // Dot is past nextExecution but we haven't marked a "next" yet —
-        // this means nextExecution fell between two dots.
-        // Mark this first future dot as "next" (fallback).
-        status = 'next';
-        foundNext = true;
-      } else {
-        // Subsequent dots → future
-        status = 'future';
-      }
+      // Subsequent future dates
+      status = 'future';
     }
 
     dates.push({
@@ -201,17 +184,14 @@ function countTotalPayments(entry: RecurringEntry): number {
   return count;
 }
 
-// ─── Helper: Count past executed payments ─────────────────────────
-// Uses nextExecution from the DB (advanced after each execution) to count
-// how many payment dates have actually been executed. This is accurate
-// even when entries are paused, resumed, or have gaps.
+// ─── Helper: Count past payments (calendar-based) ───────────────
+// Counts how many scheduled payment dates fall on or before today.
+// Matches the green-dot count shown in the timeline.
 
 function countPastPayments(entry: RecurringEntry): number {
-  if (!entry.lastExecuted) return 0;
-
-  // Count how many scheduled dates fall BEFORE nextExecution (i.e. already executed)
   const start = parseLocalDate(entry.startDate.split('T')[0]);
-  const nextExec = parseLocalDate(entry.nextExecution.split('T')[0]);
+  const today = todayLocal();
+  const todayMs = today.getTime();
 
   let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   let count = 0;
@@ -219,7 +199,7 @@ function countPastPayments(entry: RecurringEntry): number {
 
   while (count < maxCount) {
     const dotMs = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
-    if (dotMs >= nextExec.getTime()) break;
+    if (dotMs > todayMs) break;
     count++;
     current = addFrequency(current, entry.frequency as RecurringFrequency);
   }
