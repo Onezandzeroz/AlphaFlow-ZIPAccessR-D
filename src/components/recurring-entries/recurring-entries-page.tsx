@@ -184,6 +184,50 @@ function countTotalPayments(entry: RecurringEntry): number {
   return count;
 }
 
+// ─── Helper: Get next payment date (calendar-based) ──────────
+// Returns the first scheduled payment date strictly after today.
+// This matches the timeline's blue pulsing "next" dot.
+
+function getNextPaymentDate(entry: RecurringEntry): Date | null {
+  const start = parseLocalDate(entry.startDate.split('T')[0]);
+  const end = entry.endDate ? parseLocalDate(entry.endDate.split('T')[0]) : null;
+  const today = todayLocal();
+  const todayMs = today.getTime();
+
+  let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const maxIter = 1000;
+
+  for (let i = 0; i < maxIter; i++) {
+    const dotMs = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+    if (end && dotMs > end.getTime()) return null; // past end date → no next
+    if (dotMs > todayMs) return new Date(current);
+    current = addFrequency(current, entry.frequency as RecurringFrequency);
+  }
+  return null;
+}
+
+// ─── Helper: Get last payment date (calendar-based) ───────────
+// Returns the last scheduled payment date on or before today.
+// This matches the timeline's last green "past" dot.
+
+function getLastPaymentDate(entry: RecurringEntry): Date | null {
+  const start = parseLocalDate(entry.startDate.split('T')[0]);
+  const today = todayLocal();
+  const todayMs = today.getTime();
+
+  let current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  let last: Date | null = null;
+  const maxIter = 1000;
+
+  for (let i = 0; i < maxIter; i++) {
+    const dotMs = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+    if (dotMs > todayMs) break;
+    last = new Date(current);
+    current = addFrequency(current, entry.frequency as RecurringFrequency);
+  }
+  return last;
+}
+
 // ─── Helper: Count past payments (calendar-based) ───────────────
 // Counts how many scheduled payment dates fall on or before today.
 // Matches the green-dot count shown in the timeline.
@@ -523,6 +567,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                     const amount = getAmountFromLines(entry.lines);
                     const totalPayments = entry.endDate ? countTotalPayments(entry) : null;
                     const pastPayments = countPastPayments(entry);
+                    const nextPaymentDate = getNextPaymentDate(entry);
+                    const lastPaymentDate = getLastPaymentDate(entry);
 
                     return (
                       <React.Fragment key={entry.id}>
@@ -563,7 +609,7 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                             <div className="flex items-center gap-1.5">
                               <CalendarClock className="h-3.5 w-3.5 text-gray-400" />
                               <span className={`text-sm ${overdue ? 'text-red-600 dark:text-red-400 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>
-                                {td(new Date(entry.nextExecution))}
+                                {nextPaymentDate ? td(nextPaymentDate) : '—'}
                               </span>
                               {overdue && (
                                 <Badge variant="outline" className="text-[10px] bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20">
@@ -681,11 +727,9 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                         {language === 'da' ? 'Sidst udført' : 'Last executed'}
                                       </p>
                                       <p className="text-sm text-gray-900 dark:text-white mt-0.5">
-                                        {entry.lastExecuted
-                                          ? td(new Date(entry.lastExecuted))
-                                          : daysBetween(new Date(), new Date(entry.startDate)) >= 0
-                                            ? td(new Date(entry.startDate))
-                                            : (language === 'da' ? 'Aldrig' : 'Never')}
+                                        {lastPaymentDate
+                                          ? td(lastPaymentDate)
+                                          : (language === 'da' ? 'Aldrig' : 'Never')}
                                       </p>
                                     </div>
                                   </div>
@@ -790,8 +834,8 @@ export function RecurringEntriesPage({ user, hideHeader }: { user: User; hideHea
                                       <span className="flex items-center gap-1">
                                         <CalendarClock className="h-3.5 w-3.5" />
                                         {language === 'da'
-                                          ? `Næste betaling: ${td(new Date(entry.nextExecution))}`
-                                          : `Next payment: ${td(new Date(entry.nextExecution))}`
+                                          ? `Næste betaling: ${nextPaymentDate ? td(nextPaymentDate) : '—'}`
+                                          : `Next payment: ${nextPaymentDate ? td(nextPaymentDate) : '—'}`
                                         }
                                       </span>
                                       {totalPayments !== null && (
