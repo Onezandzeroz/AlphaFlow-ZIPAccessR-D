@@ -189,22 +189,32 @@ function PlanCard({
   const isPopular = plan.popular;
   const isFree = plan.isFree;
   const isLoading = isFree && startingTrial;
+  // On mobile, the highlight follows the centered card.
+  const isActiveMobile = isMobile && isActiveSlide;
 
   return (
     <div
       className={`
         relative flex flex-col rounded-2xl text-center
-        transition-all duration-300 group shrink-0
+        transition-all duration-300 ease-out group shrink-0
         ${isMobile
-          ? `w-[85vw] max-w-[340px] p-5 ${isActiveSlide ? 'scale-100 opacity-100' : 'scale-[0.92] opacity-60'}`
+          ? `w-[85vw] max-w-[340px] p-5 ${isActiveSlide
+            ? 'scale-100 opacity-100'
+            : 'scale-[0.88] opacity-40 blur-[1px]'
+          }`
           : 'p-3 sm:p-3.5 lg:p-4 hover:scale-[1.02] hover:shadow-lg'
         }
         ${isLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}
-        ${isPopular
-          ? 'bg-[#112240]/80 border-2 border-[#f59e0b]/80 dark:border-[#f59e0b]/60 ring-1 ring-[#f59e0b]/20 shadow-lg shadow-[#f59e0b]/5'
+        ${isActiveMobile
+          // Dynamic orange highlight for the currently centered mobile card
+          ? 'bg-[#112240]/90 border-2 border-[#f59e0b]/90 dark:border-[#f59e0b]/70 ring-2 ring-[#f59e0b]/20 shadow-lg shadow-[#f59e0b]/10'
           : isFree
-            ? 'bg-[#0a1628]/60 border border-[#1e3a5f]/50 dark:border-[#1a2d4d]/30 hover:border-[#2dd4bf]/30'
-            : 'bg-[#0e1f3d]/80 border border-[#1e3a5f]/60 dark:border-[#1a2d4d]/40 hover:border-[#2dd4bf]/40'
+            ? 'bg-[#0a1628]/60 border border-[#1e3a5f]/50 dark:border-[#1a2d4d]/30'
+            : 'bg-[#0e1f3d]/80 border border-[#1e3a5f]/60 dark:border-[#1a2d4d]/40'
+        }
+        ${!isMobile && isPopular
+          ? 'border-2 border-[#f59e0b]/80 dark:border-[#f59e0b]/60 ring-1 ring-[#f59e0b]/20 shadow-lg shadow-[#f59e0b]/5'
+          : ''
         }
       `}
       onClick={() => onSelect(plan)}
@@ -212,10 +222,23 @@ function PlanCard({
       tabIndex={isLoading ? -1 : 0}
       onKeyDown={(e) => { if (e.key === 'Enter' && !isLoading) onSelect(plan); }}
     >
-      {/* Popular badge */}
-      {isPopular && (
+      {/* Active-slide badge (mobile) — replaces the static popular badge */}
+      {isActiveMobile && (isFree || isPopular) && (
         <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10">
-          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider bg-[#f59e0b] text-white shadow-sm shadow-[#f59e0b]/30 whitespace-nowrap ${isMobile ? 'text-[11px]' : 'text-[9px] sm:text-[10px]'}`}>
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider bg-[#f59e0b] text-white shadow-sm shadow-[#f59e0b]/30 whitespace-nowrap text-[11px]">
+            <Star className="h-3 w-3" />
+            {isFree
+              ? (isDa ? 'GRATIS' : 'FREE')
+              : (isDa ? plan.badgeDa : plan.badgeEn)
+            }
+          </span>
+        </div>
+      )}
+
+      {/* Popular badge (desktop only) */}
+      {!isMobile && isPopular && (
+        <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 z-10">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider bg-[#f59e0b] text-white shadow-sm shadow-[#f59e0b]/30 whitespace-nowrap text-[9px] sm:text-[10px]">
             <Star className="h-3 w-3 sm:h-3 sm:w-3" />
             {isDa ? plan.badgeDa : plan.badgeEn}
           </span>
@@ -225,7 +248,14 @@ function PlanCard({
       {/* Plan name */}
       <p className={`font-bold uppercase tracking-wider
         ${isMobile ? 'text-sm mt-1' : 'text-xs sm:text-sm lg:text-base'}
-        ${isPopular ? 'text-[#f59e0b]' : isFree ? 'text-[#2dd4bf]/70' : 'text-[#2dd4bf]'}
+        ${isActiveMobile
+          ? 'text-[#f59e0b]'
+          : isPopular && !isMobile
+            ? 'text-[#f59e0b]'
+            : isFree
+              ? 'text-[#2dd4bf]/70'
+              : 'text-[#2dd4bf]'
+        }
       `}>
         {plan.name}
       </p>
@@ -263,7 +293,14 @@ function PlanCard({
         {plan.features.map((feat, i) => (
           <li key={i} className="flex items-start gap-2">
             <Check className={`shrink-0 mt-0.5 ${isMobile ? 'h-4 w-4' : 'h-3.5 w-3.5 sm:h-4 sm:w-4'}
-              ${isFree ? 'text-[#2dd4bf]/60' : isPopular ? 'text-[#f59e0b]/80' : 'text-[#2dd4bf]/80'}`}
+              ${isActiveMobile
+                ? 'text-[#f59e0b]/90'
+                : isFree
+                  ? 'text-[#2dd4bf]/60'
+                  : isPopular && !isMobile
+                    ? 'text-[#f59e0b]/80'
+                    : 'text-[#2dd4bf]/80'
+              }`}
             />
             <span className={`text-white/55 leading-snug ${isMobile ? 'text-xs' : 'text-[10px] sm:text-xs lg:text-sm'}`}>
               {isDa ? feat.da : feat.en}
@@ -319,34 +356,67 @@ function PlanCard({
   );
 }
 
-// ─── Dot Indicators Component ──────────────────────────────────────────
+// ─── Active Plan Label (replaces dot indicators on mobile) ───────
 
-function DotIndicators({
-  total,
+function ActivePlanLabel({
+  plans,
   activeIndex,
+  isDa,
   onSelect,
 }: {
-  total: number;
+  plans: Plan[];
   activeIndex: number;
+  isDa: boolean;
   onSelect: (index: number) => void;
 }) {
+  const active = plans[activeIndex];
+  if (!active) return null;
+
+  const isFree = active.isFree;
+  const isPopular = active.popular;
+
+  // Build a short label for the active plan.
+  const label = isFree
+    ? (isDa ? 'Gratis prøveperiode' : 'Free trial')
+    : isPopular
+      ? `${active.name} ${isDa ? '— Anbefalet' : '— Recommended'}`
+      : active.name;
+
+  // Sub-text: price for paid plans, duration for free.
+  const sub = isFree
+    ? (isDa ? '60 dage fuld adgang' : '60 days full access')
+    : (isDa ? active.priceDa : active.priceEn);
+
   return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      {PLANS.map((plan, i) => (
-        <button
-          key={plan.id}
-          type="button"
-          onClick={() => onSelect(i)}
-          className={`
-            transition-all duration-300 rounded-full
-            ${i === activeIndex
-              ? 'w-7 h-2.5 bg-[#2dd4bf] shadow-sm shadow-[#2dd4bf]/30'
-              : 'w-2.5 h-2.5 bg-white/20 hover:bg-white/40'
-            }
-          `}
-          aria-label={`Go to plan ${i + 1}: ${plan.name}`}
-        />
-      ))}
+    <div className="flex flex-col items-center gap-1.5 py-3">
+      {/* Label row */}
+      <p className="text-sm font-semibold text-white/90 tracking-wide">
+        {isFree && <Gift className="inline h-3.5 w-3.5 mr-1 -mt-0.5 text-[#2dd4bf]" />}
+        {isPopular && <Star className="inline h-3.5 w-3.5 mr-1 -mt-0.5 text-[#f59e0b]" />}
+        {label}
+      </p>
+      {/* Sub-label */}
+      <p className="text-xs text-white/40">
+        {sub}
+      </p>
+      {/* Mini-dots for quick jumping */}
+      <div className="flex items-center gap-2 mt-0.5">
+        {plans.map((plan, i) => (
+          <button
+            key={plan.id}
+            type="button"
+            onClick={() => onSelect(i)}
+            className={`
+              transition-all duration-300 rounded-full
+              ${i === activeIndex
+                ? 'w-6 h-2 bg-[#f59e0b]/90 shadow-sm shadow-[#f59e0b]/20'
+                : 'w-2 h-2 bg-white/20 hover:bg-white/40'
+              }
+            `}
+            aria-label={`Go to plan ${i + 1}: ${plan.name}`}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -460,12 +530,16 @@ function MobileCarousel({
           onScroll={handleScroll}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          className="flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth px-8 py-3
-            -mx-8 scrollbar-hide"
+          className="flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth py-3
+            scrollbar-hide"
           style={{
             WebkitOverflowScrolling: 'touch',
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
+            // Generous edge padding so cards snap cleanly to center
+            // and never sit at the very edge of the screen.
+            paddingLeft: 'calc(50% - 170px)',  // half of max-w-[340px]
+            paddingRight: 'calc(50% - 170px)',
           }}
         >
           {plans.map((plan, i) => (
@@ -496,10 +570,11 @@ function MobileCarousel({
         )}
       </div>
 
-      {/* Dot indicators */}
-      <DotIndicators
-        total={plans.length}
+      {/* Active plan label + mini navigation dots */}
+      <ActivePlanLabel
+        plans={plans}
         activeIndex={activeIndex}
+        isDa={isDa}
         onSelect={scrollToSlide}
       />
     </div>
@@ -531,72 +606,161 @@ export function SubscriptionPlansPrompt() {
     return unsub;
   }, []);
 
-  // Detect first-login per user.
-  // Users who already have valid access (tbkey proof or active trial) should
-  // never be shown the purchase prompt, even on a brand-new device where
-  // localStorage has no record of them.  We wait for the access cache to
-  // settle (if loading), then decide.
+  // ── First-login / new-device prompt logic ──────────────────────
+  //
+  // Goals:
+  //   1. Show the subscription plans prompt on a new device for users
+  //      who do NOT have a paid .tbkey proof.
+  //   2. Silently SKIP the prompt for users who already have an active
+  //      .tbkey proof (paid customers) — even on a brand-new device.
+  //   3. NEVER skip for trial-only users — they should still see the
+  //      plans so they can upgrade before the trial ends.
+  //   4. Fail-safe: if the TokenPay service is unreachable, show the
+  //      prompt after a timeout.  The backend still enforces access.
+  //
+  // How it works:
+  //   • We use the lightweight /api/access/{userId} endpoint first to
+  //     wait for the cache to settle (avoids the original race condition).
+  //   • If the user has read_write, we then call the heavier /status
+  //     endpoint to check for an activeProof (tbkey).  Only a tbkey
+  //     proof holder gets the prompt skipped.
+  //   • A 5-second timeout ensures the prompt always appears if the
+  //     service is down.
+
   const accessResult = useAccessCacheStore((s) => s.result);
   const accessIsLoading = useAccessCacheStore((s) => s.isLoading);
   const accessIsOwner = useAccessCacheStore((s) => s.isOwner);
   const fetchAccess = useAccessCacheStore((s) => s.fetch);
 
-  // Track whether we've already kicked off a fetch for this user.
-  // Prevents infinite retries if the TokenPay service is unreachable.
   const fetchAttempted = useRef(false);
+  const showTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const proofCheckDone = useRef(false);
 
-  // Reset the fetch flag when the user changes so a fresh fetch is
-  // attempted for the new user.
+  // Reset all refs when the user changes.
   useEffect(() => {
     fetchAttempted.current = false;
+    proofCheckDone.current = false;
+    if (showTimeout.current) { clearTimeout(showTimeout.current); showTimeout.current = null; }
   }, [user?.id]);
+
+  // Cleanup timeout on unmount.
+  useEffect(() => {
+    return () => { if (showTimeout.current) clearTimeout(showTimeout.current); };
+  }, []);
 
   useEffect(() => {
     if (!user || hasScheduled.current) return;
     if (user.isSuperDev) return;
     if (user.isDemoCompany) return;
     if (typeof window === 'undefined') return;
+
     const dismissedKey = `${DISMISSED_PREFIX}${user.id}`;
     const everLoggedKey = `${EVER_LOGGED_PREFIX}${user.id}`;
     if (localStorage.getItem(dismissedKey) === 'true') return;
     if (localStorage.getItem(everLoggedKey) === 'true') return;
 
-    // If the access cache is still loading, wait — don't show the prompt
-    // until we know whether the user already has write access.
+    // Wait while the access cache is loading.
     if (accessIsLoading) return;
 
-    // No access result yet.  This can happen on a fresh device where the
-    // useWriteAccessGuard hook hasn't called fetchAccess yet, or when
-    // the store hasn't been populated at all.  Kick off a fetch ourselves
-    // and wait for the result before making a decision.
+    // No access result yet — kick off the basic access check ourselves
+    // and wait.  Also start a safety timeout so we don't hang forever
+    // if the TokenPay service is unreachable.
     if (!accessResult) {
       if (!fetchAttempted.current) {
         fetchAttempted.current = true;
         fetchAccess(user.id);
+
+        // Fail-safe: after 5 seconds without a result, show the prompt.
+        showTimeout.current = setTimeout(() => {
+          if (hasScheduled.current) return;
+          // Double-check the store one more time.
+          const latest = useAccessCacheStore.getState();
+          if (latest.result && hasAccess(latest.result) && !proofCheckDone.current) {
+            // Got access while timeout was pending — kick off proof check.
+            checkForTbkeyProof(user.id);
+            return;
+          }
+          // Still no result or no access — show the prompt.
+          hasScheduled.current = true;
+          localStorage.setItem(everLoggedKey, 'true');
+          setAnimatingIn(true);
+          setVisible(true);
+        }, 5000);
       }
-      // Don't proceed until we have a definitive result.
-      // If the fetch ultimately fails (service down), we fail-safe:
-      // don't block the user with a purchase dialog.
       return;
     }
 
-    // User already has valid read_write access (tbkey or active trial).
-    // Silently mark this device as "ever logged" so we never prompt again.
-    if (accessIsOwner || hasAccess(accessResult)) {
+    // We have an access result.  Clear the safety timeout.
+    if (showTimeout.current) { clearTimeout(showTimeout.current); showTimeout.current = null; }
+
+    // Owner always skips.
+    if (accessIsOwner) {
       localStorage.setItem(everLoggedKey, 'true');
       localStorage.setItem(dismissedKey, 'true');
       hasScheduled.current = true;
       return;
     }
 
-    localStorage.setItem(everLoggedKey, 'true');
-    hasScheduled.current = true;
+    // User has read_write access (could be tbkey or trial).
+    // We need to distinguish: only skip for tbkey proof holders.
+    if (hasAccess(accessResult) && !proofCheckDone.current) {
+      proofCheckDone.current = true;
+      checkForTbkeyProof(user.id);
+      return;
+    }
 
-    const timer = setTimeout(() => {
-      setAnimatingIn(true);
-      setVisible(true);
-    }, 800);
+    // User has read_only or proof check said no active proof → show prompt.
+    if (!proofCheckDone.current || !hasAccess(accessResult)) {
+      localStorage.setItem(everLoggedKey, 'true');
+      hasScheduled.current = true;
+      const timer = setTimeout(() => {
+        setAnimatingIn(true);
+        setVisible(true);
+      }, 800);
+      return;
+    }
   }, [user, accessResult, accessIsLoading, accessIsOwner, fetchAccess]);
+
+  // ── Separate function to check for active tbkey proof ───────────
+  // Calls the /status endpoint which returns activeProof info.
+  // Sets the appropriate localStorage flags based on whether a
+  // paid proof is found.
+  const checkForTbkeyProof = useCallback(
+    (userId: string) => {
+      fetch(`/api/access/${encodeURIComponent(userId)}/status`)
+        .then((res) => res.ok ? res.json() : null)
+        .then((data) => {
+          if (hasScheduled.current) return;
+          const everLoggedKey = `${EVER_LOGGED_PREFIX}${userId}`;
+          const dismissedKey = `${DISMISSED_PREFIX}${userId}`;
+
+          // If there is an active .tbkey proof, the user is a paying
+          // customer — silently skip the prompt on this device forever.
+          if (data?.activeProof) {
+            localStorage.setItem(everLoggedKey, 'true');
+            localStorage.setItem(dismissedKey, 'true');
+            hasScheduled.current = true;
+            return;
+          }
+
+          // Trial-only or no active proof — show the prompt so the user
+          // can see the plans and upgrade.
+          localStorage.setItem(everLoggedKey, 'true');
+          hasScheduled.current = true;
+          setAnimatingIn(true);
+          setVisible(true);
+        })
+        .catch(() => {
+          // Status check failed — fail-safe: show the prompt.
+          if (hasScheduled.current) return;
+          localStorage.setItem(`${EVER_LOGGED_PREFIX}${userId}`, 'true');
+          hasScheduled.current = true;
+          setAnimatingIn(true);
+          setVisible(true);
+        });
+    },
+    [],
+  );
 
   const dismiss = useCallback(() => {
     setAnimatingOut(true);
